@@ -5,7 +5,7 @@ import re
 from typing import Any
 from urllib.parse import unquote
 
-from media2text.core.errors import AuthRequired, ParseFailed
+from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 
 
@@ -163,8 +163,39 @@ def parse_profile_html(html: str) -> LiveRoomInfo:
     return LiveRoomInfo(room_id=room_id, is_live=is_live)
 
 
+def _aweme_post_list_field(payload: dict) -> list | None:
+    if "aweme_list" in payload:
+        value = payload.get("aweme_list")
+        return value if isinstance(value, list) else None
+    data = payload.get("data")
+    if isinstance(data, dict) and "aweme_list" in data:
+        value = data.get("aweme_list")
+        return value if isinstance(value, list) else None
+    return None
+
+
+def _raise_platform_changed_aweme_post(payload: dict) -> None:
+    status = payload.get("status_code")
+    if status is None and isinstance(payload.get("data"), dict):
+        status = payload["data"].get("status_code")
+    if status is not None:
+        try:
+            if int(status) != 0:
+                raise PlatformChanged(f"aweme post status_code={status}")
+        except (TypeError, ValueError):
+            pass
+    if payload.get("status_msg") or _dig(payload, "data", "status_msg"):
+        raise PlatformChanged("aweme post response missing aweme_list (status_msg present)")
+    raise PlatformChanged("aweme post response missing aweme_list")
+
+
 def parse_aweme_post_list(payload: dict) -> tuple[list[AwemeItem], str | None, bool]:
-    aweme_list = payload.get("aweme_list") or _dig(payload, "data", "aweme_list") or []
+    if not isinstance(payload, dict):
+        raise ParseFailed("aweme post payload must be object")
+
+    aweme_list = _aweme_post_list_field(payload)
+    if aweme_list is None:
+        _raise_platform_changed_aweme_post(payload)
     items: list[AwemeItem] = []
     for row in aweme_list:
         aweme_id = str(row.get("aweme_id") or "")
@@ -186,6 +217,17 @@ def parse_aweme_post_list(payload: dict) -> tuple[list[AwemeItem], str | None, b
 def parse_aweme_detail_url(payload: dict) -> str:
     detail = payload.get("aweme_detail") or _dig(payload, "data", "aweme_detail")
     if not detail:
+        status = payload.get("status_code")
+        if status is None and isinstance(payload.get("data"), dict):
+            status = payload["data"].get("status_code")
+        if status is not None:
+            try:
+                if int(status) != 0:
+                    raise PlatformChanged(f"aweme detail status_code={status}")
+            except (TypeError, ValueError):
+                pass
+        if payload.get("status_msg") or _dig(payload, "data", "status_msg"):
+            raise PlatformChanged("aweme detail missing aweme_detail (status_msg present)")
         raise ParseFailed("aweme_detail missing")
     url_list = _dig(detail, "video", "play_addr", "url_list") or []
     if not url_list:
