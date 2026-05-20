@@ -62,10 +62,14 @@ _CREATOR_COLUMNS = (
 
 def _migrate_creators(conn: sqlite3.Connection) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
+    added_monitor_enabled = False
     for name, col_type in _CREATOR_COLUMNS:
         if name not in existing:
             conn.execute(f"ALTER TABLE creators ADD COLUMN {name} {col_type}")
-    if "monitor_enabled" in {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}:
+            if name == "monitor_enabled":
+                added_monitor_enabled = True
+    # One-time backfill when the column is first added — not on every connect.
+    if added_monitor_enabled:
         conn.execute(
             """
             UPDATE creators
