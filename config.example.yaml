@@ -1,0 +1,20 @@
+workspace: ./data
+
+platforms:
+  douyin:
+    poll_interval_sec: 60
+    download_concurrency: 3
+    max_sync_pages: 0
+
+live:
+  transcribe_on_complete: false
+  ffmpeg_path: ffmpeg
+  ffmpeg_stop_timeout_sec: 30
+  temp_format: flv
+
+transcribe:
+  engine: whisper
+  language: zh
+  whisper:
+    model: medium
+    device: auto

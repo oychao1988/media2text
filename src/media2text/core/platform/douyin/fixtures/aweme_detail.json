@@ -1,0 +1,10 @@
+{
+  "aweme_detail": {
+    "aweme_id": "7123456789012345678",
+    "video": {
+      "play_addr": {
+        "url_list": ["https://example.com/video.mp4"]
+      }
+    }
+  }
+}

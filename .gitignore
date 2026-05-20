@@ -1,0 +1,19 @@
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+htmlcov/
+.coverage
+data/
+*.egg-info/
+dist/
+.DS_Store
+
+# Local config and auth (use config.example.yaml)
+config.yaml
+*.auth-state.json
+
+# Editor / agent local overrides
+.claude/settings.local.json

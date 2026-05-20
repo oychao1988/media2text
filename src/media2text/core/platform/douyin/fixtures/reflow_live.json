@@ -1,0 +1,12 @@
+{
+  "room": {
+    "id_str": "7318296342189919011",
+    "status": 2,
+    "stream_url": {
+      "flv_pull_url": {
+        "HD1": "https://example.com/live/stream.flv"
+      }
+    },
+    "owner": {"nickname": "test_anchor"}
+  }
+}
