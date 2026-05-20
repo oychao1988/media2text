@@ -24,3 +24,7 @@ transcribe:
   whisper:
     model: medium
     device: auto
+    # CPU: int8 is much faster than float32; use float16 on CUDA when supported
+    compute_type: int8
+    vad_filter: true
+    extract_audio: true

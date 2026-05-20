@@ -7,7 +7,7 @@ from media2text.core.manifest import refresh_manifest
 from media2text.core.platform.douyin.catalog import sync_creator
 from media2text.core.platform.douyin.download import download_pending
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
-from media2text.core.transcribe.whisper import WhisperBackend, write_transcript_outputs
+from media2text.core.transcribe.whisper import whisper_backend_from_config, write_transcript_outputs
 from media2text.core.workspace import open_db
 
 
@@ -33,10 +33,7 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
 
     transcribed = 0
     if cfg.transcribe.engine == "whisper":
-        backend = WhisperBackend(
-            model=cfg.transcribe.whisper.model,
-            device=cfg.transcribe.whisper.device,
-        )
+        backend = whisper_backend_from_config(cfg)
         awemes = AwemeRepo(conn)
         for row in awemes.list_downloaded_without_transcript(creator_id=creator_id):
             if not row.local_path:

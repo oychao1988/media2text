@@ -94,6 +94,33 @@ media2text pipeline run --creator <creator_id> --json
 | `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live` | ffmpeg 路径、临时流格式（`flv`）、结束后是否自动转写 |
 | `transcribe` | 引擎与 Whisper 模型（`medium` 等） |
+| `transcribe.whisper.compute_type` | faster-whisper 量化（CPU 推荐 `int8`） |
+| `transcribe.whisper.vad_filter` | 转写前 VAD 过滤静音（直播长视频推荐 `true`） |
+| `transcribe.whisper.extract_audio` | 转写前用 ffmpeg 抽出 `{媒体}.16k.wav` sidecar |
+
+## 转写性能（本地 CPU）
+
+在仅有 CPU、无 CUDA/MPS 的机器上，长视频 + `medium` + 默认 float32 往往极慢。可按优先级调整：
+
+| 手段 | 说明 |
+|------|------|
+| 更小模型 | `small` 或 `base` 显著缩短耗时，精度略降 |
+| `compute_type: int8` | 配置默认已是 `int8`，避免 float32 隐式转换开销 |
+| `extract_audio: true` | 先抽出 mono 16 kHz WAV（`*.16k.wav`），减少 faster-whisper 内部解封装；已存在且比源文件新时会跳过重复抽取 |
+| `vad_filter: true` | 跳过静音段，长直播通常更快 |
+
+示例（`config.yaml`）：
+
+```yaml
+transcribe:
+  whisper:
+    model: small
+    compute_type: int8
+    vad_filter: true
+    extract_audio: true
+```
+
+对比同一段素材时，可用 `time media2text transcribe run <file.mp4> --json` 观察 wall time。sidecar 文件落在媒体同目录，工作区 `data/` 已在 `.gitignore` 中。
 
 ## 工作区目录
 

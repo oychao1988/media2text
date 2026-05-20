@@ -35,6 +35,9 @@ class LiveConfig(BaseModel):
 class WhisperConfig(BaseModel):
     model: str = "medium"
     device: str = "auto"
+    compute_type: str = "int8"
+    vad_filter: bool = True
+    extract_audio: bool = True
 
 
 class TranscribeConfig(BaseModel):
