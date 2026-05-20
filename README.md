@@ -92,8 +92,9 @@ media2text pipeline run --creator <creator_id> --json
 | `monitor.vod_poll_interval_sec` | 作品 sync/download/transcribe 间隔（秒） |
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
-| `live` | ffmpeg 路径、临时流格式（`flv`）、结束后是否自动转写 |
-| `transcribe` | 引擎与 Whisper 模型（`medium` 等） |
+| `live` | ffmpeg 路径、临时流格式（`flv`）、`transcribe_on_complete` 直播 MP4 结束后自动转写 |
+| `transcribe` | 引擎 `whisper`（本地）或 `openai`（云端，需 `OPENAI_API_KEY` 与 `[transcribe-cloud]`） |
+| `transcribe.engine` | `whisper` \| `openai` |
 | `transcribe.whisper.compute_type` | faster-whisper 量化（CPU 推荐 `int8`） |
 | `transcribe.whisper.vad_filter` | 转写前 VAD 过滤静音（直播长视频推荐 `true`） |
 | `transcribe.whisper.extract_audio` | 转写前用 ffmpeg 抽出 `{媒体}.16k.wav` sidecar |
@@ -150,9 +151,9 @@ data/
 | `media2text creator refresh <id> [--json]` | 更新博主资料 |
 | `media2text creator monitor <id> [--off] [--json]` | 开启/关闭监控 |
 | `media2text creator sync <creator_id> [--json]` | 同步作品 catalog |
-| `media2text creator remove <creator_id> [--json]` | 移除创作者 |
+| `media2text creator remove <creator_id> [--delete-media] [--json]` | 移除创作者；可选删除 `data/creators/{sec_uid}/` |
 | `media2text monitor watch [--daemon] [--creator <id>] [--json]` | 统一监控（直播 + VOD） |
-| `media2text download run [--creator <id>] [--json]` | 下载待处理作品 |
+| `media2text download run [--creator <id>] [--limit N] [--json]` | 下载待处理作品（可限制条数） |
 | `media2text transcribe run <path> [--creator <id>] [--json]` | 转写文件或目录 |
 | `media2text pipeline run --creator <id> [--json]` | sync + download + transcribe |
 | `media2text version` | 打印版本号 |
