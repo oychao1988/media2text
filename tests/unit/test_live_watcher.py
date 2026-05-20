@@ -15,7 +15,7 @@ def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> No
     cid = repo.add(
         sec_uid="MS4wLjABAAAAtest",
         profile_url="https://www.douyin.com/user/MS4wLjABAAAAtest",
-        watch_live=True,
+        monitor_enabled=True,
     )
 
     mock_proc = MagicMock()
@@ -48,7 +48,11 @@ def test_get_active_for_creator_clears_dead_pid(tmp_path, monkeypatch) -> None:
     watcher = LiveWatcher(cfg)
     conn = watcher._conn
     repo = CreatorRepo(conn)
-    cid = repo.add(sec_uid="MS4wLjABAAAAdead", profile_url="https://example.com/u", watch_live=True)
+    cid = repo.add(
+        sec_uid="MS4wLjABAAAAdead",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
     sid = watcher._sessions.create(
         creator_id=cid,
         room_id="123",
@@ -67,7 +71,11 @@ def test_poll_skips_fresh_sessions(tmp_path, monkeypatch) -> None:
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
     repo = CreatorRepo(watcher._conn)
-    cid = repo.add(sec_uid="MS4wLjABAAAAskip", profile_url="https://example.com/u", watch_live=True)
+    cid = repo.add(
+        sec_uid="MS4wLjABAAAAskip",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
     sid = watcher._sessions.create(
         creator_id=cid,
         room_id="123",

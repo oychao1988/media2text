@@ -9,6 +9,12 @@ class CreatorRow:
     display_name: str | None
     profile_url: str | None
     watch_live: int
+    monitor_enabled: int
+    unique_id: str | None
+    avatar_url: str | None
+    signature: str | None
+    follower_count: int | None
+    profile_synced_at: str | None
     created_at: str
 
 

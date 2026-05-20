@@ -11,12 +11,15 @@
 | 能力 | 说明 |
 |------|------|
 | 登录与会话 | Playwright 扫码/浏览器登录，会话保存在 `data/sessions/` |
-| 创作者管理 | 通过主页链接解析 `sec_uid`，注册关注与直播监控 |
+| 创作者管理 | 通过主页链接解析 `sec_uid` 并登记；可选拉取昵称、头像等资料 |
+| 监控开关 | `creator monitor` 开启后，统一守护进程负责直播 + 作品流水线 |
 | 直播录制 | 轮询开播状态，ffmpeg 拉流录制，结束后 remux 为 `.mp4` |
 | 作品同步与下载 | SQLite 去重，增量同步 catalog 并下载视频 |
 | 转写 | 可选 `faster-whisper`，输出 Markdown + JSON |
 | 流水线 | `sync → download → transcribe` 一键跑通 |
 | Agent 友好 | 子命令稳定、`--json` 结构化输出、按创作者生成 `agent-manifest.json` |
+
+**收录 vs 监控**：`creator add` 仅登记博主（默认不监控）；`creator monitor <id>` 开启后，`monitor watch` 才会对该博主轮询直播并跑 VOD 流水线。
 
 ## 环境要求
 
@@ -57,22 +60,25 @@ media2text doctor --json
 media2text auth login --platform douyin
 media2text auth status --json
 
-# 3. 添加创作者并开启直播监控
-media2text creator add 'https://www.douyin.com/user/<profile>' --watch-live --json
+# 3. 登记创作者（默认不开启监控；有 session 时会尝试拉取资料）
+media2text creator add 'https://www.douyin.com/user/<profile>' --json
 
-# 4. 后台监控直播（单实例，需 workspace 锁）
-media2text live watch --daemon
+# 4. 开启监控
+media2text creator monitor <creator_id> --json
 
-# 5. VOD：同步 catalog → 下载 → 转写（示例）
+# 5. 统一守护进程（直播轮询 + 作品 sync/download/transcribe）
+media2text monitor watch --json
+# media2text monitor watch --daemon   # 长期运行，单实例锁
+
+# 6. 手动单步（任意已登记创作者）
 media2text creator sync <creator_id> --json
 media2text download run --creator <creator_id> --json
-media2text transcribe run ./data/creators/<sec_uid>/videos --creator <creator_id> --json
-
-# 或一条流水线
 media2text pipeline run --creator <creator_id> --json
 ```
 
 未登录时，部分命令会使用 **fixtures** 跑通测试路径；真实拉流/同步需先完成 `auth login`。
+
+`download run` **不带** `--creator` 时，仅处理 `monitor_enabled=1` 的创作者待下载作品。
 
 ## 配置
 
@@ -81,7 +87,11 @@ media2text pipeline run --creator <creator_id> --json
 | 区块 | 作用 |
 |------|------|
 | `workspace` | 数据根目录，默认 `./data` |
-| `platforms.douyin` | 轮询间隔、下载并发、同步页数上限 |
+| `platforms.douyin` | 下载并发、同步页数上限等 |
+| `monitor.live_poll_interval_sec` | 直播状态轮询间隔（秒） |
+| `monitor.vod_poll_interval_sec` | 作品 sync/download/transcribe 间隔（秒） |
+| `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
+| `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live` | ffmpeg 路径、临时流格式（`flv`）、结束后是否自动转写 |
 | `transcribe` | 引擎与 Whisper 模型（`medium` 等） |
 
@@ -91,7 +101,7 @@ media2text pipeline run --creator <creator_id> --json
 data/
   media2text.db              # SQLite（创作者、作品、直播会话）
   sessions/douyin.json       # Playwright 登录态（0600，勿提交）
-  .live-watch.lock           # 直播守护进程锁
+  .monitor-watch.lock        # 统一监控守护进程锁
   creators/{sec_uid}/
     agent-manifest.json      # Agent 索引（路径与状态）
     videos/{aweme_id}.mp4
@@ -107,11 +117,14 @@ data/
 | `media2text doctor [--json]` | 检查 ffmpeg、playwright、session、磁盘 |
 | `media2text auth login --platform douyin` | 交互登录 |
 | `media2text auth status [--json]` | 会话是否存在 |
-| `media2text creator add <url> [--watch-live] [--json]` | 添加创作者 |
-| `media2text creator list [--json]` | 列出已注册创作者 |
+| `media2text creator add <url> [--json]` | 登记创作者（默认不监控） |
+| `media2text creator list [--json]` | 列出已登记创作者 |
+| `media2text creator show <id> [--json]` | 资料、监控状态、作品计数 |
+| `media2text creator refresh <id> [--json]` | 更新博主资料 |
+| `media2text creator monitor <id> [--off] [--json]` | 开启/关闭监控 |
 | `media2text creator sync <creator_id> [--json]` | 同步作品 catalog |
 | `media2text creator remove <creator_id> [--json]` | 移除创作者 |
-| `media2text live watch [--daemon] [--creator <id>] [--json]` | 监控/录制直播 |
+| `media2text monitor watch [--daemon] [--creator <id>] [--json]` | 统一监控（直播 + VOD） |
 | `media2text download run [--creator <id>] [--json]` | 下载待处理作品 |
 | `media2text transcribe run <path> [--creator <id>] [--json]` | 转写文件或目录 |
 | `media2text pipeline run --creator <id> [--json]` | sync + download + transcribe |
@@ -152,4 +165,4 @@ pyright
 
 ## 状态说明
 
-当前为 **0.1.0 MVP**：核心 CLI 与离线 fixtures 已就绪；在有效抖音会话下可进行直播监控与 VOD 流水线。平台 API 变更时可能需更新 adapter，请关注 `doctor` 与 JSON 中的 `auth_required` / `platform_changed` 字段。
+当前为 **0.1.0 MVP**：核心 CLI 与离线 fixtures 已就绪；在有效抖音会话下可进行统一监控与 VOD 流水线。平台 API 变更时可能需更新 adapter，请关注 `doctor` 与 JSON 中的 `auth_required` / `platform_changed` 字段。

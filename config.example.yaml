@@ -6,6 +6,12 @@ platforms:
     download_concurrency: 3
     max_sync_pages: 0
 
+monitor:
+  live_poll_interval_sec: 60
+  vod_poll_interval_sec: 300
+  max_creators_per_vod_tick: 0
+  profile_stale_days: 7
+
 live:
   transcribe_on_complete: false
   ffmpeg_path: ffmpeg

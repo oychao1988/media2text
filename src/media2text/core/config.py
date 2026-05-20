@@ -18,6 +18,13 @@ class PlatformsConfig(BaseModel):
     douyin: DouyinPlatformConfig = Field(default_factory=DouyinPlatformConfig)
 
 
+class MonitorConfig(BaseModel):
+    live_poll_interval_sec: int = 60
+    vod_poll_interval_sec: int = 300
+    max_creators_per_vod_tick: int = 0
+    profile_stale_days: int = 7
+
+
 class LiveConfig(BaseModel):
     transcribe_on_complete: bool = False
     ffmpeg_path: str = "ffmpeg"
@@ -39,6 +46,7 @@ class TranscribeConfig(BaseModel):
 class AppConfig(BaseSettings):
     workspace: Path = Path("./data")
     platforms: PlatformsConfig = Field(default_factory=PlatformsConfig)
+    monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
 

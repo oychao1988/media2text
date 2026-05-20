@@ -15,17 +15,38 @@ class CreatorRepo:
         *,
         sec_uid: str,
         profile_url: str,
-        watch_live: bool,
+        monitor_enabled: bool = False,
         display_name: str | None = None,
+        unique_id: str | None = None,
+        avatar_url: str | None = None,
+        signature: str | None = None,
+        follower_count: int | None = None,
+        profile_synced_at: str | None = None,
     ) -> str:
         cid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             """
-            INSERT INTO creators (id, platform, sec_uid, display_name, profile_url, watch_live, created_at)
-            VALUES (?, 'douyin', ?, ?, ?, ?, ?)
+            INSERT INTO creators (
+              id, platform, sec_uid, display_name, profile_url, watch_live,
+              monitor_enabled, unique_id, avatar_url, signature, follower_count,
+              profile_synced_at, created_at
+            )
+            VALUES (?, 'douyin', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (cid, sec_uid, display_name, profile_url, 1 if watch_live else 0, now),
+            (
+                cid,
+                sec_uid,
+                display_name,
+                profile_url,
+                1 if monitor_enabled else 0,
+                unique_id,
+                avatar_url,
+                signature,
+                follower_count,
+                profile_synced_at,
+                now,
+            ),
         )
         self._conn.commit()
         return cid
@@ -46,11 +67,71 @@ class CreatorRepo:
         rows = self._conn.execute("SELECT * FROM creators ORDER BY created_at").fetchall()
         return [CreatorRow(**dict(r)) for r in rows]
 
-    def list_live_watched(self) -> list[CreatorRow]:
+    def list_monitored(self) -> list[CreatorRow]:
         rows = self._conn.execute(
-            "SELECT * FROM creators WHERE watch_live = 1 ORDER BY created_at"
+            "SELECT * FROM creators WHERE monitor_enabled = 1 ORDER BY created_at"
         ).fetchall()
         return [CreatorRow(**dict(r)) for r in rows]
+
+    def list_live_watched(self) -> list[CreatorRow]:
+        """Deprecated: use list_monitored."""
+        return self.list_monitored()
+
+    def set_monitor_enabled(self, creator_id: str, *, enabled: bool) -> bool:
+        cur = self._conn.execute(
+            "UPDATE creators SET monitor_enabled = ? WHERE id = ?",
+            (1 if enabled else 0, creator_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def update_profile(
+        self,
+        creator_id: str,
+        *,
+        display_name: str | None = None,
+        unique_id: str | None = None,
+        avatar_url: str | None = None,
+        signature: str | None = None,
+        follower_count: int | None = None,
+        profile_synced_at: str | None = None,
+    ) -> bool:
+        cur = self._conn.execute(
+            """
+            UPDATE creators
+            SET display_name = ?, unique_id = ?, avatar_url = ?, signature = ?,
+                follower_count = ?, profile_synced_at = ?
+            WHERE id = ?
+            """,
+            (
+                display_name,
+                unique_id,
+                avatar_url,
+                signature,
+                follower_count,
+                profile_synced_at,
+                creator_id,
+            ),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def count_awemes(self, creator_id: str) -> int:
+        row = self._conn.execute(
+            "SELECT COUNT(*) AS c FROM awemes WHERE creator_id = ?",
+            (creator_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
+
+    def count_pending_download(self, creator_id: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS c FROM awemes
+            WHERE creator_id = ? AND sync_status = 'listed'
+            """,
+            (creator_id,),
+        ).fetchone()
+        return int(row["c"]) if row else 0
 
     def remove(self, creator_id: str) -> bool:
         cur = self._conn.execute("DELETE FROM creators WHERE id = ?", (creator_id,))
@@ -90,11 +171,24 @@ class AwemeRepo:
         self._conn.commit()
         return True
 
-    def list_pending_download(self, *, creator_id: str | None = None) -> list[AwemeRow]:
+    def list_pending_download(
+        self,
+        *,
+        creator_id: str | None = None,
+        monitor_only: bool = False,
+    ) -> list[AwemeRow]:
         if creator_id:
             rows = self._conn.execute(
                 "SELECT * FROM awemes WHERE creator_id = ? AND sync_status = 'listed'",
                 (creator_id,),
+            ).fetchall()
+        elif monitor_only:
+            rows = self._conn.execute(
+                """
+                SELECT a.* FROM awemes a
+                INNER JOIN creators c ON c.id = a.creator_id
+                WHERE a.sync_status = 'listed' AND c.monitor_enabled = 1
+                """
             ).fetchall()
         else:
             rows = self._conn.execute(
@@ -143,7 +237,12 @@ class AwemeRepo:
         )
         self._conn.commit()
 
-    def list_downloaded_without_transcript(self, *, creator_id: str | None = None) -> list[AwemeRow]:
+    def list_downloaded_without_transcript(
+        self,
+        *,
+        creator_id: str | None = None,
+        monitor_only: bool = False,
+    ) -> list[AwemeRow]:
         if creator_id:
             rows = self._conn.execute(
                 """
@@ -152,6 +251,16 @@ class AwemeRepo:
                   AND (transcribe_status IS NULL OR transcribe_status != 'done')
                 """,
                 (creator_id,),
+            ).fetchall()
+        elif monitor_only:
+            rows = self._conn.execute(
+                """
+                SELECT a.* FROM awemes a
+                INNER JOIN creators c ON c.id = a.creator_id
+                WHERE a.sync_status = 'downloaded'
+                  AND (a.transcribe_status IS NULL OR a.transcribe_status != 'done')
+                  AND c.monitor_enabled = 1
+                """
             ).fetchall()
         else:
             rows = self._conn.execute(
