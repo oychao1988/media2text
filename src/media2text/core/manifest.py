@@ -8,6 +8,13 @@ from pathlib import Path
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
 
 
+def _transcript_sidecar_path(media_path: str | None) -> str | None:
+    if not media_path:
+        return None
+    json_path = Path(media_path).with_suffix(".transcript.json")
+    return str(json_path) if json_path.is_file() else None
+
+
 def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
     creators = CreatorRepo(conn)
     awemes = AwemeRepo(conn)
@@ -35,13 +42,14 @@ def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
     ).fetchall()
     for row in live_rows:
         data = dict(row)
+        local_path = data.get("local_path")
         items.append(
             {
                 "id": data["id"],
                 "type": "live",
                 "title": None,
-                "media_path": data.get("local_path"),
-                "transcript_path": None,
+                "media_path": local_path,
+                "transcript_path": _transcript_sidecar_path(local_path),
                 "status": data.get("status"),
             }
         )

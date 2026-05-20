@@ -348,6 +348,13 @@ class LiveSessionRepo:
         ).fetchall()
         return [LiveSessionRow(**dict(r)) for r in rows]
 
+    def get(self, session_id: str) -> LiveSessionRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM live_sessions WHERE id = ?",
+            (session_id,),
+        ).fetchone()
+        return LiveSessionRow(**dict(row)) if row else None
+
     def update_status(
         self,
         session_id: str,
