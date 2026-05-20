@@ -15,33 +15,33 @@
 
 ### P1 — 资料与收录
 
-- [ ] `creators` 表扩展（或等价迁移）：`unique_id`、`avatar_url`、`profile_synced_at`（可选 `signature`、`follower_count`）；新增 `monitor_enabled INTEGER NOT NULL DEFAULT 0`。
-- [ ] 实现 `parse_user_profile`（或复用 profile API / `RENDER_DATA`），从 Douyin adapter 返回结构化资料。
-- [ ] `creator add <url>`：**默认 `monitor_enabled=0`**；有 session 时尝试拉 profile 写入 `display_name` 等；失败不阻塞收录。
-- [ ] 新增 `creator refresh <id>`：更新资料并刷新 `profile_synced_at`。
-- [ ] `creator list --json` 输出：`display_name`、`unique_id`、`monitor_enabled`、`profile_stale`（无资料或过期时 true）、`profile_url`。
-- [ ] 新增 `creator show <id> --json`：资料 + `monitor_enabled` + 作品/待下载计数（基于现有 awemes 表）。
+- [x] `creators` 表扩展（或等价迁移）：`unique_id`、`avatar_url`、`profile_synced_at`（可选 `signature`、`follower_count`）；新增 `monitor_enabled INTEGER NOT NULL DEFAULT 0`。
+- [x] 实现 `parse_user_profile`（或复用 profile API / `RENDER_DATA`），从 Douyin adapter 返回结构化资料。
+- [x] `creator add <url>`：**默认 `monitor_enabled=0`**；有 session 时尝试拉 profile 写入 `display_name` 等；失败不阻塞收录。
+- [x] 新增 `creator refresh <id>`：更新资料并刷新 `profile_synced_at`。
+- [x] `creator list --json` 输出：`display_name`、`unique_id`、`monitor_enabled`、`profile_stale`（无资料或过期时 true）、`profile_url`。
+- [x] 新增 `creator show <id> --json`：资料 + `monitor_enabled` + 作品/待下载计数（基于现有 awemes 表）。
 
 ### P2 — 监控开关与管理
 
-- [ ] 新增 `creator monitor <id>` / `creator monitor <id> --off`（或 `creator update --monitor/--no-monitor`），切换 `monitor_enabled`。
-- [ ] DB 迁移：将既有 `watch_live=1` 的行一次性设为 `monitor_enabled=1`（兼容旧数据）；之后以 `monitor_enabled` 为唯一真相源（`watch_live` 列可在迁移后弃用/不再写入）。
-- [ ] **移除** `creator add` 的 `--watch-live` / `--no-watch-live` 选项；收录与监控完全分离。
-- [ ] `download run` **无 `--creator` 时**仅处理 `monitor_enabled=1` 的创作者待下载项（或文档+CLI 强制要求 `--creator`；二选一须在 PR 说明理由）。
+- [x] 新增 `creator monitor <id>` / `creator monitor <id> --off`（或 `creator update --monitor/--no-monitor`），切换 `monitor_enabled`。
+- [x] DB 迁移：将既有 `watch_live=1` 的行一次性设为 `monitor_enabled=1`（兼容旧数据）；之后以 `monitor_enabled` 为唯一真相源（`watch_live` 列可在迁移后弃用/不再写入）。
+- [x] **移除** `creator add` 的 `--watch-live` / `--no-watch-live` 选项；收录与监控完全分离。
+- [x] `download run` **无 `--creator` 时**仅处理 `monitor_enabled=1` 的创作者待下载项（或文档+CLI 强制要求 `--creator`；二选一须在 PR 说明理由）。
 
 ### P3 — 统一守护进程
 
-- [ ] 新增 **`monitor watch`** 子命令（`--daemon`、`--creator <id>`、`--json`）；**移除**对外 `live watch`（无别名，README/CLI help 一并更新）。  
+- [x] 新增 **`monitor watch`** 子命令（`--daemon`、`--creator <id>`、`--json`）；**移除**对外 `live watch`（无别名，README/CLI help 一并更新）。  
   - 直播：对 `monitor_enabled=1` 轮询开播并录制（复用现有 `LiveWatcher`）。  
   - 作品：按配置间隔对每个监控中创作者执行 `sync → download_pending → transcribe`（复用 `run_pipeline` / 现有函数，避免重复实现）。
-- [ ] `config.yaml` 增加 `monitor.live_poll_interval_sec`、`monitor.vod_poll_interval_sec`（及可选 `max_creators_per_vod_tick`）。
-- [ ] 守护进程 workspace 锁（可沿用 `.live-watch.lock` 或改为 `.monitor-watch.lock`，PR 说明）；JSON 输出含 per-creator 错误，不静默吞掉 `auth_required`。
-- [ ] README 更新：收录 vs 监控、`creator add` 默认不监控、`monitor watch` 用法。
+- [x] `config.yaml` 增加 `monitor.live_poll_interval_sec`、`monitor.vod_poll_interval_sec`（及可选 `max_creators_per_vod_tick`）。
+- [x] 守护进程 workspace 锁（可沿用 `.live-watch.lock` 或改为 `.monitor-watch.lock`，PR 说明）；JSON 输出含 per-creator 错误，不静默吞掉 `auth_required`。
+- [x] README 更新：收录 vs 监控、`creator add` 默认不监控、`monitor watch` 用法。
 
 ### 测试
 
-- [ ] 单元测试：profile 解析（fixtures）、`monitor_enabled` repo 方法、迁移逻辑（如有）。
-- [ ] 现有 `pytest tests/ -v` 全绿；新增测试覆盖 P1–P2 核心路径（daemon 可用 mock/单轮 `run_once` 测）。
+- [x] 单元测试：profile 解析（fixtures）、`monitor_enabled` repo 方法、迁移逻辑（如有）。
+- [x] 现有 `pytest tests/ -v` 全绿；新增测试覆盖 P1–P2 核心路径（daemon 可用 mock/单轮 `run_once` 测）。
 
 ## 验证命令
 

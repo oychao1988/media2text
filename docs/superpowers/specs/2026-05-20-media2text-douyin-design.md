@@ -48,7 +48,7 @@ Implementation is **self-developed**, with patterns borrowed from mature open-so
 **MVP gate (live-first):**
 
 - `media2text doctor --json` reports ready (ffmpeg, playwright, valid session).
-- Add a creator with `--watch-live`, run `live watch --daemon`, and receive a completed `.mp4` when the stream ends.
+- Register a creator with `creator add`, enable `creator monitor`, run `monitor watch --daemon`, and receive a completed `.mp4` when the stream ends.
 - Stale/crashed recordings are marked `failed` in `live_sessions`; daemon recovers without duplicate ffmpeg for the same room.
 
 **MVP gate (VOD + transcribe, phase 2 within MVP):**
@@ -83,7 +83,7 @@ CLI (Typer)
   → creator registry + SQLite
   → douyin adapter (list / download / live status / stream URL)
   → download worker (queue + ffmpeg when needed)
-  → live watcher (scheduler + ffmpeg child processes)
+  → monitor watcher (live poll + VOD pipeline tick; ffmpeg child processes)
   → transcribe plugins (whisper | cloud)
   → pipeline orchestrator
 ```
@@ -136,8 +136,12 @@ media2text/
 | platform | TEXT | `douyin` |
 | sec_uid | TEXT UNIQUE | stable creator id |
 | display_name | TEXT | optional |
+| unique_id | TEXT | optional |
+| avatar_url | TEXT | optional |
 | profile_url | TEXT | original add URL |
-| watch_live | INTEGER | 1 = include in live watcher |
+| profile_synced_at | TEXT | optional ISO8601 |
+| monitor_enabled | INTEGER | 1 = included in `monitor watch` (live + VOD) |
+| watch_live | INTEGER | legacy; migrated to `monitor_enabled` |
 | created_at | TEXT ISO8601 | |
 
 **`awemes`**
@@ -190,13 +194,16 @@ All commands accept `--json` for machine-readable output on stdout; human-readab
 |---------|-------------|
 | `media2text auth login --platform douyin` | Open browser, complete login, save session under `data/sessions/` |
 | `media2text auth status [--platform douyin]` | Report session validity |
-| `media2text creator add <url> [--watch-live]` | Resolve and register creator |
+| `media2text creator add <url>` | Resolve and register creator (default `monitor_enabled=0`) |
 | `media2text creator list` | List registered creators |
-| `media2text creator remove <id>` | Remove creator and optional local media |
+| `media2text creator show <id>` | Profile, monitor flag, aweme counts |
+| `media2text creator refresh <id>` | Refresh profile metadata |
+| `media2text creator monitor <id> [--off]` | Enable/disable unified monitoring |
+| `media2text creator remove <id> [--delete-media]` | Remove creator; optional `data/creators/{sec_uid}/` cleanup |
 | `media2text creator sync <id>` | Fetch catalog; upsert `awemes` |
-| `media2text download run [--creator id] [--limit N]` | Download pending awemes |
-| `media2text live watch [--daemon] [--creator id]` | Poll live status; record video |
-| `media2text transcribe <path\|dir> [--engine auto]` | Run transcription plugin |
+| `media2text download run [--creator id] [--limit N]` | Download pending awemes (no `--creator` → `monitor_enabled=1` only) |
+| `media2text monitor watch [--daemon] [--creator id]` | Poll live + periodic VOD pipeline for monitored creators |
+| `media2text transcribe run <path\|dir>` | Run transcription (`whisper` or `openai` per config) |
 | `media2text pipeline run --creator <id>` | sync → download → transcribe |
 | `media2text doctor [--json]` | Check ffmpeg, playwright, session, disk; exit non-zero if not ready |
 | `media2text version` | Version string |
@@ -220,7 +227,8 @@ All commands accept `--json` for machine-readable output on stdout; human-readab
   "creator_id": "…",
   "new_count": 12,
   "total_listed": 340,
-  "auth_required": false
+  "auth_required": false,
+  "platform_changed": false
 }
 ```
 
@@ -263,18 +271,20 @@ Resolver caches `sec_uid` on `creators` row. Short links: follow redirects with 
 - Concurrency from `config.download_concurrency` (default 3).
 - Mark `downloaded` or `failed` with error message in job log.
 
-### 6.5 Live Watch (Video Only)
+### 6.5 Unified Monitor (`monitor watch`)
 
-- On interval `poll_interval_sec` (default 60), check each creator with `watch_live=1`.
+- **收录 vs 监控**：`creator add` 仅登记；`creator monitor` 设置 `monitor_enabled=1` 后，`monitor watch` 才轮询该创作者。
+- Live leg: on `monitor.live_poll_interval_sec` (default 60), check each creator with `monitor_enabled=1`.
 - If live: resolve stream URL (flv/hls) via **httpx** (cookies from session); on `ParseFailed` / `PlatformChanged`, retry via Playwright page context.
 - **Recording strategy (eng review):** ffmpeg writes a **temporary stream file** (`.flv` or `.ts`, `-c copy`) under `data/creators/{sec_uid}/live/.tmp/{session_id}/`; on stream end, remux to final `data/creators/{sec_uid}/live/{timestamp}.mp4`, then delete temp dir. Avoids corrupt single `.mp4` on crash mid-stream.
 - Track row in `live_sessions` with `status=recording`, `ffmpeg_pid`, `room_id`, `temp_path`.
 - On stream end or poll sees offline: SIGTERM ffmpeg → wait `ffmpeg_stop_timeout_sec` → SIGKILL → run remux step → `status=completed` (or `failed` if remux fails, keep temp for manual recovery).
 - **Process governance (MVP):**
-  - `live watch --daemon` acquires a workspace lock file (`data/.live-watch.lock`); second instance exits with code `1` and JSON `already_running: true`.
+  - `monitor watch --daemon` acquires a workspace lock file (`data/.monitor-watch.lock`); second instance exits with code `1` and JSON `already_running: true`.
   - At daemon start, any `live_sessions` with `status=recording` and dead PID → mark `failed` with reason `stale_recording`.
   - At most one active ffmpeg per `room_id`; re-poll while live does not spawn duplicates.
-- Optional config: `transcribe_on_live_complete: true` → enqueue transcribe job.
+- Optional config: `live.transcribe_on_complete: true` → after remux, run Whisper on the finished `.mp4` and refresh manifest.
+- VOD leg: on `monitor.vod_poll_interval_sec`, run `sync → download → transcribe` per monitored creator (respect `max_creators_per_vod_tick`).
 - **No** danmaku, gifts, or chat files in MVP.
 
 ### 6.7 Agent Manifest
@@ -423,7 +433,7 @@ CI: lint (ruff), typecheck (pyright/mypy), unit tests without network.
 | Phase | Deliverable | MVP gate |
 |-------|-------------|----------|
 | P0 | Scaffold, config, SQLite, `auth login/status`, **`doctor`** | doctor passes |
-| P1 | `creator add/list`, resolver, **`live watch`** + process governance | records one live to mp4 |
+| P1 | `creator add/list`, resolver, **`monitor watch`** + process governance | records one live to mp4 |
 | P2 | `creator sync`, `download run`, `agent-manifest.json` refresh | incremental VOD download |
 | P3 | `transcribe` (whisper) + manifest update | transcript json/md |
 | P4 | `pipeline run`, exit codes, Agent README | full vod pipeline |
@@ -439,7 +449,8 @@ CI: lint (ruff), typecheck (pyright/mypy), unit tests without network.
 - Prefer `media2text <cmd> --json` and parse stdout only.
 - On `auth_required: true`, run `auth login` interactively (user must complete QR).
 - Store `creator_id` from `creator add` response for subsequent calls.
-- Use `pipeline run` for batch; use `live watch --daemon` as long-running process with log file tailing.
+- Use `pipeline run` for batch; use `monitor watch --daemon` as long-running process with log file tailing.
+- On `platform_changed: true`, adapter parsers detected API drift — file an issue or update fixtures; exit code `3`.
 
 ---
 
