@@ -184,19 +184,44 @@ def sync(
         if creator:
             refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=cfg.ensure_workspace())
     emit({"command": "creator sync", **result}, as_json=json_out)
-    if not result.get("ok"):
-        raise typer.Exit(1)
+    from media2text.core.cli_exit import raise_for_result
+
+    raise_for_result(result)
 
 
 @app.command("remove")
 def remove(
     creator_id: str = typer.Argument(...),
+    delete_media: bool = typer.Option(
+        False,
+        "--delete-media",
+        help="Remove data/creators/{sec_uid}/ for this creator",
+    ),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
+    import shutil
+
     cfg = AppConfig.load()
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
+    creator = repo.get(creator_id)
+    sec_uid = creator.sec_uid if creator else None
     ok = repo.remove(creator_id)
-    emit({"ok": ok, "command": "creator remove", "creator_id": creator_id}, as_json=json_out)
+    deleted_media = False
+    if ok and delete_media and sec_uid:
+        media_dir = cfg.ensure_workspace() / "creators" / sec_uid
+        if media_dir.is_dir():
+            shutil.rmtree(media_dir)
+            deleted_media = True
+    emit(
+        {
+            "ok": ok,
+            "command": "creator remove",
+            "creator_id": creator_id,
+            "delete_media": delete_media,
+            "deleted_media": deleted_media,
+        },
+        as_json=json_out,
+    )
     if not ok:
         raise typer.Exit(1)

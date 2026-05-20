@@ -15,5 +15,6 @@ def run(
     cfg = AppConfig.load()
     result = run_pipeline(cfg, creator_id=creator_id)
     emit(result, as_json=json_out)
-    if not result.get("ok"):
-        raise typer.Exit(4)
+    from media2text.core.cli_exit import raise_for_result
+
+    raise_for_result(result)

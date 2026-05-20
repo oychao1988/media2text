@@ -25,6 +25,16 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
             "command": "pipeline run",
             "sync": sync_result,
             "auth_required": True,
+            "platform_changed": False,
+            "errors": errors,
+        }
+    if sync_result.get("platform_changed"):
+        return {
+            "ok": False,
+            "command": "pipeline run",
+            "sync": sync_result,
+            "auth_required": False,
+            "platform_changed": True,
             "errors": errors,
         }
     download_result = download_pending(cfg, creator_id=creator_id)
@@ -57,4 +67,5 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
         "transcribed": transcribed,
         "errors": errors,
         "auth_required": bool(sync_result.get("auth_required")),
+        "platform_changed": bool(sync_result.get("platform_changed")),
     }
