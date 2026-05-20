@@ -9,7 +9,7 @@ from urllib.parse import unquote
 import httpx
 
 from media2text.core.errors import AuthRequired, ParseFailed
-from media2text.core.platform.douyin.http_live import resolve_live_via_http
+from media2text.core.platform.douyin.http_live import fetch_profile_api, resolve_live_via_http
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 from media2text.core.platform.douyin.parse import (
     parse_aweme_detail_url,
@@ -19,7 +19,11 @@ from media2text.core.platform.douyin.parse import (
     parse_reflow_room,
     parse_user_profile,
 )
-from media2text.core.platform.douyin.playwright_client import fetch_json, fetch_profile_html
+from media2text.core.platform.douyin.playwright_client import (
+    fetch_json,
+    fetch_profile_api_via_page,
+    fetch_profile_html,
+)
 
 FIXTURE_ROOT = Path(__file__).parent / "fixtures"
 
@@ -83,9 +87,8 @@ class DouyinAdapterV1:
 
         try:
             if self._client:
-                response = self._client.get(uri, params=params)
-                if response.status_code < 400:
-                    return parse_user_profile(response.json())
+                payload = fetch_profile_api(self._client, sec_uid)
+                return parse_user_profile(payload, sec_uid=sec_uid)
         except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
             pass
 
@@ -93,18 +96,29 @@ class DouyinAdapterV1:
             raise AuthRequired("no session")
 
         try:
+            payload = fetch_profile_api_via_page(session, sec_uid)
+            return parse_user_profile(payload, sec_uid=sec_uid)
+        except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
+            pass
+
+        try:
+            payload = fetch_json(session, uri, params=params)
+            return parse_user_profile(payload, sec_uid=sec_uid)
+        except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
+            pass
+
+        try:
             html = fetch_profile_html(session, sec_uid)
             render = re.search(r'id="RENDER_DATA"[^>]*>([^<]+)', html)
             if render:
                 data = json.loads(unquote(render.group(1)))
-                profile = parse_profile_html_user(data)
+                profile = parse_profile_html_user(data, sec_uid=sec_uid)
                 if profile and profile.display_name:
                     return profile
         except (ParseFailed, AuthRequired, json.JSONDecodeError):
             pass
 
-        payload = fetch_json(session, uri, params=params)
-        return parse_user_profile(payload)
+        raise ParseFailed("unable to load user profile")
 
     def get_live_room(self, *, sec_uid: str) -> LiveRoomInfo:
         if self._fixture_root:
