@@ -6,16 +6,12 @@ from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.manifest import refresh_manifest
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
-from media2text.core.transcribe.whisper import WhisperBackend, whisper_backend_from_config, write_transcript_outputs
+from media2text.core.transcribe.errors import TranscribeConfigError
+from media2text.core.transcribe.factory import create_transcribe_backend
+from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="Transcribe media")
-
-
-def _backend(cfg: AppConfig) -> WhisperBackend:
-    if cfg.transcribe.engine != "whisper":
-        raise typer.BadParameter(f"Unsupported engine: {cfg.transcribe.engine}")
-    return whisper_backend_from_config(cfg)
 
 
 @app.command("run")
@@ -25,7 +21,18 @@ def run(
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     cfg = AppConfig.load()
-    backend = _backend(cfg)
+    try:
+        backend = create_transcribe_backend(cfg)
+    except TranscribeConfigError as exc:
+        payload = {
+            "ok": False,
+            "command": "transcribe run",
+            "transcribed": 0,
+            "errors": [{"error": str(exc)}],
+        }
+        emit(payload, as_json=json_out)
+        raise typer.Exit(1) from exc
+
     conn = open_db(cfg)
     awemes = AwemeRepo(conn)
     transcribed = 0
