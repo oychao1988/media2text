@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from media2text.core.config import AppConfig
-from media2text.core.errors import AuthRequired, PlatformChanged
+from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
@@ -58,6 +58,14 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
             "error": str(exc),
         }
     except PlatformChanged as exc:
+        return {
+            "ok": False,
+            "creator_id": creator_id,
+            "auth_required": False,
+            "platform_changed": True,
+            "error": str(exc),
+        }
+    except ParseFailed as exc:
         return {
             "ok": False,
             "creator_id": creator_id,

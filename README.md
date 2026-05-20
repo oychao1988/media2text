@@ -14,7 +14,7 @@
 | 创作者管理 | 通过主页链接解析 `sec_uid` 并登记；可选拉取昵称、头像等资料 |
 | 监控开关 | `creator monitor` 开启后，统一守护进程负责直播 + 作品流水线 |
 | 直播录制 | 轮询开播状态，ffmpeg 拉流录制，结束后 remux 为 `.mp4` |
-| 作品同步与下载 | SQLite 去重，增量同步 catalog 并下载视频 |
+| 作品同步与下载 | 打开博主主页、拦截带签名的 `aweme/post` 请求后写入 catalog，再下载视频（需有效登录态） |
 | 转写 | 可选 `faster-whisper`，输出 Markdown + JSON |
 | 流水线 | `sync → download → transcribe` 一键跑通 |
 | Agent 友好 | 子命令稳定、`--json` 结构化输出、按创作者生成 `agent-manifest.json` |
@@ -71,9 +71,9 @@ media2text creator add 'https://www.douyin.com/user/<profile>' --json
 # 4. 开启监控
 media2text creator monitor <creator_id> --json
 
-# 5. 统一守护进程（直播轮询 + 作品 sync/download/transcribe）
-media2text monitor watch --json
-# media2text monitor watch --daemon   # 长期运行，单实例锁
+# 5. 监控（直播轮询 + 作品 sync/download/transcribe）
+media2text monitor watch --json          # 只跑一轮后退出（适合手动/调试）
+media2text monitor watch --daemon        # 持续循环，单实例锁（见下方「守护进程」）
 
 # 6. 手动单步（任意已登记创作者）
 media2text creator sync <creator_id> --json
@@ -84,6 +84,32 @@ media2text pipeline run --creator <creator_id> --json
 未登录时，部分命令会使用 **fixtures** 跑通测试路径；真实拉流/同步需先完成 `auth login`。
 
 `download run` **不带** `--creator` 时，仅处理 `monitor_enabled=1` 的创作者待下载作品。
+
+### 守护进程（`monitor watch --daemon`）
+
+| 命令 | 行为 |
+|------|------|
+| `monitor watch --json` | **单次**：检查直播 + 对已监控博主跑一轮 VOD，然后退出 |
+| `monitor watch --daemon` | **持续**：按 `config.yaml` 中间隔循环（默认直播约 60s、作品约 300s） |
+
+`--daemon` 会占用终端直至 `Ctrl+C`；若要放到系统后台：
+
+```bash
+nohup media2text monitor watch --daemon >> data/monitor-watch.log 2>&1 &
+pgrep -fl "monitor watch"    # 确认在跑
+```
+
+同一时间只能有一个 daemon（锁文件 `data/.monitor-watch.lock`）。再次启动若报 `already_running`，说明已有实例在运行。
+
+### 作品同步说明
+
+抖音作品列表接口需要浏览器侧签名参数（`a_bogus`、`msToken` 等）。`creator sync` / 守护进程中的 VOD 会**无头打开博主主页**，拦截页面发起的 `aweme/v1/web/aweme/post/` 响应，而不是直连未签名 API。
+
+因此：
+
+- 需先 `auth login`，且 `doctor` 中 session 为 ok
+- 每位博主首次同步可能需 **30–60 秒**（加载页面 + 滚动拉全分页）
+- 若 JSON 出现 `platform_changed` 且 `aweme post status_code=5`，多为未签名请求或会话失效；重新登录后再试
 
 ## 配置
 
@@ -223,4 +249,4 @@ pyright
 
 ## 状态说明
 
-当前为 **0.1.0 MVP**：核心 CLI 与离线 fixtures 已就绪；在有效抖音会话下可进行统一监控与 VOD 流水线。平台 API 变更时可能需更新 adapter，请关注 `doctor` 与 JSON 中的 `auth_required` / `platform_changed` 字段。
+当前为 **0.1.0 MVP**：核心 CLI 与离线 fixtures 已就绪；在有效抖音会话下可进行统一监控与 VOD 流水线（作品 sync 经 Playwright 拦截签名请求）。请关注 `doctor` 与 JSON 中的 `auth_required`；`platform_changed` 表示解析失败或接口返回非 0 业务码（含页面结构变化与未签名/被拒的 API 响应）。
