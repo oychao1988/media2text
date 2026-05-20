@@ -22,6 +22,22 @@ live:
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
 
+# 监控事件提醒：提示音 + 飞书群机器人 webhook（二选一或同时开启）
+notify:
+  enabled: false
+  sound: true
+  # sound_path: /System/Library/Sounds/Glass.aiff
+  events:
+    live_started: true
+    new_aweme: true
+    recording_completed: true
+    transcribe_completed: true
+  feishu:
+    enabled: true
+    # 推荐用环境变量，勿提交真实 URL：export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/...'
+    webhook_url: ""
+    webhook_url_env: NOTIFY_FEISHU_WEBHOOK_URL
+
 transcribe:
   # whisper: local faster-whisper (pip install -e ".[transcribe]")
   # openai: OpenAI Audio API (pip install -e ".[transcribe-cloud]", set OPENAI_API_KEY)

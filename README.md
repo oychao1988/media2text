@@ -124,6 +124,7 @@ pgrep -fl "monitor watch"    # 确认在跑
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live` | ffmpeg 路径、临时流格式（`flv`）、`transcribe_on_complete` 直播 MP4 结束后自动转写 |
+| `notify` | 监控事件提醒：系统提示音 + 飞书群机器人 webhook（见下方） |
 | `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
 | `transcribe.engine` | `whisper` \| `openai` \| `deepgram` |
 | `transcribe.whisper.compute_type` | faster-whisper 量化（CPU 推荐 `int8`） |
@@ -140,6 +141,31 @@ pgrep -fl "monitor watch"    # 确认在跑
 | `compute_type: int8` | 配置默认已是 `int8`，避免 float32 隐式转换开销 |
 | `extract_audio: true` | 先抽出 mono 16 kHz WAV（`*.16k.wav`），减少 faster-whisper 内部解封装；已存在且比源文件新时会跳过重复抽取 |
 | `vad_filter: true` | 跳过静音段，长直播通常更快 |
+
+### 监控提醒（`notify`）
+
+在 `monitor watch --daemon` 运行期间，下列事件会触发**提示音**（macOS `afplay`）与**飞书文本消息**（需配置 webhook）：
+
+| 事件 | 触发时机 |
+|------|----------|
+| 开播 | 检测到直播并开始 ffmpeg 录制 |
+| 新作品 | VOD 同步发现 `new_count > 0` |
+| 录制完成 | 直播 remux 为 `.mp4` 成功 |
+| 转录完成 | 直播自动转写或 VOD 流水线转写成功 |
+
+```yaml
+notify:
+  enabled: true
+  sound: true
+  feishu:
+    webhook_url_env: NOTIFY_FEISHU_WEBHOOK_URL
+```
+
+```bash
+export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/open-apis/bot/v2/hook/xxxx'
+```
+
+可在 `notify.events` 下单独关闭某一类事件；`notify.feishu.enabled: false` 则只保留提示音。
 
 示例（`config.yaml`）：
 

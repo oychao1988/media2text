@@ -6,6 +6,8 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired
+from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.labels import creator_label
 from media2text.core.pipeline.runner import run_pipeline
 from media2text.core.transcribe.factory import transcribe_engine_available
 from media2text.core.platform.douyin.live import LiveWatcher
@@ -23,6 +25,7 @@ class MonitorWatcher:
         self._conn = open_db(cfg)
         self._creators = CreatorRepo(self._conn)
         self._live = LiveWatcher(cfg)
+        self._notify = NotifyService(cfg)
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
         live_result = self._live.run_once(creator_id=creator_id)
@@ -91,6 +94,7 @@ class MonitorWatcher:
             if outcome.get("errors"):
                 for item in outcome["errors"]:
                     errors.append({"creator_id": creator.id, **item})
+            self._emit_vod_notifications(creator, outcome)
             entry = {
                 "creator_id": creator.id,
                 "ok": outcome.get("ok", False),
@@ -114,3 +118,25 @@ class MonitorWatcher:
         if transcribe_skipped and skip_reason:
             payload["transcribe_skip_reason"] = skip_reason
         return payload
+
+    def _emit_vod_notifications(self, creator, outcome: dict) -> None:
+        label = creator_label(creator)
+        sync = outcome.get("sync") or {}
+        new_count = int(sync.get("new_count") or 0)
+        if new_count > 0:
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.NEW_AWEME,
+                    title=label,
+                    body=f"同步到 {new_count} 个新作品",
+                )
+            )
+        transcribed = int(outcome.get("transcribed") or 0)
+        if transcribed > 0:
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.TRANSCRIBE_COMPLETED,
+                    title=label,
+                    body=f"作品转录完成 {transcribed} 条",
+                )
+            )

@@ -65,6 +65,28 @@ class TranscribeConfig(BaseModel):
     deepgram: DeepgramConfig = Field(default_factory=DeepgramConfig)
 
 
+class NotifyEventsConfig(BaseModel):
+    live_started: bool = True
+    new_aweme: bool = True
+    recording_completed: bool = True
+    transcribe_completed: bool = True
+
+
+class NotifyFeishuConfig(BaseModel):
+    enabled: bool = True
+    webhook_url: str = ""
+    webhook_url_env: str = "NOTIFY_FEISHU_WEBHOOK_URL"
+    timeout_sec: float = 10.0
+
+
+class NotifyConfig(BaseModel):
+    enabled: bool = False
+    sound: bool = True
+    sound_path: str = ""
+    events: NotifyEventsConfig = Field(default_factory=NotifyEventsConfig)
+    feishu: NotifyFeishuConfig = Field(default_factory=NotifyFeishuConfig)
+
+
 def _project_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
@@ -88,6 +110,7 @@ class AppConfig(BaseSettings):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
+    notify: NotifyConfig = Field(default_factory=NotifyConfig)
 
     @classmethod
     def load(cls) -> AppConfig:

@@ -11,6 +11,8 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.manifest import refresh_manifest
+from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.labels import creator_label
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
@@ -35,6 +37,7 @@ class LiveWatcher:
         self._sessions = LiveSessionRepo(self._conn)
         self._adapter = self._build_adapter()
         self._processes: dict[str, Popen] = {}
+        self._notify = NotifyService(cfg)
 
     def _build_adapter(self) -> DouyinAdapterV1:
         session = session_path(self._ws)
@@ -144,6 +147,16 @@ class LiveWatcher:
             return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
         log.info("live_recording_started", session_id=session_id, temp_path=str(temp_path))
+        creator = self._creators.get(creator_id)
+        if creator:
+            label = creator_label(creator)
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.LIVE_STARTED,
+                    title=label,
+                    body=f"检测到开播，已开始录制\nroom_id: {room_id or '—'}\n文件: {temp_path.name}",
+                )
+            )
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
     def _poll_active_recordings(self, *, skip_session_ids: set[str] | None = None) -> list[dict]:
@@ -249,7 +262,15 @@ class LiveWatcher:
             return {"session_id": session_id, "path": str(mp4)}
 
         refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
-        transcribe_meta = self._maybe_transcribe_completed(mp4)
+        label = creator_label(creator)
+        self._notify.emit(
+            NotifyEvent(
+                kind=EventKind.RECORDING_COMPLETED,
+                title=label,
+                body=f"直播录制已完成\n{mp4.name}\n{mp4.parent}",
+            )
+        )
+        transcribe_meta = self._maybe_transcribe_completed(mp4, creator_label=label)
         if transcribe_meta.get("transcribed"):
             refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
 
@@ -260,7 +281,7 @@ class LiveWatcher:
             **transcribe_meta,
         }
 
-    def _maybe_transcribe_completed(self, mp4: Path) -> dict:
+    def _maybe_transcribe_completed(self, mp4: Path, *, creator_label: str = "") -> dict:
         if not self._cfg.live.transcribe_on_complete:
             return {}
 
@@ -295,6 +316,14 @@ class LiveWatcher:
             result = backend.transcribe(mp4, language=self._cfg.transcribe.language)
             write_transcript_outputs(mp4, result)
             log.info("live_transcribe_completed", path=str(mp4), engine=result.engine)
+            title = creator_label or mp4.parent.parent.name
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.TRANSCRIBE_COMPLETED,
+                    title=title,
+                    body=f"直播转录完成（{result.engine}）\n{mp4.name}",
+                )
+            )
             return {"transcribed": True, "transcribe_engine": result.engine}
         except Exception as exc:  # noqa: BLE001
             log.exception("live_transcribe_failed", path=str(mp4), error=str(exc))
