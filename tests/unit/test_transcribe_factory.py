@@ -4,7 +4,8 @@ from unittest.mock import patch
 
 import pytest
 
-from media2text.core.config import AppConfig, OpenAIConfig, TranscribeConfig
+from media2text.core.config import AppConfig, DeepgramConfig, OpenAIConfig, TranscribeConfig
+from media2text.core.transcribe.cloud_deepgram import DeepgramBackend
 from media2text.core.transcribe.errors import TranscribeConfigError
 from media2text.core.transcribe.factory import create_transcribe_backend, transcribe_engine_available
 from media2text.core.transcribe.whisper import WhisperBackend
@@ -38,7 +39,30 @@ def test_create_transcribe_backend_openai(monkeypatch) -> None:
     assert backend.__class__.__name__ == "OpenAIBackend"
 
 
-def test_create_transcribe_backend_unsupported() -> None:
+def test_transcribe_engine_available_deepgram_missing_key(monkeypatch) -> None:
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+    cfg = AppConfig(
+        transcribe=TranscribeConfig(
+            engine="deepgram",
+            deepgram=DeepgramConfig(api_key_env="DEEPGRAM_API_KEY"),
+        )
+    )
+    with patch.dict("sys.modules", {"deepgram": object()}):
+        available, reason = transcribe_engine_available(cfg)
+    assert available is False
+    assert reason is not None
+    assert "DEEPGRAM_API_KEY" in reason
+
+
+def test_create_transcribe_backend_deepgram(monkeypatch) -> None:
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "dg-test")
     cfg = AppConfig(transcribe=TranscribeConfig(engine="deepgram"))
+    with patch.dict("sys.modules", {"deepgram": object()}):
+        backend = create_transcribe_backend(cfg)
+    assert isinstance(backend, DeepgramBackend)
+
+
+def test_create_transcribe_backend_unsupported() -> None:
+    cfg = AppConfig(transcribe=TranscribeConfig(engine="unknown-engine"))
     with pytest.raises(TranscribeConfigError, match="Unsupported"):
         create_transcribe_backend(cfg)

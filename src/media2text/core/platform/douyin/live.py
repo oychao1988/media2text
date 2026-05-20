@@ -11,7 +11,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.manifest import refresh_manifest
-from media2text.core.transcribe.whisper import WhisperBackend, write_transcript_outputs
+from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
@@ -264,34 +264,38 @@ class LiveWatcher:
         if not self._cfg.live.transcribe_on_complete:
             return {}
 
-        if self._cfg.transcribe.engine != "whisper":
-            log.info(
-                "live_transcribe_skipped",
-                path=str(mp4),
-                reason="engine_not_whisper",
-                engine=self._cfg.transcribe.engine,
-            )
-            return {"transcribe_skipped": True}
+        from media2text.core.transcribe.errors import TranscribeConfigError
+        from media2text.core.transcribe.factory import (
+            create_transcribe_backend,
+            transcribe_engine_available,
+        )
 
-        try:
-            from faster_whisper import WhisperModel  # noqa: F401
-        except ImportError:
+        available, reason = transcribe_engine_available(self._cfg)
+        if not available:
             log.warning(
                 "live_transcribe_skipped",
                 path=str(mp4),
-                reason="transcribe_extra_missing",
+                reason=reason or "transcribe_unavailable",
+                engine=self._cfg.transcribe.engine,
             )
-            return {"transcribe_skipped": True}
+            return {"transcribe_skipped": True, "transcribe_skip_reason": reason}
 
         try:
-            backend = WhisperBackend(
-                model=self._cfg.transcribe.whisper.model,
-                device=self._cfg.transcribe.whisper.device,
+            backend = create_transcribe_backend(self._cfg)
+        except TranscribeConfigError as exc:
+            log.warning(
+                "live_transcribe_skipped",
+                path=str(mp4),
+                reason=str(exc),
+                engine=self._cfg.transcribe.engine,
             )
+            return {"transcribe_skipped": True, "transcribe_skip_reason": str(exc)}
+
+        try:
             result = backend.transcribe(mp4, language=self._cfg.transcribe.language)
             write_transcript_outputs(mp4, result)
-            log.info("live_transcribe_completed", path=str(mp4))
-            return {"transcribed": True}
+            log.info("live_transcribe_completed", path=str(mp4), engine=result.engine)
+            return {"transcribed": True, "transcribe_engine": result.engine}
         except Exception as exc:  # noqa: BLE001
             log.exception("live_transcribe_failed", path=str(mp4), error=str(exc))
             return {"transcribe_error": str(exc)}

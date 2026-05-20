@@ -46,11 +46,40 @@ class OpenAIConfig(BaseModel):
     base_url: str | None = None
 
 
+class DeepgramConfig(BaseModel):
+    api_key_env: str = "DEEPGRAM_API_KEY"
+    model: str = "nova-3"
+    extract_audio: bool = True
+    smart_format: bool = True
+    punctuate: bool = True
+    utterances: bool = True
+    diarize: bool = False
+    timeout_sec: float = 600.0
+
+
 class TranscribeConfig(BaseModel):
     engine: str = "whisper"
     language: str = "zh"
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
     openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
+    deepgram: DeepgramConfig = Field(default_factory=DeepgramConfig)
+
+
+def _project_root() -> Path:
+    return Path(__file__).resolve().parents[3]
+
+
+def load_dotenv_file() -> Path | None:
+    """Load `.env` from project root into os.environ (does not override existing vars)."""
+    env_path = _project_root() / ".env"
+    if not env_path.is_file():
+        return None
+    try:
+        from dotenv import load_dotenv
+    except ImportError:
+        return None
+    load_dotenv(env_path, override=False)
+    return env_path
 
 
 class AppConfig(BaseSettings):
@@ -62,9 +91,11 @@ class AppConfig(BaseSettings):
 
     @classmethod
     def load(cls) -> AppConfig:
+        load_dotenv_file()
         path = os.environ.get("MEDIA2TEXT_CONFIG", "config.yaml")
         if Path(path).is_file():
             data = yaml.safe_load(Path(path).read_text()) or {}
+            _resolve_transcribe_engine_env(data)
             return cls.model_validate(data)
         return cls()
 
@@ -73,3 +104,15 @@ class AppConfig(BaseSettings):
         for sub in ("sessions", "creators"):
             (root / sub).mkdir(parents=True, exist_ok=True)
         return root
+
+
+def _resolve_transcribe_engine_env(data: dict) -> None:
+    """If transcribe.engine names an env var (e.g. TRANSCRIBE_ENGINE), use its value."""
+    tc = data.get("transcribe")
+    if not isinstance(tc, dict):
+        return
+    eng = tc.get("engine")
+    if isinstance(eng, str):
+        env_val = os.environ.get(eng, "").strip()
+        if env_val:
+            tc["engine"] = env_val

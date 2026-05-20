@@ -13,6 +13,7 @@ dist/
 
 # Local config and auth (use config.example.yaml)
 config.yaml
+.env
 *.auth-state.json
 
 # Editor / agent local overrides

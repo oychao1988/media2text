@@ -42,12 +42,17 @@ playwright install chromium
 
 # 可选：本地语音转写
 pip install -e ".[transcribe]"
+
+# 可选：Deepgram 云端转写（官方 deepgram-sdk，REST 录完再转）
+pip install -e ".[transcribe-deepgram]"
+cp .env.example .env   # 填入 DEEPGRAM_API_KEY
 ```
 
 复制配置并按需修改：
 
 ```bash
 cp config.example.yaml config.yaml
+cp .env.example .env
 ```
 
 ## 快速开始
@@ -93,8 +98,8 @@ media2text pipeline run --creator <creator_id> --json
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live` | ffmpeg 路径、临时流格式（`flv`）、`transcribe_on_complete` 直播 MP4 结束后自动转写 |
-| `transcribe` | 引擎 `whisper`（本地）或 `openai`（云端，需 `OPENAI_API_KEY` 与 `[transcribe-cloud]`） |
-| `transcribe.engine` | `whisper` \| `openai` |
+| `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
+| `transcribe.engine` | `whisper` \| `openai` \| `deepgram` |
 | `transcribe.whisper.compute_type` | faster-whisper 量化（CPU 推荐 `int8`） |
 | `transcribe.whisper.vad_filter` | 转写前 VAD 过滤静音（直播长视频推荐 `true`） |
 | `transcribe.whisper.extract_audio` | 转写前用 ffmpeg 抽出 `{媒体}.16k.wav` sidecar |
@@ -122,6 +127,31 @@ transcribe:
 ```
 
 对比同一段素材时，可用 `time media2text transcribe run <file.mp4> --json` 观察 wall time。sidecar 文件落在媒体同目录，工作区 `data/` 已在 `.gitignore` 中。
+
+### Deepgram 云端（`transcribe-deepgram`）
+
+与本地 Whisper 相同，走 **录完再转写**（REST `listen.v1.media.transcribe_file`），输出格式仍为 `{媒体}.transcript.json` / `.transcript.md`。长视频会先抽 mono 16 kHz WAV（`transcribe.deepgram.extract_audio: true`）再上传，避免直传 MP4 超时。
+
+```yaml
+transcribe:
+  engine: deepgram
+  language: zh
+  deepgram:
+    api_key_env: DEEPGRAM_API_KEY
+    model: nova-3
+    extract_audio: true
+    timeout_sec: 600
+```
+
+在 `.env` 中设置 `DEEPGRAM_API_KEY`（启动时自动加载，已 gitignore）：
+
+```bash
+media2text transcribe run path/to/video.mp4 --json
+```
+
+实时流式（WebSocket / Flux）未接入 CLI，仅用于实验脚本 `scripts/test_deepgram_sdk*.py`。
+
+Deepgram 后处理（`smart_format: false` 时）：去掉中文词间空格；`text` 按 utterance 换行（与 `segments` 一一对应），段内遇 `。！？；…` 再拆行。JSON 里 `text` 为含 `\n` 的多行字符串。
 
 ## 工作区目录
 

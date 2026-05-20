@@ -14,7 +14,7 @@ monitor:
 
 live:
   # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
-  # When true and transcribe.engine is whisper (pip install -e ".[transcribe]"), also write
+  # When true and transcribe.engine is configured (whisper / openai / deepgram), also write
   # {basename}.transcript.json / .transcript.md beside the mp4 and refresh manifest again.
   # Skipped gracefully (logged, transcribe_skipped in run_once finalized[]) if extra missing.
   transcribe_on_complete: false
@@ -25,6 +25,7 @@ live:
 transcribe:
   # whisper: local faster-whisper (pip install -e ".[transcribe]")
   # openai: OpenAI Audio API (pip install -e ".[transcribe-cloud]", set OPENAI_API_KEY)
+  # deepgram: Deepgram REST (pip install -e ".[transcribe-deepgram]", export DEEPGRAM_API_KEY)
   engine: whisper
   language: zh
   whisper:
@@ -38,3 +39,12 @@ transcribe:
     api_key_env: OPENAI_API_KEY
     model: whisper-1
     # base_url: https://api.openai.com/v1
+  deepgram:
+    api_key_env: DEEPGRAM_API_KEY
+    model: nova-3
+    extract_audio: true
+    smart_format: true
+    punctuate: true
+    utterances: true
+    diarize: false
+    timeout_sec: 600
