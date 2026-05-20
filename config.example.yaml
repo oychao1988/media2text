@@ -13,6 +13,10 @@ monitor:
   profile_stale_days: 7
 
 live:
+  # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
+  # When true and transcribe.engine is whisper (pip install -e ".[transcribe]"), also write
+  # {basename}.transcript.json / .transcript.md beside the mp4 and refresh manifest again.
+  # Skipped gracefully (logged, transcribe_skipped in run_once finalized[]) if extra missing.
   transcribe_on_complete: false
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30

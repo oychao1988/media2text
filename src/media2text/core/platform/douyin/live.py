@@ -10,6 +10,8 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_process
+from media2text.core.manifest import refresh_manifest
+from media2text.core.transcribe.whisper import WhisperBackend, write_transcript_outputs
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
@@ -77,8 +79,11 @@ class LiveWatcher:
             meta = self._start_recording(creator.id, creator.sec_uid, room_id, stream_url)
             started.append(meta)
             started_session_ids.add(meta["session_id"])
-        self._poll_active_recordings(skip_session_ids=started_session_ids)
-        return {"started": started, "active": len(self._sessions.list_active())}
+        finalized = self._poll_active_recordings(skip_session_ids=started_session_ids)
+        result: dict = {"started": started, "active": len(self._sessions.list_active())}
+        if finalized:
+            result["finalized"] = finalized
+        return result
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         poll = self._cfg.monitor.live_poll_interval_sec
@@ -141,8 +146,9 @@ class LiveWatcher:
         log.info("live_recording_started", session_id=session_id, temp_path=str(temp_path))
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
-    def _poll_active_recordings(self, *, skip_session_ids: set[str] | None = None) -> None:
+    def _poll_active_recordings(self, *, skip_session_ids: set[str] | None = None) -> list[dict]:
         skip = skip_session_ids or set()
+        finalized: list[dict] = []
         for row in self._sessions.list_active():
             if row.id in skip:
                 continue
@@ -154,7 +160,9 @@ class LiveWatcher:
             pid = row.ffmpeg_pid
             alive = self._process_alive(pid)
             if not alive:
-                self._finalize_recording(row.id, row.temp_path, pid)
+                meta = self._finalize_recording(row.id, row.temp_path, pid)
+                if meta:
+                    finalized.append(meta)
                 continue
 
             try:
@@ -169,7 +177,10 @@ class LiveWatcher:
             if self._recording_age_sec(row.started_at) < MIN_RECORDING_SEC_BEFORE_OFFLINE_END:
                 continue
 
-            self._finalize_recording(row.id, row.temp_path, pid)
+            meta = self._finalize_recording(row.id, row.temp_path, pid)
+            if meta:
+                finalized.append(meta)
+        return finalized
 
     def _recording_age_sec(self, started_at: str) -> float:
         try:
@@ -185,7 +196,7 @@ class LiveWatcher:
         except OSError:
             return False
 
-    def _finalize_recording(self, session_id: str, temp_path: str | None, pid: int) -> None:
+    def _finalize_recording(self, session_id: str, temp_path: str | None, pid: int) -> dict | None:
         proc = self._processes.pop(session_id, None)
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
@@ -194,7 +205,7 @@ class LiveWatcher:
 
         if not temp_path:
             self._sessions.update_status(session_id, status="failed", error="missing temp_path", ended=True)
-            return
+            return None
 
         temp = Path(temp_path)
         if not temp.is_file() or temp.stat().st_size == 0:
@@ -205,7 +216,7 @@ class LiveWatcher:
                 ended=True,
             )
             log.warning("live_recording_empty", session_id=session_id, temp_path=str(temp))
-            return
+            return None
 
         mp4 = temp.with_suffix(".mp4")
         self._sessions.update_status(session_id, status="remuxing")
@@ -228,3 +239,59 @@ class LiveWatcher:
                 ended=True,
             )
             log.exception("live_recording_failed", session_id=session_id)
+            return None
+
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        creator = self._creators.get(session.creator_id)
+        if not creator:
+            return {"session_id": session_id, "path": str(mp4)}
+
+        refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
+        transcribe_meta = self._maybe_transcribe_completed(mp4)
+        if transcribe_meta.get("transcribed"):
+            refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
+
+        return {
+            "session_id": session_id,
+            "path": str(mp4),
+            "creator_id": creator.id,
+            **transcribe_meta,
+        }
+
+    def _maybe_transcribe_completed(self, mp4: Path) -> dict:
+        if not self._cfg.live.transcribe_on_complete:
+            return {}
+
+        if self._cfg.transcribe.engine != "whisper":
+            log.info(
+                "live_transcribe_skipped",
+                path=str(mp4),
+                reason="engine_not_whisper",
+                engine=self._cfg.transcribe.engine,
+            )
+            return {"transcribe_skipped": True}
+
+        try:
+            from faster_whisper import WhisperModel  # noqa: F401
+        except ImportError:
+            log.warning(
+                "live_transcribe_skipped",
+                path=str(mp4),
+                reason="transcribe_extra_missing",
+            )
+            return {"transcribe_skipped": True}
+
+        try:
+            backend = WhisperBackend(
+                model=self._cfg.transcribe.whisper.model,
+                device=self._cfg.transcribe.whisper.device,
+            )
+            result = backend.transcribe(mp4, language=self._cfg.transcribe.language)
+            write_transcript_outputs(mp4, result)
+            log.info("live_transcribe_completed", path=str(mp4))
+            return {"transcribed": True}
+        except Exception as exc:  # noqa: BLE001
+            log.exception("live_transcribe_failed", path=str(mp4), error=str(exc))
+            return {"transcribe_error": str(exc)}
