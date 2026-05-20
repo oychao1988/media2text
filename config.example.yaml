@@ -23,8 +23,14 @@ live:
   temp_format: flv
 
 transcribe:
+  # whisper: local faster-whisper (pip install -e ".[transcribe]")
+  # openai: OpenAI Audio API (pip install -e ".[transcribe-cloud]", set OPENAI_API_KEY)
   engine: whisper
   language: zh
   whisper:
     model: medium
     device: auto
+  openai:
+    api_key_env: OPENAI_API_KEY
+    model: whisper-1
+    # base_url: https://api.openai.com/v1
