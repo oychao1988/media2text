@@ -18,10 +18,35 @@ def _dig(data: Any, *keys: str) -> Any:
     return cur
 
 
-def parse_user_profile(payload: dict) -> UserProfile:
+def _user_sec_uid(user: dict) -> str | None:
+    value = user.get("sec_uid") or user.get("secUid") or user.get("sec_user_id")
+    return str(value) if value else None
+
+
+def _find_user_by_sec_uid(data: Any, sec_uid: str, *, depth: int = 0) -> dict | None:
+    if depth > 14:
+        return None
+    if isinstance(data, dict):
+        if _user_sec_uid(data) == sec_uid and (data.get("nickname") or data.get("unique_id")):
+            return data
+        for value in data.values():
+            found = _find_user_by_sec_uid(value, sec_uid, depth=depth + 1)
+            if found:
+                return found
+    elif isinstance(data, list):
+        for item in data[:100]:
+            found = _find_user_by_sec_uid(item, sec_uid, depth=depth + 1)
+            if found:
+                return found
+    return None
+
+
+def parse_user_profile(payload: dict, *, sec_uid: str | None = None) -> UserProfile:
     user = payload.get("user") or _dig(payload, "data", "user")
     if not user:
         raise ParseFailed("user missing in profile response")
+    if sec_uid and _user_sec_uid(user) not in (None, sec_uid):
+        raise ParseFailed("profile user sec_uid mismatch")
 
     avatar_url = None
     avatar_thumb = user.get("avatar_thumb") or user.get("avatar_larger") or {}
@@ -46,12 +71,13 @@ def parse_user_profile(payload: dict) -> UserProfile:
     )
 
 
-def parse_profile_html_user(payload: dict) -> UserProfile | None:
-    user = _dig(payload, "app", "user", "info") or _dig(payload, "user", "user")
-    if not isinstance(user, dict):
+def parse_profile_html_user(payload: dict, *, sec_uid: str) -> UserProfile | None:
+    """Parse target creator from profile page RENDER_DATA (not logged-in session user)."""
+    user = _find_user_by_sec_uid(payload, sec_uid)
+    if not user:
         return None
     try:
-        return parse_user_profile({"user": user})
+        return parse_user_profile({"user": user}, sec_uid=sec_uid)
     except ParseFailed:
         return None
 

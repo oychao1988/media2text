@@ -1,0 +1,23 @@
+{
+  "app": {
+    "user": {
+      "info": {
+        "nickname": "TonyC",
+        "unique_id": "logged_in_user",
+        "secUid": "MS4wLjABAAAALoggedInSessionUser000000000000"
+      }
+    }
+  },
+  "user": {
+    "user": {
+      "nickname": "目标博主",
+      "unique_id": "target_creator",
+      "signature": "fixture render data",
+      "secUid": "MS4wLjABAAAA3OaCljcu8R1Q3ilE7Q5QEqIut554fV4jhL9imnsfof0",
+      "follower_count": 999,
+      "avatar_thumb": {
+        "url_list": ["https://example.com/target-avatar.jpg"]
+      }
+    }
+  }
+}
