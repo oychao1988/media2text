@@ -37,10 +37,17 @@ class WhisperConfig(BaseModel):
     device: str = "auto"
 
 
+class OpenAIConfig(BaseModel):
+    api_key_env: str = "OPENAI_API_KEY"
+    model: str = "whisper-1"
+    base_url: str | None = None
+
+
 class TranscribeConfig(BaseModel):
     engine: str = "whisper"
     language: str = "zh"
     whisper: WhisperConfig = Field(default_factory=WhisperConfig)
+    openai: OpenAIConfig = Field(default_factory=OpenAIConfig)
 
 
 class AppConfig(BaseSettings):

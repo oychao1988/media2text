@@ -7,6 +7,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired
 from media2text.core.pipeline.runner import run_pipeline
+from media2text.core.transcribe.factory import transcribe_engine_available
 from media2text.core.platform.douyin.live import LiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo
@@ -67,7 +68,8 @@ class MonitorWatcher:
         results: list[dict] = []
         errors: list[dict] = []
         auth_required = False
-        transcribe_skipped = self._cfg.transcribe.engine != "whisper"
+        available, skip_reason = transcribe_engine_available(self._cfg)
+        transcribe_skipped = not available
 
         for creator in targets:
             try:
@@ -98,12 +100,17 @@ class MonitorWatcher:
             }
             if transcribe_skipped:
                 entry["transcribe_skipped"] = True
+                if skip_reason:
+                    entry["transcribe_skip_reason"] = skip_reason
             results.append(entry)
 
-        return {
+        payload: dict = {
             "creators": len(targets),
             "results": results,
             "errors": errors,
             "auth_required": auth_required,
             "transcribe_skipped": transcribe_skipped,
         }
+        if transcribe_skipped and skip_reason:
+            payload["transcribe_skip_reason"] = skip_reason
+        return payload
