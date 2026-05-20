@@ -13,12 +13,18 @@ monitor:
   profile_stale_days: 7
 
 live:
+  # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
+  # When true and transcribe.engine is whisper (pip install -e ".[transcribe]"), also write
+  # {basename}.transcript.json / .transcript.md beside the mp4 and refresh manifest again.
+  # Skipped gracefully (logged, transcribe_skipped in run_once finalized[]) if extra missing.
   transcribe_on_complete: false
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
 
 transcribe:
+  # whisper: local faster-whisper (pip install -e ".[transcribe]")
+  # openai: OpenAI Audio API (pip install -e ".[transcribe-cloud]", set OPENAI_API_KEY)
   engine: whisper
   language: zh
   whisper:
@@ -28,3 +34,7 @@ transcribe:
     compute_type: int8
     vad_filter: true
     extract_audio: true
+  openai:
+    api_key_env: OPENAI_API_KEY
+    model: whisper-1
+    # base_url: https://api.openai.com/v1
