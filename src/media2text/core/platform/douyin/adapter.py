@@ -20,6 +20,9 @@ from media2text.core.platform.douyin.parse import (
     parse_user_profile,
 )
 from media2text.core.platform.douyin.playwright_client import (
+    _normalize_aweme_max_cursor,
+    fetch_aweme_post_snapshots_until_cursor,
+    fetch_aweme_post_snapshots_via_page,
     fetch_json,
     fetch_profile_api_via_page,
     fetch_profile_html,
@@ -39,6 +42,8 @@ class DouyinAdapterV1:
         self._client = client
         self._session_path = session_path
         self._fixture_root = fixture_root or (FIXTURE_ROOT if not client else None)
+        self._aweme_post_snapshots: dict[str, dict] | None = None
+        self._aweme_post_snapshots_uid: str | None = None
 
     def _load_fixture(self, name: str) -> dict:
         root = self._fixture_root or FIXTURE_ROOT
@@ -215,25 +220,20 @@ class DouyinAdapterV1:
         if not self._client and not self._session_path:
             raise AuthRequired("no session")
 
-        params = {
-            "sec_user_id": sec_uid,
-            "count": str(count),
-            "max_cursor": max_cursor,
-            "locate_query": "false",
-            "publish_video_strategy_type": "2",
-        }
-        uri = "https://www.douyin.com/aweme/v1/web/aweme/post/"
-
-        try:
-            if self._client:
-                response = self._client.get(uri, params=params)
-                if response.status_code < 400:
-                    return parse_aweme_post_list(response.json())
-        except (ParseFailed, AuthRequired, httpx.HTTPError):
-            pass
-
         session = self._require_session()
-        payload = fetch_json(session, uri, params=params)
+        if self._aweme_post_snapshots_uid != sec_uid:
+            self._aweme_post_snapshots = fetch_aweme_post_snapshots_via_page(session, sec_uid)
+            self._aweme_post_snapshots_uid = sec_uid
+        snapshots = self._aweme_post_snapshots or {}
+        want = _normalize_aweme_max_cursor(max_cursor)
+        payload = snapshots.get(want)
+        if not payload:
+            extra = fetch_aweme_post_snapshots_until_cursor(session, sec_uid, want)
+            snapshots.update(extra)
+            self._aweme_post_snapshots = snapshots
+            payload = snapshots.get(want)
+        if not payload:
+            raise ParseFailed(f"aweme post page for max_cursor={want} not captured")
         return parse_aweme_post_list(payload)
 
     def resolve_download_url(self, *, aweme_id: str) -> str:
