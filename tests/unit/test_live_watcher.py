@@ -183,11 +183,15 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
         patch("media2text.core.platform.douyin.live.stop_process"),
         patch("media2text.core.platform.douyin.live.remux_to_mp4") as mock_remux,
         patch("media2text.core.platform.douyin.live.refresh_manifest") as mock_refresh,
-        patch("media2text.core.platform.douyin.live.WhisperBackend", return_value=mock_backend),
+        patch(
+            "media2text.core.transcribe.factory.create_transcribe_backend",
+            return_value=mock_backend,
+        ),
         patch(
             "media2text.core.platform.douyin.live.write_transcript_outputs",
             return_value=(flv.with_suffix(".transcript.json"), flv.with_suffix(".transcript.md")),
         ),
+        patch.object(watcher._notify, "emit"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):

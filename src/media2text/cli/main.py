@@ -5,6 +5,7 @@ from media2text.cli import auth as auth_cli
 from media2text.cli import creator as creator_cli
 from media2text.cli import download as download_cli
 from media2text.cli import monitor as monitor_cli
+from media2text.cli import notify as notify_cli
 from media2text.cli import pipeline as pipeline_cli
 from media2text.cli import transcribe as transcribe_cli
 from media2text.cli.doctor import doctor
@@ -17,6 +18,7 @@ app.add_typer(download_cli.app, name="download")
 app.add_typer(monitor_cli.app, name="monitor")
 app.add_typer(transcribe_cli.app, name="transcribe")
 app.add_typer(pipeline_cli.app, name="pipeline")
+app.add_typer(notify_cli.app, name="notify")
 app.command("doctor")(doctor)
 
 
