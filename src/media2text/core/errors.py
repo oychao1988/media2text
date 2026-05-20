@@ -20,3 +20,7 @@ class PlatformChanged(Media2TextError):
 
 class RecordingError(Media2TextError):
     code = "recording_error"
+
+
+class TranscribeError(Media2TextError):
+    code = "transcribe_error"
