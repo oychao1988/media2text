@@ -19,6 +19,14 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
 
     errors: list[dict] = []
     sync_result = sync_creator(cfg, creator_id)
+    if sync_result.get("auth_required"):
+        return {
+            "ok": False,
+            "command": "pipeline run",
+            "sync": sync_result,
+            "auth_required": True,
+            "errors": errors,
+        }
     download_result = download_pending(cfg, creator_id=creator_id)
     if download_result.get("errors"):
         errors.extend(download_result["errors"])
@@ -51,5 +59,5 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
         "download": download_result,
         "transcribed": transcribed,
         "errors": errors,
-        "auth_required": False,
+        "auth_required": bool(sync_result.get("auth_required")),
     }

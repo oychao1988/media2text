@@ -12,6 +12,12 @@ CREATE TABLE IF NOT EXISTS creators (
   display_name TEXT,
   profile_url TEXT,
   watch_live INTEGER NOT NULL DEFAULT 0,
+  monitor_enabled INTEGER NOT NULL DEFAULT 0,
+  unique_id TEXT,
+  avatar_url TEXT,
+  signature TEXT,
+  follower_count INTEGER,
+  profile_synced_at TEXT,
   created_at TEXT NOT NULL
 );
 
@@ -44,10 +50,40 @@ CREATE TABLE IF NOT EXISTS live_sessions (
 );
 """
 
+_CREATOR_COLUMNS = (
+    ("monitor_enabled", "INTEGER NOT NULL DEFAULT 0"),
+    ("unique_id", "TEXT"),
+    ("avatar_url", "TEXT"),
+    ("signature", "TEXT"),
+    ("follower_count", "INTEGER"),
+    ("profile_synced_at", "TEXT"),
+)
+
+
+def _migrate_creators(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
+    added_monitor_enabled = False
+    for name, col_type in _CREATOR_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE creators ADD COLUMN {name} {col_type}")
+            if name == "monitor_enabled":
+                added_monitor_enabled = True
+    # One-time backfill when the column is first added — not on every connect.
+    if added_monitor_enabled:
+        conn.execute(
+            """
+            UPDATE creators
+            SET monitor_enabled = 1
+            WHERE watch_live = 1 AND (monitor_enabled IS NULL OR monitor_enabled = 0)
+            """
+        )
+    conn.commit()
+
 
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
+    _migrate_creators(conn)
     return conn

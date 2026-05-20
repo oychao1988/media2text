@@ -1,0 +1,11 @@
+{
+  "user": {
+    "nickname": "测试博主",
+    "unique_id": "test_creator",
+    "signature": "fixture profile",
+    "follower_count": 12345,
+    "avatar_thumb": {
+      "url_list": ["https://example.com/avatar.jpg"]
+    }
+  }
+}

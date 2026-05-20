@@ -4,6 +4,7 @@ import os
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from subprocess import Popen
 
 import structlog
 
@@ -31,7 +32,7 @@ class LiveWatcher:
         self._creators = CreatorRepo(self._conn)
         self._sessions = LiveSessionRepo(self._conn)
         self._adapter = self._build_adapter()
-        self._processes: dict[str, object] = {}
+        self._processes: dict[str, Popen] = {}
 
     def _build_adapter(self) -> DouyinAdapterV1:
         session = session_path(self._ws)
@@ -45,7 +46,7 @@ class LiveWatcher:
         if stale:
             log.warning("live_stale_sessions_cleared", count=stale)
 
-        targets = self._creators.list_live_watched()
+        targets = self._creators.list_monitored()
         if creator_id:
             row = self._creators.get(creator_id)
             targets = [row] if row else []
@@ -80,16 +81,17 @@ class LiveWatcher:
         return {"started": started, "active": len(self._sessions.list_active())}
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
-        lock = self._ws / ".live-watch.lock"
+        poll = self._cfg.monitor.live_poll_interval_sec
+        lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):
                 stale = self._sessions.mark_stale_recordings_failed()
                 if stale:
                     log.warning("live_stale_sessions_cleared", count=stale)
-                log.info("live_watch_daemon_started", poll=self._cfg.platforms.douyin.poll_interval_sec)
+                log.info("live_watch_daemon_started", poll=poll)
                 while True:
                     self.run_once(creator_id=creator_id)
-                    time.sleep(self._cfg.platforms.douyin.poll_interval_sec)
+                    time.sleep(poll)
         except LockError:
             log.error("live_watch_lock_held")
             raise

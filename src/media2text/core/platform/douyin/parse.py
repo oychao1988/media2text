@@ -6,7 +6,7 @@ from typing import Any
 from urllib.parse import unquote
 
 from media2text.core.errors import AuthRequired, ParseFailed
-from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo
+from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 
 
 def _dig(data: Any, *keys: str) -> Any:
@@ -16,6 +16,44 @@ def _dig(data: Any, *keys: str) -> Any:
             return None
         cur = cur.get(key)
     return cur
+
+
+def parse_user_profile(payload: dict) -> UserProfile:
+    user = payload.get("user") or _dig(payload, "data", "user")
+    if not user:
+        raise ParseFailed("user missing in profile response")
+
+    avatar_url = None
+    avatar_thumb = user.get("avatar_thumb") or user.get("avatar_larger") or {}
+    if isinstance(avatar_thumb, dict):
+        url_list = avatar_thumb.get("url_list") or []
+        if url_list:
+            avatar_url = str(url_list[0])
+
+    follower = user.get("follower_count")
+    if follower is not None:
+        try:
+            follower = int(follower)
+        except (TypeError, ValueError):
+            follower = None
+
+    return UserProfile(
+        display_name=user.get("nickname"),
+        unique_id=user.get("unique_id") or user.get("short_id"),
+        avatar_url=avatar_url,
+        signature=user.get("signature"),
+        follower_count=follower,
+    )
+
+
+def parse_profile_html_user(payload: dict) -> UserProfile | None:
+    user = _dig(payload, "app", "user", "info") or _dig(payload, "user", "user")
+    if not isinstance(user, dict):
+        return None
+    try:
+        return parse_user_profile({"user": user})
+    except ParseFailed:
+        return None
 
 
 def parse_profile_live(payload: dict) -> LiveRoomInfo:

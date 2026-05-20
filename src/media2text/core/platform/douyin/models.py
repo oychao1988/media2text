@@ -4,6 +4,15 @@ from dataclasses import dataclass
 
 
 @dataclass
+class UserProfile:
+    display_name: str | None = None
+    unique_id: str | None = None
+    avatar_url: str | None = None
+    signature: str | None = None
+    follower_count: int | None = None
+
+
+@dataclass
 class LiveRoomInfo:
     room_id: str | None
     is_live: bool

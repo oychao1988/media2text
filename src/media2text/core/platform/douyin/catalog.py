@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from media2text.core.config import AppConfig
+from media2text.core.errors import AuthRequired
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
@@ -33,18 +34,28 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
     new_count = 0
     total_listed = 0
 
-    while True:
-        items, next_cursor, has_more = adapter.list_awemes(sec_uid=creator.sec_uid, max_cursor=cursor)
-        for item in items:
-            if awemes.upsert_listed(creator_id=creator.id, item=item):
-                new_count += 1
-            total_listed += 1
-        pages += 1
-        if not has_more or not next_cursor:
-            break
-        if max_pages and pages >= max_pages:
-            break
-        cursor = next_cursor
+    try:
+        while True:
+            items, next_cursor, has_more = adapter.list_awemes(
+                sec_uid=creator.sec_uid, max_cursor=cursor
+            )
+            for item in items:
+                if awemes.upsert_listed(creator_id=creator.id, item=item):
+                    new_count += 1
+                total_listed += 1
+            pages += 1
+            if not has_more or not next_cursor:
+                break
+            if max_pages and pages >= max_pages:
+                break
+            cursor = next_cursor
+    except AuthRequired as exc:
+        return {
+            "ok": False,
+            "creator_id": creator_id,
+            "auth_required": True,
+            "error": str(exc),
+        }
 
     return {
         "ok": True,

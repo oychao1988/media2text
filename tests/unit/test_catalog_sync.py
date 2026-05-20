@@ -12,7 +12,7 @@ def test_sync_creator_with_fixtures(tmp_path, monkeypatch) -> None:
     cid = repo.add(
         sec_uid="MS4wLjABAAAAtest",
         profile_url="https://www.douyin.com/user/test",
-        watch_live=False,
+        monitor_enabled=False,
     )
     result = sync_creator(cfg, cid)
     assert result["ok"] is True

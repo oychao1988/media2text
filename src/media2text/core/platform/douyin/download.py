@@ -39,7 +39,10 @@ def download_pending(cfg: AppConfig, *, creator_id: str | None = None) -> dict:
     adapter = build_adapter(cfg)
     ws = cfg.ensure_workspace()
 
-    pending = awemes.list_pending_download(creator_id=creator_id)
+    pending = awemes.list_pending_download(
+        creator_id=creator_id,
+        monitor_only=creator_id is None,
+    )
     if not pending:
         return {"ok": True, "downloaded": 0, "failed": 0, "errors": []}
 
