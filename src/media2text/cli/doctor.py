@@ -4,6 +4,7 @@ from pathlib import Path
 
 import typer
 
+from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
 from media2text.core.exit_codes import EXIT_GENERAL, EXIT_OK
 from media2text.core.json_out import emit
@@ -38,5 +39,13 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
         {"name": "disk", "ok": _disk_ok(ws)},
     ]
     ok = all(c["ok"] for c in checks if c["name"] != "session") and session_ok
-    emit({"ok": ok, "command": "doctor", "checks": checks}, as_json=json_out)
+    emit(
+        {
+            "ok": ok,
+            "command": "doctor",
+            "checks": checks,
+            "compliance_accepted": is_compliance_accepted(ws),
+        },
+        as_json=json_out,
+    )
     raise typer.Exit(EXIT_OK if ok else EXIT_GENERAL)
