@@ -13,6 +13,7 @@ from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_proces
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
+from media2text.core.notify.service import build_live_started_event
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
@@ -149,12 +150,13 @@ class LiveWatcher:
         log.info("live_recording_started", session_id=session_id, temp_path=str(temp_path))
         creator = self._creators.get(creator_id)
         if creator:
-            label = creator_label(creator)
             self._notify.emit(
-                NotifyEvent(
-                    kind=EventKind.LIVE_STARTED,
-                    title=label,
-                    body=f"检测到开播，已开始录制\nroom_id: {room_id or '—'}\n文件: {temp_path.name}",
+                build_live_started_event(
+                    label=creator_label(creator),
+                    room_id=room_id,
+                    temp_name=temp_path.name,
+                    avatar_url=creator.avatar_url,
+                    cfg=self._cfg,
                 )
             )
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
@@ -267,7 +269,8 @@ class LiveWatcher:
             NotifyEvent(
                 kind=EventKind.RECORDING_COMPLETED,
                 title=label,
-                body=f"直播录制已完成\n{mp4.name}\n{mp4.parent}",
+                body=f"直播录制已完成",
+                media_path=mp4,
             )
         )
         transcribe_meta = self._maybe_transcribe_completed(mp4, creator_label=label)
@@ -317,11 +320,14 @@ class LiveWatcher:
             write_transcript_outputs(mp4, result)
             log.info("live_transcribe_completed", path=str(mp4), engine=result.engine)
             title = creator_label or mp4.parent.parent.name
+            md_path = mp4.with_suffix(".transcript.md")
             self._notify.emit(
                 NotifyEvent(
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=title,
-                    body=f"直播转录完成（{result.engine}）\n{mp4.name}",
+                    body=f"直播转录完成（{result.engine}）",
+                    media_path=mp4,
+                    transcript_path=md_path if md_path.is_file() else None,
                 )
             )
             return {"transcribed": True, "transcribe_engine": result.engine}

@@ -77,6 +77,24 @@ class NotifyFeishuConfig(BaseModel):
     webhook_url: str = ""
     webhook_url_env: str = "NOTIFY_FEISHU_WEBHOOK_URL"
     timeout_sec: float = 10.0
+    rich_text: bool = True
+    summary_max_chars: int = 500
+    include_paths: bool = True
+    show_local_paths: bool = False
+    media_base_url: str = ""
+    image_enabled: bool = True
+    image_in_post: bool = False
+    image_separate_message: bool = True
+    thumbnail_from_video: bool = True
+    avatar_on_live_start: bool = True
+    app_id: str = ""
+    app_secret: str = ""
+    app_id_env: str = "FEISHU_APP_ID"
+    app_secret_env: str = "FEISHU_APP_SECRET"
+    # 未配置 media_base_url 时，将 .transcript.md 正文再发 1–N 条文本消息（Webhook 不支持发文件）
+    transcript_push: bool = True
+    transcript_push_max_chars: int = 6000
+    transcript_push_max_messages: int = 2
 
 
 class NotifyConfig(BaseModel):

@@ -167,6 +167,38 @@ export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/open-apis/bot/v2/hook/x
 
 可在 `notify.events` 下单独关闭某一类事件；`notify.feishu.enabled: false` 则只保留提示音。
 
+**富文本 + 摘要 + 图片**（`notify.feishu.rich_text: true`，默认开启）：
+
+- 转录完成：富文本里带 `.transcript.md` 摘要；未配 `media_base_url` 时另发 1–2 条 `[转写全文]` 文本消息（可直接在飞书阅读）；配了 `media_base_url` 则「转写/媒体」为可点击 HTTP 链接
+- 录制完成：可选 ffmpeg 截取视频封面图
+- 开播：可选拉取博主头像
+
+图片上传需飞书**自建应用**凭证（与群内机器人同一应用），写入 `.env`：
+
+```bash
+export FEISHU_APP_ID='cli_xxx'
+export FEISHU_APP_SECRET='xxx'
+```
+
+仅配置 webhook 时仍可收富文本与摘要，但不会发图片。
+
+图片默认**单独一条** `image` 消息（比嵌在富文本里更稳定）。Webhook **不能**直接发 `.md` 附件，长文转写靠 `transcript_push`（默认开启）或 HTTP 链接二选一。
+
+要可点击打开浏览器里的 `.transcript.md`：
+
+```bash
+# 终端 1：把 data/ 目录挂到 HTTP（会打印 LAN 地址）
+media2text notify serve
+```
+
+```yaml
+notify:
+  feishu:
+    media_base_url: http://你的局域网IP:8765   # 与 serve 输出一致
+```
+
+若仍想在飞书里贴完整本机路径：`show_local_paths: true`（手机端通常打不开）。
+
 示例（`config.yaml`）：
 
 ```yaml

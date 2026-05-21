@@ -1,6 +1,10 @@
+import shutil
 from pathlib import Path
 
 from playwright.sync_api import sync_playwright
+
+
+_CHROMIUM: str | None = shutil.which("chromium-browser") or shutil.which("chromium")
 
 SESSION_NAME = "douyin.json"
 
@@ -13,7 +17,7 @@ def login_interactive(workspace: Path, *, headless: bool = False) -> Path:
     path = session_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
+        browser = p.chromium.launch(headless=headless, executable_path=_CHROMIUM)
         context = browser.new_context()
         page = context.new_page()
         page.goto("https://www.douyin.com/", wait_until="domcontentloaded")

@@ -37,6 +37,24 @@ notify:
     # 推荐用环境变量，勿提交真实 URL：export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/...'
     webhook_url: ""
     webhook_url_env: NOTIFY_FEISHU_WEBHOOK_URL
+    rich_text: true
+    summary_max_chars: 500
+    # 可选：内网 HTTP 根（相对 workspace），富文本里「转写/媒体」可点击打开
+    # 先运行: media2text notify serve  再填下面地址（终端会打印 LAN URL）
+    # media_base_url: http://192.168.1.10:8765
+    show_local_paths: false
+    # 未配 media_base_url 时，转录完成再发 1–2 条文本消息推送 .transcript.md 正文
+    transcript_push: true
+    transcript_push_max_chars: 6000
+    transcript_push_max_messages: 2
+    image_enabled: true
+    image_separate_message: true
+    image_in_post: false
+    thumbnail_from_video: true
+    avatar_on_live_start: true
+    # 图片上传需飞书自建应用（与机器人同应用），非 webhook  alone
+    app_id_env: FEISHU_APP_ID
+    app_secret_env: FEISHU_APP_SECRET
 
 transcribe:
   # whisper: local faster-whisper (pip install -e ".[transcribe]")

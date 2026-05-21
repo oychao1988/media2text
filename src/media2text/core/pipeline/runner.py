@@ -44,6 +44,7 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
         errors.extend(download_result["errors"])
 
     transcribed = 0
+    transcribed_paths: list[str] = []
     transcribe_skipped = False
     skip_reason: str | None = None
     available, reason = transcribe_engine_available(cfg)
@@ -64,9 +65,10 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
                 media = Path(row.local_path)
                 try:
                     result = backend.transcribe(media, language=cfg.transcribe.language)
-                    json_path, _ = write_transcript_outputs(media, result)
+                    json_path, md_path = write_transcript_outputs(media, result)
                     awemes.mark_transcribed(row.aweme_id, transcript_path=str(json_path))
                     transcribed += 1
+                    transcribed_paths.append(str(md_path))
                 except Exception as exc:  # noqa: BLE001
                     errors.append({"aweme_id": row.aweme_id, "error": str(exc)})
 
@@ -78,6 +80,7 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
         "sync": sync_result,
         "download": download_result,
         "transcribed": transcribed,
+        "transcribed_paths": transcribed_paths,
         "errors": errors,
         "auth_required": bool(sync_result.get("auth_required")),
         "platform_changed": bool(sync_result.get("platform_changed")),

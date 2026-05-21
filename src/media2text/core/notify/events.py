@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
 
 
 class EventKind(StrEnum):
@@ -16,3 +17,8 @@ class NotifyEvent:
     kind: EventKind
     title: str
     body: str
+    summary: str | None = None
+    media_path: Path | None = None
+    transcript_path: Path | None = None
+    image_path: Path | None = None
+    link_url: str | None = None

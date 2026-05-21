@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import time
+from pathlib import Path
 
 import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.content import media_mp4_path
 from media2text.core.notify.labels import creator_label
 from media2text.core.pipeline.runner import run_pipeline
 from media2text.core.transcribe.factory import transcribe_engine_available
@@ -131,12 +133,15 @@ class MonitorWatcher:
                     body=f"同步到 {new_count} 个新作品",
                 )
             )
-        transcribed = int(outcome.get("transcribed") or 0)
-        if transcribed > 0:
+        for md_path in outcome.get("transcribed_paths") or []:
+            path = Path(md_path)
+            mp4 = media_mp4_path(path)
             self._notify.emit(
                 NotifyEvent(
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=label,
-                    body=f"作品转录完成 {transcribed} 条",
+                    body="作品转录完成",
+                    media_path=mp4 if mp4.is_file() else None,
+                    transcript_path=path if path.is_file() else None,
                 )
             )

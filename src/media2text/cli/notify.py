@@ -24,6 +24,11 @@ def _notify_status(cfg: AppConfig) -> dict:
         "feishu_enabled": n.feishu.enabled,
         "webhook_configured": bool(webhook),
         "webhook_env": n.feishu.webhook_url_env,
+        "rich_text": n.feishu.rich_text,
+        "image_enabled": n.feishu.image_enabled,
+        "image_upload_ready": NotifyService(cfg).image_available(),
+        "media_base_url": n.feishu.media_base_url or None,
+        "transcript_push": n.feishu.transcript_push,
         "events": n.events.model_dump(),
     }
 
@@ -69,16 +74,22 @@ def notify_test(
     if skip_feishu:
         cfg.notify.feishu.enabled = False
 
+    from media2text.core.notify.samples import find_latest_transcript_with_media
+
     svc = NotifyService(cfg)
+    ws = cfg.ensure_workspace()
+    sample_md, sample_mp4 = find_latest_transcript_with_media(ws)
     sent: list[str] = []
     for kind in EventKind:
-        svc.emit(
-            NotifyEvent(
-                kind=kind,
-                title="配置测试",
-                body="media2text notify test — 若收到本条说明该事件通道正常",
-            )
+        event = NotifyEvent(
+            kind=kind,
+            title="配置测试",
+            body="media2text notify test — 富文本/摘要/图片自检",
+            summary="这是摘要示例：用于验证 post 消息排版。" if kind == EventKind.TRANSCRIBE_COMPLETED else None,
+            media_path=sample_mp4 if sample_mp4 and sample_mp4.is_file() else None,
+            transcript_path=sample_md if sample_md and sample_md.is_file() else None,
         )
+        svc.emit(event)
         sent.append(kind.value)
 
     emit(
@@ -87,7 +98,21 @@ def notify_test(
             "command": "notify test",
             "sent": sent,
             "status": status,
-            "hint": "检查系统是否播放提示音，飞书群是否收到 4 条测试消息",
+            "hint": (
+                "检查提示音；飞书应收到富文本+图片；转录完成另发 [转写全文] 文本（未配 media_base_url 时）"
+            ),
         },
         as_json=json_out,
     )
+
+
+@app.command("serve")
+def notify_serve(
+    host: str = typer.Option("0.0.0.0", help="Bind address"),
+    port: int = typer.Option(8765, help="HTTP port for serving workspace files"),
+) -> None:
+    """Serve data/ over HTTP so Feishu post links (media_base_url) are clickable."""
+    from media2text.core.notify.serve import run_workspace_http_server
+
+    cfg = AppConfig.load()
+    run_workspace_http_server(workspace=cfg.ensure_workspace(), host=host, port=port)
