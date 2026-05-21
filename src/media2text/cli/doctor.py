@@ -4,11 +4,13 @@ from pathlib import Path
 
 import typer
 
+from media2text.core.archive.health import is_index_stale, monitor_lock_pid
 from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
 from media2text.core.exit_codes import EXIT_GENERAL, EXIT_OK
 from media2text.core.json_out import emit
 from media2text.core.platform.douyin.auth import session_exists
+from media2text.core.workspace import open_db
 
 def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
     usage = sh.disk_usage(path)
@@ -39,12 +41,15 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
         {"name": "disk", "ok": _disk_ok(ws)},
     ]
     ok = all(c["ok"] for c in checks if c["name"] != "session") and session_ok
+    conn = open_db(cfg)
     emit(
         {
             "ok": ok,
             "command": "doctor",
             "checks": checks,
             "compliance_accepted": is_compliance_accepted(ws),
+            "index_stale": is_index_stale(conn, ws),
+            "monitor_lock_pid": monitor_lock_pid(ws),
         },
         as_json=json_out,
     )
