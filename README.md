@@ -6,6 +6,8 @@
 - **运行环境**：本机 Python 3.12+，数据默认落在 `./data`（已 gitignore）
 - **设计文档**：[docs/superpowers/specs/2026-05-20-media2text-douyin-design.md](docs/superpowers/specs/2026-05-20-media2text-douyin-design.md)
 
+**声明**：本工具为**个人研究档案工具**，用于本地录制、转写与检索复盘，**不构成投资咨询**，不提供荐股、跟单或买卖建议。使用 `archive search` 等检索能力前需执行 `media2text compliance accept` 确认免责声明。
+
 ## 功能概览
 
 | 能力 | 说明 |
