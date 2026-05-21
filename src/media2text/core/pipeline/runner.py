@@ -9,6 +9,7 @@ from media2text.core.platform.douyin.download import download_pending
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
 from media2text.core.transcribe.errors import TranscribeConfigError
 from media2text.core.transcribe.factory import create_transcribe_backend, transcribe_engine_available
+from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
@@ -65,6 +66,7 @@ def run_pipeline(cfg: AppConfig, *, creator_id: str) -> dict:
                 try:
                     result = backend.transcribe(media, language=cfg.transcribe.language)
                     json_path, _ = write_transcript_outputs(media, result)
+                    index_transcript_safe(cfg, json_path)
                     awemes.mark_transcribed(row.aweme_id, transcript_path=str(json_path))
                     transcribed += 1
                 except Exception as exc:  # noqa: BLE001

@@ -86,4 +86,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _migrate_creators(conn)
+    from media2text.core.archive.schema import migrate_archive
+
+    migrate_archive(conn)
     return conn

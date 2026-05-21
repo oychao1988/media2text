@@ -13,6 +13,7 @@ from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_proces
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
+from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
@@ -314,7 +315,8 @@ class LiveWatcher:
 
         try:
             result = backend.transcribe(mp4, language=self._cfg.transcribe.language)
-            write_transcript_outputs(mp4, result)
+            json_path, _md = write_transcript_outputs(mp4, result)
+            index_transcript_safe(self._cfg, json_path)
             log.info("live_transcribe_completed", path=str(mp4), engine=result.engine)
             title = creator_label or mp4.parent.parent.name
             self._notify.emit(

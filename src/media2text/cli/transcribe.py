@@ -8,6 +8,7 @@ from media2text.core.manifest import refresh_manifest
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
 from media2text.core.transcribe.errors import TranscribeConfigError
 from media2text.core.transcribe.factory import create_transcribe_backend
+from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
@@ -53,6 +54,7 @@ def run(
         try:
             result = backend.transcribe(media, language=cfg.transcribe.language)
             json_path, _md = write_transcript_outputs(media, result)
+            index_transcript_safe(cfg, json_path)
             row = conn.execute(
                 "SELECT aweme_id FROM awemes WHERE local_path = ?",
                 (str(media),),
