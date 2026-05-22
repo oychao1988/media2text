@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
 
 from media2text.core.platform.douyin.playwright_client import (

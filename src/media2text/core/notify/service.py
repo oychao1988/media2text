@@ -5,7 +5,7 @@ from pathlib import Path
 
 import structlog
 
-from media2text.core.config import AppConfig, NotifyConfig
+from media2text.core.config import AppConfig
 from media2text.core.notify.events import EventKind, NotifyEvent
 from media2text.core.notify.feishu import send_feishu_text
 from media2text.core.notify.sound import play_sound

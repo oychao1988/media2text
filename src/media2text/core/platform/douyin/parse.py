@@ -196,6 +196,7 @@ def parse_aweme_post_list(payload: dict) -> tuple[list[AwemeItem], str | None, b
     aweme_list = _aweme_post_list_field(payload)
     if aweme_list is None:
         _raise_platform_changed_aweme_post(payload)
+    assert aweme_list is not None
     items: list[AwemeItem] = []
     for row in aweme_list:
         aweme_id = str(row.get("aweme_id") or "")

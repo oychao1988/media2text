@@ -3,7 +3,7 @@ import json
 import pytest
 
 from media2text.core.config import AppConfig
-from media2text.core.errors import PlatformChanged
+from media2text.core.errors import ParseFailed, PlatformChanged
 from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
 from media2text.core.platform.bilibili.archive_fallback import (
     list_awemes_from_dynamics_workspace,
@@ -79,6 +79,36 @@ def test_adapter_resolve_download_url_fixture() -> None:
     adapter = BilibiliAdapterV1(None, fixture_root=FIXTURE_ROOT)
     url = adapter.resolve_download_url(aweme_id="BV1fixture001")
     assert url == "https://example.com/bilibili-fixture-video.mp4"
+
+
+def test_sync_creator_dynamics_fallback_on_rate_limit(tmp_path, monkeypatch) -> None:
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    sec_uid = "777"
+    cid = CreatorRepo(conn).add(
+        sec_uid=sec_uid,
+        profile_url=f"https://space.bilibili.com/{sec_uid}",
+        platform="bilibili",
+    )
+    dyn = cfg.ensure_workspace() / "creators" / sec_uid / "dynamics" / "1"
+    dyn.mkdir(parents=True)
+    (dyn / "meta.json").write_text(
+        json.dumps({"published_at": "2026-01-01T00:00:00+00:00", "refs": {"bvid": "BV1fallback"}}),
+        encoding="utf-8",
+    )
+
+    def _rate_limited(self, **kwargs):  # noqa: ANN001, ARG001
+        raise ParseFailed("bilibili api code -799: 请求过于频繁，请稍后再试")
+
+    monkeypatch.setattr(BilibiliAdapterV1, "list_awemes", _rate_limited)
+    result = sync_creator(cfg, cid)
+    assert result["ok"] is True
+    assert result.get("dynamics_fallback") is True
+    assert result["total_listed"] == 1
+    row = conn.execute(
+        "SELECT aweme_id FROM awemes WHERE creator_id = ?", (cid,)
+    ).fetchone()
+    assert row[0] == "BV1fallback"
 
 
 def test_sync_creator_upserts_bvids(tmp_path) -> None:
