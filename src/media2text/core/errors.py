@@ -24,3 +24,7 @@ class RecordingError(Media2TextError):
 
 class TranscribeError(Media2TextError):
     code = "transcribe_error"
+
+
+class ConfigError(Media2TextError):
+    code = "config_error"
