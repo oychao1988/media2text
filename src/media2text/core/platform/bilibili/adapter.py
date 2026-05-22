@@ -20,7 +20,7 @@ from media2text.core.platform.bilibili.http_dynamic import fetch_dynamic_feed_pa
 from media2text.core.platform.bilibili.models_dynamic import ParsedDynamic
 from media2text.core.platform.bilibili.parse import (
     check_api_code,
-    parse_archive_cursor_list,
+    parse_arc_search_list,
     parse_dynamic_feed,
     parse_play_url,
     parse_room_info,
@@ -111,12 +111,11 @@ class BilibiliAdapterV1:
         count: int = 18,
     ) -> tuple[list[AwemeItem], str | None, bool]:
         if self._fixture_root:
-            name = (
-                "archive_cursor_page2.json"
-                if max_cursor == "100002"
-                else "archive_cursor.json"
-            )
-            return parse_archive_cursor_list(self._load_fixture(name))
+            if max_cursor in ("2", "100002"):
+                name = "arc_search_page2.json"
+            else:
+                name = "arc_search.json"
+            return parse_arc_search_list(self._load_fixture(name))
 
         try:
             return fetch_archive_page(

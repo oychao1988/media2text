@@ -1,0 +1,30 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "list": {
+      "vlist": [
+        {
+          "title": "Fixture archive one",
+          "bvid": "BV1fixture001",
+          "aid": 100001,
+          "created": 1710518403,
+          "length": "02:00"
+        },
+        {
+          "title": "Fixture archive two",
+          "bvid": "BV1fixture002",
+          "aid": 100002,
+          "created": 1710604803,
+          "length": "01:30"
+        }
+      ]
+    },
+    "page": {
+      "pn": 1,
+      "ps": 30,
+      "count": 35
+    }
+  }
+}

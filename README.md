@@ -253,7 +253,7 @@ data/
 | `media2text creator add <url> [--json]` | 登记创作者（默认不监控） |
 | `media2text creator list [--json]` | 列出已登记创作者 |
 | `media2text creator show <id> [--json]` | 资料、监控状态、作品计数 |
-| `media2text creator refresh <id> [--json]` | 更新博主资料 |
+| `media2text creator refresh <id> [--json]` | 更新博主资料（抖音 / B 站，按 `platform` 自动选适配器） |
 | `media2text creator monitor <id> [--off] [--json]` | 开启/关闭监控 |
 | `media2text creator sync <creator_id> [--json]` | 同步作品 catalog |
 | `media2text creator remove <creator_id> [--delete-media] [--json]` | 移除创作者；可选删除 `data/creators/{sec_uid}/` |

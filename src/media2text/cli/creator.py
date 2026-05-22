@@ -1,5 +1,3 @@
-from datetime import datetime, timezone
-
 import typer
 
 from media2text.core.config import AppConfig
@@ -9,7 +7,11 @@ from media2text.core.manifest import refresh_manifest
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.vod import sync_creator
 from media2text.core.platform.douyin.httpx_client import client_from_storage
-from media2text.core.platform.douyin.profile import is_profile_stale, sync_creator_profile
+from media2text.core.platform.profile import (
+    is_profile_stale,
+    platform_session_ready,
+    sync_creator_profile,
+)
 from media2text.core.platform.bilibili.resolver import resolve_mid
 from media2text.core.platform.douyin.resolver import resolve_sec_uid
 from media2text.core.storage.repos import CreatorRepo
@@ -89,31 +91,8 @@ def add(
         monitor_enabled=False,
     )
     profile_result: dict | None = None
-    if plat == "douyin" and session.is_file():
+    if platform_session_ready(cfg, plat):
         profile_result = sync_creator_profile(cfg, creator_id)
-    elif plat == "bilibili":
-        from media2text.core.errors import AuthRequired
-        from media2text.core.platform.bilibili.auth import session_path as bili_session_path
-        from media2text.core.platform.bilibili.catalog import build_adapter
-
-        bsession = bili_session_path(ws)
-        if bsession.is_file():
-            try:
-                adapter = build_adapter(cfg)
-                profile = adapter.get_user_profile(sec_uid=sec_uid)
-                repo.update_profile(
-                    creator_id,
-                    display_name=profile.display_name,
-                    avatar_url=profile.avatar_url,
-                    signature=profile.signature,
-                    follower_count=profile.follower_count,
-                    profile_synced_at=datetime.now(timezone.utc).isoformat(),
-                )
-                profile_result = {"ok": True}
-            except AuthRequired as exc:
-                profile_result = {"ok": False, "auth_required": True, "error": str(exc)}
-            except Exception as exc:  # noqa: BLE001
-                profile_result = {"ok": False, "error": str(exc)}
 
     row = repo.get(creator_id)
     emit(

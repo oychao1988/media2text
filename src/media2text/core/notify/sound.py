@@ -43,7 +43,10 @@ def play_sound(path: Path | None) -> None:
         elif system == "Windows":
             import winsound
 
-            winsound.PlaySound(str(sound), winsound.SND_FILENAME | winsound.SND_ASYNC)
+            winsound.PlaySound(  # type: ignore[attr-defined]
+                str(sound),
+                winsound.SND_FILENAME | winsound.SND_ASYNC,  # type: ignore[attr-defined]
+            )
         else:
             log.debug("notify_sound_skipped", reason="unsupported_platform", platform=system)
     except Exception as exc:  # noqa: BLE001
