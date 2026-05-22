@@ -9,6 +9,7 @@ from media2text.core.errors import AuthRequired
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.pipeline.runner import run_pipeline
+from media2text.core.platform.bilibili.dynamic import run_dynamic_tick
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
@@ -58,14 +59,24 @@ class MonitorWatcher:
         live_result = _merge_live_results(douyin_live, bilibili_live)
 
         vod_result = self._run_vod_tick(creator_id=creator_id)
-        errors = list(live_result.get("errors") or []) + list(vod_result.get("errors") or [])
-        auth_required = bool(
-            live_result.get("auth_required") or vod_result.get("auth_required")
+        dynamic_result = run_dynamic_tick(self._cfg, creator_id=creator_id)
+        errors = (
+            list(live_result.get("errors") or [])
+            + list(vod_result.get("errors") or [])
+            + list(dynamic_result.get("errors") or [])
         )
-        platform_changed = bool(live_result.get("platform_changed"))
+        auth_required = bool(
+            live_result.get("auth_required")
+            or vod_result.get("auth_required")
+            or dynamic_result.get("auth_required")
+        )
+        platform_changed = bool(
+            live_result.get("platform_changed") or dynamic_result.get("platform_changed")
+        )
         return {
             "live": live_result,
             "vod": vod_result,
+            "dynamic": dynamic_result,
             "errors": errors,
             "auth_required": auth_required,
             "platform_changed": platform_changed,
@@ -76,10 +87,14 @@ class MonitorWatcher:
         try:
             with workspace_lock(lock):
                 last_vod = 0.0
+                last_dynamic = 0.0
+                bcfg = self._cfg.platforms.bilibili
+                dynamic_poll = bcfg.dynamic_poll_interval_sec
                 log.info(
                     "monitor_watch_daemon_started",
                     live_poll=self._cfg.monitor.live_poll_interval_sec,
                     vod_poll=self._cfg.monitor.vod_poll_interval_sec,
+                    dynamic_poll=dynamic_poll,
                 )
                 while True:
                     self._douyin_live.run_once(creator_id=creator_id)
@@ -88,6 +103,9 @@ class MonitorWatcher:
                     if now - last_vod >= self._cfg.monitor.vod_poll_interval_sec:
                         self._run_vod_tick(creator_id=creator_id)
                         last_vod = now
+                    if now - last_dynamic >= dynamic_poll:
+                        run_dynamic_tick(self._cfg, creator_id=creator_id)
+                        last_dynamic = now
                     time.sleep(self._cfg.monitor.live_poll_interval_sec)
         except LockError:
             log.error("monitor_watch_lock_held")

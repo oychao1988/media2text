@@ -3,7 +3,9 @@ import uuid
 from datetime import datetime, timezone
 
 from media2text.core.platform.douyin.models import AwemeItem
-from media2text.core.storage.models import AwemeRow, CreatorRow, LiveSessionRow
+import json
+
+from media2text.core.storage.models import AwemeRow, CreatorRow, DynamicRow, LiveSessionRow
 
 
 class CreatorRepo:
@@ -281,6 +283,119 @@ class AwemeRepo:
                 """
             ).fetchall()
         return [AwemeRow(**dict(r)) for r in rows]
+
+
+class DynamicRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def get(self, dynamic_id: str) -> DynamicRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM dynamics WHERE dynamic_id = ?",
+            (dynamic_id,),
+        ).fetchone()
+        return DynamicRow(**dict(row)) if row else None
+
+    def is_synced(self, dynamic_id: str) -> bool:
+        row = self.get(dynamic_id)
+        return row is not None and row.sync_status == "synced"
+
+    def upsert_listed(
+        self,
+        *,
+        creator_id: str,
+        dynamic_id: str,
+        dynamic_type: str | None,
+        text: str | None,
+        refs_json: str | None,
+        local_dir: str | None,
+        published_at: str | None,
+    ) -> bool:
+        """Insert listed row; returns True if newly inserted."""
+        now = datetime.now(timezone.utc).isoformat()
+        existing = self.get(dynamic_id)
+        if existing:
+            self._conn.execute(
+                """
+                UPDATE dynamics
+                SET dynamic_type = ?, text = ?, refs_json = ?, local_dir = ?,
+                    published_at = ?, updated_at = ?
+                WHERE dynamic_id = ?
+                """,
+                (
+                    dynamic_type,
+                    text,
+                    refs_json,
+                    local_dir,
+                    published_at,
+                    now,
+                    dynamic_id,
+                ),
+            )
+            self._conn.commit()
+            return False
+        self._conn.execute(
+            """
+            INSERT INTO dynamics (
+              dynamic_id, creator_id, dynamic_type, text, refs_json,
+              image_count, sync_status, local_dir, published_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, 0, 'listed', ?, ?, ?)
+            """,
+            (
+                dynamic_id,
+                creator_id,
+                dynamic_type,
+                text,
+                refs_json,
+                local_dir,
+                published_at,
+                now,
+            ),
+        )
+        self._conn.commit()
+        return True
+
+    def mark_synced(
+        self,
+        dynamic_id: str,
+        *,
+        image_count: int,
+        text: str | None = None,
+        refs_json: str | None = None,
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE dynamics
+            SET sync_status = 'synced', image_count = ?, text = COALESCE(?, text),
+                refs_json = COALESCE(?, refs_json), updated_at = ?
+            WHERE dynamic_id = ?
+            """,
+            (image_count, text, refs_json, now, dynamic_id),
+        )
+        self._conn.commit()
+
+    def mark_failed(self, dynamic_id: str, *, error: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE dynamics SET sync_status = 'failed', updated_at = ?
+            WHERE dynamic_id = ?
+            """,
+            (now, dynamic_id),
+        )
+        self._conn.commit()
+
+    def refs_for(self, dynamic_id: str) -> dict:
+        row = self.get(dynamic_id)
+        if not row or not row.refs_json:
+            return {}
+        try:
+            data = json.loads(row.refs_json)
+        except json.JSONDecodeError:
+            return {}
+        return data if isinstance(data, dict) else {}
 
 
 class LiveSessionRepo:

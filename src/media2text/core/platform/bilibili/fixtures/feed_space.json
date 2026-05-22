@@ -1,0 +1,64 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "has_more": false,
+    "offset": "1062695803784527872",
+    "update_num": 0,
+    "items": [
+      {
+        "id_str": "dyn_opus_001",
+        "type": "DYNAMIC_TYPE_DRAW",
+        "visible": true,
+        "modules": {
+          "module_author": {
+            "pub_ts": 1746450829
+          },
+          "module_dynamic": {
+            "major": {
+              "type": "MAJOR_TYPE_OPUS",
+              "opus": {
+                "jump_url": "//www.bilibili.com/opus/dyn_opus_001",
+                "title": "Fixture opus title",
+                "pics": [
+                  {
+                    "url": "https://i0.hdslb.com/bfs/new_dyn/fixture_img1.png"
+                  },
+                  {
+                    "url": "https://i0.hdslb.com/bfs/new_dyn/fixture_img2.jpg"
+                  }
+                ],
+                "summary": {
+                  "text": "Hello from opus fixture body."
+                }
+              }
+            }
+          }
+        }
+      },
+      {
+        "id_str": "dyn_av_002",
+        "type": "DYNAMIC_TYPE_AV",
+        "visible": true,
+        "modules": {
+          "module_author": {
+            "pub_ts": 1746266548
+          },
+          "module_dynamic": {
+            "major": {
+              "type": "MAJOR_TYPE_ARCHIVE",
+              "archive": {
+                "bvid": "BV1fixture00001",
+                "title": "Fixture archive title",
+                "desc": "Archive card description",
+                "cover": "https://i1.hdslb.com/bfs/archive/fixture_cover.jpg",
+                "jump_url": "//www.bilibili.com/video/BV1fixture00001/"
+              }
+            }
+          }
+        }
+      }
+    ]
+  }
+}
