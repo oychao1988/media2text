@@ -2,9 +2,9 @@
 
 面向 Agent 工作流的个人 CLI：登录抖音、关注创作者、录制直播、同步并下载作品、转写为文本。
 
-- **平台**：抖音（Douyin）MVP；B 站等为后续阶段
+- **平台**：抖音（Douyin）+ B 站（`--platform bilibili`：直播 / 投稿 / 动态）
 - **运行环境**：本机 Python 3.12+，数据默认落在 `./data`（已 gitignore）
-- **设计文档**：[docs/superpowers/specs/2026-05-20-media2text-douyin-design.md](docs/superpowers/specs/2026-05-20-media2text-douyin-design.md)
+- **设计文档**：[抖音](docs/superpowers/specs/2026-05-20-media2text-douyin-design.md) · [B 站](docs/superpowers/specs/2026-05-20-media2text-bilibili-design.md)
 
 **声明**：本工具为**个人研究档案工具**，用于本地录制、转写与检索复盘，**不构成投资咨询**，不提供荐股、跟单或买卖建议。使用 `archive search` 等检索能力前需执行 `media2text compliance accept` 确认免责声明。
 
@@ -83,6 +83,27 @@ media2text download run --creator <creator_id> --json
 media2text pipeline run --creator <creator_id> --json
 ```
 
+### B 站快速开始
+
+规格：[docs/superpowers/specs/2026-05-20-media2text-bilibili-design.md](docs/superpowers/specs/2026-05-20-media2text-bilibili-design.md)
+
+```bash
+media2text auth login --platform bilibili
+media2text creator add 'https://space.bilibili.com/<mid>' --platform bilibili --json
+media2text creator monitor <creator_id> --json
+
+# 守护进程：直播 + 投稿（archive）+ 动态 三档轮询（见 config platforms.bilibili）
+media2text monitor watch --daemon
+
+# 手动单轮
+media2text creator sync <creator_id> --json           # 仅投稿 catalog
+media2text creator sync-dynamics <creator_id> --json  # 仅动态 feed（文字+图片）
+media2text pipeline run --creator <creator_id> --json
+media2text archive index --json                       # 含 dynamics/*/content.md FTS
+```
+
+`doctor --json` 在已登记 B 站创作者时会额外检查 `sessions/bilibili.json`。通知事件：`new_archive`（投稿）、`new_dynamic`（动态）；抖音仍用 `new_aweme`。
+
 未登录时，部分命令会使用 **fixtures** 跑通测试路径；真实拉流/同步需先完成 `auth login`。
 
 `download run` **不带** `--creator` 时，仅处理 `monitor_enabled=1` 的创作者待下载作品。
@@ -92,7 +113,7 @@ media2text pipeline run --creator <creator_id> --json
 | 命令 | 行为 |
 |------|------|
 | `monitor watch --json` | **单次**：检查直播 + 对已监控博主跑一轮 VOD，然后退出 |
-| `monitor watch --daemon` | **持续**：按 `config.yaml` 中间隔循环（默认直播约 60s、作品约 300s） |
+| `monitor watch --daemon` | **持续**：直播约 60s；抖音作品约 300s；B 站投稿/动态见 `platforms.bilibili` |
 
 `--daemon` 会占用终端直至 `Ctrl+C`；若要放到系统后台：
 

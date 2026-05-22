@@ -35,7 +35,9 @@ notify:
   # sound_path: /System/Library/Sounds/Glass.aiff
   events:
     live_started: true
-    new_aweme: true
+    new_aweme: true          # 抖音新作品
+    new_archive: true        # B 站投稿新 bvid
+    new_dynamic: true        # B 站动态新条目
     recording_completed: true
     transcribe_completed: true
   feishu:

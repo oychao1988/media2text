@@ -43,6 +43,10 @@ def _merge_live_results(douyin: dict, bilibili: dict) -> dict:
     return payload
 
 
+def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
+    return cfg.platforms.bilibili.archive_poll_interval_sec
+
+
 class MonitorWatcher:
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
@@ -59,15 +63,20 @@ class MonitorWatcher:
         live_result = _merge_live_results(douyin_live, bilibili_live)
 
         vod_result = self._run_vod_tick(creator_id=creator_id)
-        dynamic_result = run_dynamic_tick(self._cfg, creator_id=creator_id)
+        archive_result = self._run_archive_tick(creator_id=creator_id)
+        dynamic_result = run_dynamic_tick(
+            self._cfg, creator_id=creator_id, notify=self._notify
+        )
         errors = (
             list(live_result.get("errors") or [])
             + list(vod_result.get("errors") or [])
+            + list(archive_result.get("errors") or [])
             + list(dynamic_result.get("errors") or [])
         )
         auth_required = bool(
             live_result.get("auth_required")
             or vod_result.get("auth_required")
+            or archive_result.get("auth_required")
             or dynamic_result.get("auth_required")
         )
         platform_changed = bool(
@@ -76,6 +85,7 @@ class MonitorWatcher:
         return {
             "live": live_result,
             "vod": vod_result,
+            "archive": archive_result,
             "dynamic": dynamic_result,
             "errors": errors,
             "auth_required": auth_required,
@@ -84,16 +94,19 @@ class MonitorWatcher:
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         lock = self._ws / ".monitor-watch.lock"
+        bcfg = self._cfg.platforms.bilibili
+        archive_poll = _bilibili_archive_poll_sec(self._cfg)
+        dynamic_poll = bcfg.dynamic_poll_interval_sec
         try:
             with workspace_lock(lock):
                 last_vod = 0.0
+                last_archive = 0.0
                 last_dynamic = 0.0
-                bcfg = self._cfg.platforms.bilibili
-                dynamic_poll = bcfg.dynamic_poll_interval_sec
                 log.info(
                     "monitor_watch_daemon_started",
                     live_poll=self._cfg.monitor.live_poll_interval_sec,
                     vod_poll=self._cfg.monitor.vod_poll_interval_sec,
+                    archive_poll=archive_poll,
                     dynamic_poll=dynamic_poll,
                 )
                 while True:
@@ -103,8 +116,13 @@ class MonitorWatcher:
                     if now - last_vod >= self._cfg.monitor.vod_poll_interval_sec:
                         self._run_vod_tick(creator_id=creator_id)
                         last_vod = now
+                    if now - last_archive >= archive_poll:
+                        self._run_archive_tick(creator_id=creator_id)
+                        last_archive = now
                     if now - last_dynamic >= dynamic_poll:
-                        run_dynamic_tick(self._cfg, creator_id=creator_id)
+                        run_dynamic_tick(
+                            self._cfg, creator_id=creator_id, notify=self._notify
+                        )
                         last_dynamic = now
                     time.sleep(self._cfg.monitor.live_poll_interval_sec)
         except LockError:
@@ -112,12 +130,36 @@ class MonitorWatcher:
             raise
 
     def _run_vod_tick(self, *, creator_id: str | None = None) -> dict:
+        return self._run_pipeline_tick(
+            creator_id=creator_id,
+            platform="douyin",
+            new_content_kind=EventKind.NEW_AWEME,
+        )
+
+    def _run_archive_tick(self, *, creator_id: str | None = None) -> dict:
+        return self._run_pipeline_tick(
+            creator_id=creator_id,
+            platform="bilibili",
+            new_content_kind=EventKind.NEW_ARCHIVE,
+        )
+
+    def _run_pipeline_tick(
+        self,
+        *,
+        creator_id: str | None,
+        platform: str,
+        new_content_kind: EventKind,
+    ) -> dict:
         targets = [
-            c for c in self._creators.list_monitored() if c.platform in ("douyin",)
+            c for c in self._creators.list_monitored() if c.platform == platform
         ]
         if creator_id:
             row = self._creators.get(creator_id)
-            targets = [row] if row and row.monitor_enabled and row.platform == "douyin" else []
+            targets = (
+                [row]
+                if row and row.monitor_enabled and row.platform == platform
+                else []
+            )
         max_n = self._cfg.monitor.max_creators_per_vod_tick
         if max_n > 0:
             targets = targets[:max_n]
@@ -148,7 +190,7 @@ class MonitorWatcher:
             if outcome.get("errors"):
                 for item in outcome["errors"]:
                     errors.append({"creator_id": creator.id, **item})
-            self._emit_vod_notifications(creator, outcome)
+            self._emit_pipeline_notifications(creator, outcome, new_content_kind=new_content_kind)
             entry = {
                 "creator_id": creator.id,
                 "ok": outcome.get("ok", False),
@@ -163,26 +205,36 @@ class MonitorWatcher:
             results.append(entry)
 
         payload: dict = {
+            "platform": platform,
             "creators": len(targets),
             "results": results,
             "errors": errors,
             "auth_required": auth_required,
             "transcribe_skipped": transcribe_skipped,
         }
+        if platform == "bilibili":
+            payload["interval_sec"] = _bilibili_archive_poll_sec(self._cfg)
         if transcribe_skipped and skip_reason:
             payload["transcribe_skip_reason"] = skip_reason
         return payload
 
-    def _emit_vod_notifications(self, creator, outcome: dict) -> None:
+    def _emit_pipeline_notifications(
+        self,
+        creator,
+        outcome: dict,
+        *,
+        new_content_kind: EventKind,
+    ) -> None:
         label = creator_label(creator)
         sync = outcome.get("sync") or {}
         new_count = int(sync.get("new_count") or 0)
         if new_count > 0:
+            noun = "新投稿" if new_content_kind == EventKind.NEW_ARCHIVE else "新作品"
             self._notify.emit(
                 NotifyEvent(
-                    kind=EventKind.NEW_AWEME,
+                    kind=new_content_kind,
                     title=label,
-                    body=f"同步到 {new_count} 个新作品",
+                    body=f"同步到 {new_count} 个{noun}",
                 )
             )
         transcribed = int(outcome.get("transcribed") or 0)

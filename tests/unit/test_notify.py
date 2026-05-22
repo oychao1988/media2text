@@ -1,4 +1,3 @@
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -86,14 +85,35 @@ def test_monitor_vod_notifications(tmp_path, monkeypatch) -> None:
     watcher = MonitorWatcher(cfg)
     creator = _creator()
     with patch.object(watcher._notify, "emit") as mock_emit:
-        watcher._emit_vod_notifications(
+        watcher._emit_pipeline_notifications(
             creator,
             {
                 "sync": {"new_count": 3},
                 "transcribed": 2,
             },
+            new_content_kind=EventKind.NEW_AWEME,
         )
     assert mock_emit.call_count == 2
     kinds = {call.args[0].kind for call in mock_emit.call_args_list}
     assert EventKind.NEW_AWEME in kinds
     assert EventKind.TRANSCRIBE_COMPLETED in kinds
+
+
+def test_monitor_archive_notifications(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False, feishu=NotifyFeishuConfig(enabled=False)),
+    )
+    from media2text.core.monitor.watcher import MonitorWatcher
+
+    watcher = MonitorWatcher(cfg)
+    creator = _creator()
+    with patch.object(watcher._notify, "emit") as mock_emit:
+        watcher._emit_pipeline_notifications(
+            creator,
+            {"sync": {"new_count": 1}, "transcribed": 0},
+            new_content_kind=EventKind.NEW_ARCHIVE,
+        )
+    kinds = {call.args[0].kind for call in mock_emit.call_args_list}
+    assert EventKind.NEW_ARCHIVE in kinds

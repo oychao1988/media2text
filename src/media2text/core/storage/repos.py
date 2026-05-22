@@ -397,6 +397,17 @@ class DynamicRepo:
             return {}
         return data if isinstance(data, dict) else {}
 
+    def list_for_creator(self, creator_id: str) -> list[DynamicRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM dynamics
+            WHERE creator_id = ?
+            ORDER BY published_at DESC, updated_at DESC
+            """,
+            (creator_id,),
+        ).fetchall()
+        return [DynamicRow(**dict(r)) for r in rows]
+
 
 class LiveSessionRepo:
     def __init__(self, conn) -> None:

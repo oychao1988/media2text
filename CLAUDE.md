@@ -1,15 +1,16 @@
 # media2text — Agent 指南
 
-个人 CLI：抖音创作者直播录制、作品同步下载、语音转文字。面向 Cursor / Claude 等 Agent 调用时优先读本文 + `README.md`。
+个人 CLI：抖音 / B 站创作者直播录制、作品与动态同步、语音转文字。面向 Cursor / Claude 等 Agent 调用时优先读本文 + `README.md`。
 
-- 设计规格：[docs/superpowers/specs/2026-05-20-media2text-douyin-design.md](docs/superpowers/specs/2026-05-20-media2text-douyin-design.md)
+- 抖音规格：[docs/superpowers/specs/2026-05-20-media2text-douyin-design.md](docs/superpowers/specs/2026-05-20-media2text-douyin-design.md)
+- B 站规格：[docs/superpowers/specs/2026-05-20-media2text-bilibili-design.md](docs/superpowers/specs/2026-05-20-media2text-bilibili-design.md)
 - 用户文档：[README.md](README.md)
 
 ## 项目要点
 
 | 项 | 说明 |
 |----|------|
-| 平台 | 抖音 MVP（`--platform douyin`） |
+| 平台 | 抖音（`douyin`）+ B 站（`bilibili`：直播 / 投稿 / 动态） |
 | 数据目录 | `./data`（gitignore，含 DB、会话、媒体） |
 | 配置 | `config.yaml`、` .env`（本地，勿提交） |
 | CLI 入口 | `media2text`（`pip install -e ".[dev]"` 后） |
@@ -43,7 +44,15 @@ media2text creator add 'https://www.douyin.com/user/<sec_uid或主页链接>' --
 media2text creator monitor <creator_id> --json
 ```
 
-### 2. 长期监控（直播 + 作品）
+**B 站**（需 `auth login --platform bilibili`）：
+
+```bash
+media2text creator add 'https://space.bilibili.com/<mid>' --platform bilibili --json
+media2text creator monitor <creator_id> --json
+media2text creator sync-dynamics <creator_id> --json   # 仅动态一轮
+```
+
+### 2. 长期监控（直播 + 作品 / B 站动态）
 
 ```bash
 # 单次（调试）
@@ -58,7 +67,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | 循环：直播轮询（默认 ~60s）+ VOD（默认 ~300s） |
+| `--daemon` | 循环：直播 ~60s；抖音 VOD ~300s；B 站 archive/dynamic 见 `platforms.bilibili` |
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
@@ -101,8 +110,9 @@ media2text creator show <creator_id> --json
 | `creator add <url> --json` | 登记博主 |
 | `creator monitor <id> [--off] --json` | 开/关监控 |
 | `creator sync <id> --json` | 同步作品列表 |
+| `creator sync-dynamics <id> --json` | B 站：仅动态一轮 |
 | `creator remove <id> [--delete-media] --json` | 移除博主 |
-| `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD 监控 |
+| `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD/archive + 动态 |
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `pipeline run --creator <id> --json` | 作品一条龙 |
@@ -112,7 +122,8 @@ media2text creator show <creator_id> --json
 ```
 data/
   media2text.db
-  sessions/douyin.json          # 登录态，勿提交
+  sessions/douyin.json          # 抖音登录态
+  sessions/bilibili.json        # B 站登录态
   .monitor-watch.lock           # 守护进程锁
   creators/{sec_uid}/
     agent-manifest.json         # 读路径/状态优先用这个
@@ -120,9 +131,12 @@ data/
     live/{timestamp}.mp4
     live/{timestamp}.transcript.md
     live/{timestamp}.transcript.json
+    dynamics/{id}/content.md    # B 站动态正文（archive index 可检索）
 ```
 
-处理某博主媒体时：先读 `data/creators/{sec_uid}/agent-manifest.json`，再按路径读转写文件。
+处理某博主媒体时：先读 `data/creators/{sec_uid}/agent-manifest.json`（B 站含 `archives` / `dynamics` 分块），再按路径读转写或 `content.md`。
+
+**B 站监控**：`monitor watch` 对 `platform=bilibili` 维护 live / archive / dynamic 三档时钟（`platforms.bilibili.*_poll_interval_sec`）。通知：`new_archive`、`new_dynamic`（抖音 `new_aweme`）。
 
 ## 作品 sync 机制（排错必读）
 

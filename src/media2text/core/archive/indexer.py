@@ -9,7 +9,7 @@ from pathlib import Path
 import structlog
 
 from media2text.core.archive.schema import clear_segments, migrate_archive, rebuild_fts
-from media2text.core.storage.repos import CreatorRepo
+from media2text.core.storage.repos import CreatorRepo, DynamicRepo
 
 log = structlog.get_logger()
 
@@ -87,14 +87,31 @@ def _resolve_session(
             )
 
     try:
-        rel = media_path.resolve().relative_to((workspace / "creators").resolve())
+        rel = transcript_path.resolve().relative_to((workspace / "creators").resolve())
         parts = rel.parts
-        if len(parts) >= 3 and parts[1] in ("live", "videos"):
+        if transcript_path.name == "content.md" and len(parts) >= 3 and parts[1] == "dynamics":
+            dynamic_id = parts[2]
             sec_uid = parts[0]
+            creator = CreatorRepo(conn).get_by_sec_uid(sec_uid, platform="bilibili")
+            if creator:
+                row = DynamicRepo(conn).get(dynamic_id)
+                published = row.published_at if row else None
+                return _SessionRef(
+                    session_type="dynamic",
+                    session_id=dynamic_id,
+                    creator_id=creator.id,
+                    sec_uid=sec_uid,
+                    media_path=str(transcript_path.resolve()),
+                    started_at=published,
+                )
+        rel_media = media_path.resolve().relative_to((workspace / "creators").resolve())
+        media_parts = rel_media.parts
+        if len(media_parts) >= 3 and media_parts[1] in ("live", "videos"):
+            sec_uid = media_parts[0]
             creator = CreatorRepo(conn).get_by_sec_uid(sec_uid)
             if not creator:
                 return None
-            session_type = "live" if parts[1] == "live" else "vod"
+            session_type = "live" if media_parts[1] == "live" else "vod"
             session_id = media_path.stem
             return _SessionRef(
                 session_type=session_type,
@@ -121,6 +138,17 @@ def _load_segments(transcript_path: Path) -> list[dict] | None:
     return raw
 
 
+def _load_dynamic_text(content_path: Path) -> list[dict] | None:
+    try:
+        text = content_path.read_text(encoding="utf-8").strip()
+    except OSError as exc:
+        log.warning("archive_index_skip_read", path=str(content_path), error=str(exc))
+        return None
+    if not text:
+        return None
+    return [{"start": None, "end": None, "text": text}]
+
+
 def index_transcript_file(
     conn: sqlite3.Connection,
     transcript_path: Path,
@@ -137,7 +165,10 @@ def index_transcript_file(
         log.warning("archive_index_skip_no_session", path=str(path))
         return 0
 
-    segments = _load_segments(path)
+    if path.name == "content.md":
+        segments = _load_dynamic_text(path)
+    else:
+        segments = _load_segments(path)
     if segments is None:
         return 0
 
@@ -226,6 +257,14 @@ def _collect_transcript_paths(
         else:
             for p in creators_root.glob(glob_pattern):
                 paths.add(p.resolve())
+
+    for creator in rows:
+        if not creator or creator.platform != "bilibili":
+            continue
+        dyn_root = creators_root / creator.sec_uid / "dynamics"
+        if dyn_root.is_dir():
+            for content_md in dyn_root.glob("*/content.md"):
+                paths.add(content_md.resolve())
     return sorted(paths)
 
 
@@ -243,14 +282,6 @@ def index_all(
 
     for transcript_path in _collect_transcript_paths(conn, workspace, creator_id=creator_id):
         try:
-            session = _resolve_session(conn, transcript_path=transcript_path, workspace=workspace)
-            if session is None:
-                stats.skipped.append(str(transcript_path))
-                continue
-            segments = _load_segments(transcript_path)
-            if segments is None:
-                stats.skipped.append(str(transcript_path))
-                continue
             n = index_transcript_file(conn, transcript_path, workspace)
             if n == 0:
                 stats.skipped.append(str(transcript_path))

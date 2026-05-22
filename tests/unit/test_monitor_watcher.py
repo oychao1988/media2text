@@ -38,3 +38,5 @@ def test_monitor_run_once_vod_tick(tmp_path, monkeypatch) -> None:
     mock_pipeline.assert_called_once_with(cfg, creator_id=cid)
     assert result["vod"]["creators"] == 1
     assert len(result["vod"]["results"]) == 1
+    assert result["archive"]["creators"] == 0
+    assert "dynamic" in result
