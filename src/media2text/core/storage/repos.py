@@ -59,8 +59,16 @@ class CreatorRepo:
             return None
         return CreatorRow(**dict(row))
 
-    def get_by_sec_uid(self, sec_uid: str) -> CreatorRow | None:
-        row = self._conn.execute("SELECT * FROM creators WHERE sec_uid = ?", (sec_uid,)).fetchone()
+    def get_by_sec_uid(self, sec_uid: str, *, platform: str | None = None) -> CreatorRow | None:
+        if platform:
+            row = self._conn.execute(
+                "SELECT * FROM creators WHERE sec_uid = ? AND platform = ?",
+                (sec_uid, platform),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                "SELECT * FROM creators WHERE sec_uid = ?", (sec_uid,)
+            ).fetchone()
         if not row:
             return None
         return CreatorRow(**dict(row))

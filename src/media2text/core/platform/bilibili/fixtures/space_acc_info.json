@@ -1,0 +1,16 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "mid": 12345,
+    "name": "fixture_up",
+    "face": "https://example.com/face.jpg",
+    "sign": "hello",
+    "fans": 1000,
+    "live_room": {
+      "roomStatus": 1,
+      "roomid": 73182963,
+      "title": "fixture_live"
+    }
+  }
+}

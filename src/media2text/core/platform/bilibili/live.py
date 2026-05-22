@@ -8,23 +8,23 @@ from subprocess import Popen
 
 import structlog
 
+from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.config import AppConfig
+from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
-from media2text.core.archive.hook import index_transcript_safe
-from media2text.core.transcribe.whisper import write_transcript_outputs
-from media2text.core.platform.douyin.adapter import DouyinAdapterV1
-from media2text.core.platform.douyin.auth import session_path
-from media2text.core.platform.douyin.httpx_client import client_from_storage
+from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
+from media2text.core.platform.bilibili.auth import session_path
+from media2text.core.platform.bilibili.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
+from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
-FIXTURE_ROOT = Path(__file__).parent / "fixtures"
-# Ignore brief offline glitches right after ffmpeg starts.
+PLATFORM = "bilibili"
 MIN_RECORDING_SEC_BEFORE_OFFLINE_END = 45
 FFMPEG_STARTUP_GRACE_SEC = 2
 
@@ -40,30 +40,55 @@ class LiveWatcher:
         self._processes: dict[str, Popen] = {}
         self._notify = NotifyService(cfg)
 
-    def _build_adapter(self) -> DouyinAdapterV1:
+    def _build_adapter(self) -> BilibiliAdapterV1:
         session = session_path(self._ws)
         if session.is_file():
             client = client_from_storage(session)
-            return DouyinAdapterV1(client, session_path=session)
-        return DouyinAdapterV1(None, fixture_root=FIXTURE_ROOT)
+            return BilibiliAdapterV1(client, session_path=session)
+        return BilibiliAdapterV1(None, fixture_root=FIXTURE_ROOT)
+
+    def _monitored_targets(self, *, creator_id: str | None) -> list:
+        targets = [c for c in self._creators.list_monitored() if c.platform == PLATFORM]
+        if creator_id:
+            row = self._creators.get(creator_id)
+            if row and row.platform == PLATFORM:
+                return [row]
+            return []
+        return targets
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
         stale = self._sessions.mark_stale_recordings_failed()
         if stale:
-            log.warning("live_stale_sessions_cleared", count=stale)
+            log.warning("bilibili_live_stale_sessions_cleared", count=stale)
 
-        targets = [
-            c for c in self._creators.list_monitored() if c.platform in ("douyin",)
-        ]
-        if creator_id:
-            row = self._creators.get(creator_id)
-            targets = [row] if row and row.platform == "douyin" else []
-        started = []
+        targets = self._monitored_targets(creator_id=creator_id)
+        started: list[dict] = []
         started_session_ids: set[str] = set()
+        auth_required = False
+        platform_changed = False
+        errors: list[dict] = []
+
         for creator in targets:
             if self._sessions.get_active_for_creator(creator.id):
                 continue
-            live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            try:
+                live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            except AuthRequired as exc:
+                auth_required = True
+                errors.append(
+                    {"creator_id": creator.id, "error": str(exc), "auth_required": True}
+                )
+                continue
+            except PlatformChanged as exc:
+                platform_changed = True
+                errors.append(
+                    {"creator_id": creator.id, "error": str(exc), "platform_changed": True}
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001
+                errors.append({"creator_id": creator.id, "error": str(exc)})
+                continue
+
             if not live_info.is_live or not live_info.room_id:
                 continue
             room_id = live_info.room_id
@@ -74,37 +99,64 @@ class LiveWatcher:
                         room_id=room_id,
                         sec_uid=creator.sec_uid,
                     )
+                except AuthRequired as exc:
+                    auth_required = True
+                    errors.append(
+                        {"creator_id": creator.id, "error": str(exc), "auth_required": True}
+                    )
+                    continue
+                except PlatformChanged as exc:
+                    platform_changed = True
+                    errors.append(
+                        {
+                            "creator_id": creator.id,
+                            "error": str(exc),
+                            "platform_changed": True,
+                        }
+                    )
+                    continue
                 except Exception as exc:  # noqa: BLE001
                     log.warning(
-                        "live_stream_url_resolve_failed",
+                        "bilibili_live_stream_url_resolve_failed",
                         creator_id=creator.id,
                         room_id=room_id,
                         error=str(exc),
                     )
+                    errors.append({"creator_id": creator.id, "error": str(exc)})
                     continue
             meta = self._start_recording(creator.id, creator.sec_uid, room_id, stream_url)
             started.append(meta)
             started_session_ids.add(meta["session_id"])
+
         finalized = self._poll_active_recordings(skip_session_ids=started_session_ids)
-        result: dict = {"started": started, "active": len(self._sessions.list_active())}
+        result: dict = {
+            "platform": PLATFORM,
+            "checked": len(targets),
+            "started": started,
+            "active": len(self._sessions.list_active()),
+            "errors": errors,
+            "auth_required": auth_required,
+            "platform_changed": platform_changed,
+        }
         if finalized:
             result["finalized"] = finalized
         return result
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
-        poll = self._cfg.monitor.live_poll_interval_sec
+        bcfg = self._cfg.platforms.bilibili
+        poll = bcfg.live_poll_interval_sec or self._cfg.monitor.live_poll_interval_sec
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):
                 stale = self._sessions.mark_stale_recordings_failed()
                 if stale:
-                    log.warning("live_stale_sessions_cleared", count=stale)
-                log.info("live_watch_daemon_started", poll=poll)
+                    log.warning("bilibili_live_stale_sessions_cleared", count=stale)
+                log.info("bilibili_live_watch_daemon_started", poll=poll)
                 while True:
                     self.run_once(creator_id=creator_id)
                     time.sleep(poll)
         except LockError:
-            log.error("live_watch_lock_held")
+            log.error("bilibili_live_watch_lock_held")
             raise
 
     def _start_recording(
@@ -115,6 +167,7 @@ class LiveWatcher:
         stream_url: str,
     ) -> dict:
         live_dir = self._ws / "creators" / sec_uid / "live"
+        live_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         temp_path = live_dir / f"{stamp}.flv"
         proc = record_stream_copy(
@@ -143,13 +196,17 @@ class LiveWatcher:
             )
             self._processes.pop(session_id, None)
             log.error(
-                "live_recording_ffmpeg_died",
+                "bilibili_live_recording_ffmpeg_died",
                 session_id=session_id,
                 exit_code=exit_code,
             )
             return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
-        log.info("live_recording_started", session_id=session_id, temp_path=str(temp_path))
+        log.info(
+            "bilibili_live_recording_started",
+            session_id=session_id,
+            temp_path=str(temp_path),
+        )
         creator = self._creators.get(creator_id)
         if creator:
             label = creator_label(creator)
@@ -157,7 +214,7 @@ class LiveWatcher:
                 NotifyEvent(
                     kind=EventKind.LIVE_STARTED,
                     title=label,
-                    body=f"检测到开播，已开始录制\nroom_id: {room_id or '—'}\n文件: {temp_path.name}",
+                    body=f"检测到 B 站开播，已开始录制\nroom_id: {room_id or '—'}\n文件: {temp_path.name}",
                 )
             )
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
@@ -171,7 +228,7 @@ class LiveWatcher:
             if row.status != "recording" or row.ffmpeg_pid is None:
                 continue
             creator = self._creators.get(row.creator_id)
-            if not creator or creator.platform != "douyin":
+            if not creator or creator.platform != PLATFORM:
                 continue
             pid = row.ffmpeg_pid
             alive = self._process_alive(pid)
@@ -184,7 +241,11 @@ class LiveWatcher:
             try:
                 still_live = self._adapter.get_live_room(sec_uid=creator.sec_uid).is_live
             except Exception as exc:  # noqa: BLE001
-                log.warning("live_status_check_failed", creator_id=creator.id, error=str(exc))
+                log.warning(
+                    "bilibili_live_status_check_failed",
+                    creator_id=creator.id,
+                    error=str(exc),
+                )
                 continue
 
             if still_live:
@@ -220,7 +281,9 @@ class LiveWatcher:
             os.kill(pid, 15)
 
         if not temp_path:
-            self._sessions.update_status(session_id, status="failed", error="missing temp_path", ended=True)
+            self._sessions.update_status(
+                session_id, status="failed", error="missing temp_path", ended=True
+            )
             return None
 
         temp = Path(temp_path)
@@ -231,7 +294,11 @@ class LiveWatcher:
                 error="empty_recording",
                 ended=True,
             )
-            log.warning("live_recording_empty", session_id=session_id, temp_path=str(temp))
+            log.warning(
+                "bilibili_live_recording_empty",
+                session_id=session_id,
+                temp_path=str(temp),
+            )
             return None
 
         mp4 = temp.with_suffix(".mp4")
@@ -246,7 +313,7 @@ class LiveWatcher:
                 ended=True,
             )
             self._sessions.clear_pid(session_id)
-            log.info("live_recording_completed", session_id=session_id, path=str(mp4))
+            log.info("bilibili_live_recording_completed", session_id=session_id, path=str(mp4))
         except Exception as exc:  # noqa: BLE001
             self._sessions.update_status(
                 session_id,
@@ -254,7 +321,7 @@ class LiveWatcher:
                 error=str(exc),
                 ended=True,
             )
-            log.exception("live_recording_failed", session_id=session_id)
+            log.exception("bilibili_live_recording_failed", session_id=session_id)
             return None
 
         session = self._sessions.get(session_id)
@@ -264,18 +331,28 @@ class LiveWatcher:
         if not creator:
             return {"session_id": session_id, "path": str(mp4)}
 
-        refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
+        refresh_manifest(
+            self._conn,
+            sec_uid=creator.sec_uid,
+            workspace=self._ws,
+            platform=creator.platform,
+        )
         label = creator_label(creator)
         self._notify.emit(
             NotifyEvent(
                 kind=EventKind.RECORDING_COMPLETED,
                 title=label,
-                body=f"直播录制已完成\n{mp4.name}\n{mp4.parent}",
+                body=f"B 站直播录制已完成\n{mp4.name}\n{mp4.parent}",
             )
         )
         transcribe_meta = self._maybe_transcribe_completed(mp4, creator_label=label)
         if transcribe_meta.get("transcribed"):
-            refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
+            refresh_manifest(
+                self._conn,
+                sec_uid=creator.sec_uid,
+                workspace=self._ws,
+                platform=creator.platform,
+            )
 
         return {
             "session_id": session_id,
@@ -297,7 +374,7 @@ class LiveWatcher:
         available, reason = transcribe_engine_available(self._cfg)
         if not available:
             log.warning(
-                "live_transcribe_skipped",
+                "bilibili_live_transcribe_skipped",
                 path=str(mp4),
                 reason=reason or "transcribe_unavailable",
                 engine=self._cfg.transcribe.engine,
@@ -308,7 +385,7 @@ class LiveWatcher:
             backend = create_transcribe_backend(self._cfg)
         except TranscribeConfigError as exc:
             log.warning(
-                "live_transcribe_skipped",
+                "bilibili_live_transcribe_skipped",
                 path=str(mp4),
                 reason=str(exc),
                 engine=self._cfg.transcribe.engine,
@@ -319,16 +396,16 @@ class LiveWatcher:
             result = backend.transcribe(mp4, language=self._cfg.transcribe.language)
             json_path, _md = write_transcript_outputs(mp4, result)
             index_transcript_safe(self._cfg, json_path)
-            log.info("live_transcribe_completed", path=str(mp4), engine=result.engine)
+            log.info("bilibili_live_transcribe_completed", path=str(mp4), engine=result.engine)
             title = creator_label or mp4.parent.parent.name
             self._notify.emit(
                 NotifyEvent(
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=title,
-                    body=f"直播转录完成（{result.engine}）\n{mp4.name}",
+                    body=f"B 站直播转录完成（{result.engine}）\n{mp4.name}",
                 )
             )
             return {"transcribed": True, "transcribe_engine": result.engine}
         except Exception as exc:  # noqa: BLE001
-            log.exception("live_transcribe_failed", path=str(mp4), error=str(exc))
+            log.exception("bilibili_live_transcribe_failed", path=str(mp4), error=str(exc))
             return {"transcribe_error": str(exc)}
