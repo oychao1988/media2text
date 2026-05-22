@@ -33,6 +33,20 @@ class AwemeRow:
 
 
 @dataclass
+class DynamicRow:
+    dynamic_id: str
+    creator_id: str
+    dynamic_type: str | None
+    text: str | None
+    refs_json: str | None
+    image_count: int
+    sync_status: str
+    local_dir: str | None
+    published_at: str | None
+    updated_at: str
+
+
+@dataclass
 class LiveSessionRow:
     id: str
     creator_id: str

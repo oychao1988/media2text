@@ -49,6 +49,20 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   error TEXT,
   FOREIGN KEY (creator_id) REFERENCES creators(id)
 );
+
+CREATE TABLE IF NOT EXISTS dynamics (
+  dynamic_id TEXT PRIMARY KEY,
+  creator_id TEXT NOT NULL,
+  dynamic_type TEXT,
+  text TEXT,
+  refs_json TEXT,
+  image_count INTEGER NOT NULL DEFAULT 0,
+  sync_status TEXT NOT NULL,
+  local_dir TEXT,
+  published_at TEXT,
+  updated_at TEXT NOT NULL,
+  FOREIGN KEY (creator_id) REFERENCES creators(id)
+);
 """
 
 _CREATOR_COLUMNS = (

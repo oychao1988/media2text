@@ -16,9 +16,12 @@ from media2text.core.platform.bilibili.http_live import (
     fetch_space_profile,
     resolve_live_via_http,
 )
+from media2text.core.platform.bilibili.http_dynamic import fetch_dynamic_feed_page
+from media2text.core.platform.bilibili.models_dynamic import ParsedDynamic
 from media2text.core.platform.bilibili.parse import (
     check_api_code,
     parse_archive_cursor_list,
+    parse_dynamic_feed,
     parse_play_url,
     parse_room_info,
     parse_space_acc_info,
@@ -144,6 +147,31 @@ class BilibiliAdapterV1:
             raise
         except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
             raise ParseFailed(f"playurl failed for {aweme_id}: {exc}") from exc
+
+    def list_dynamics(
+        self,
+        *,
+        sec_uid: str,
+        offset: str = "",
+    ) -> tuple[list[ParsedDynamic], str | None, bool]:
+        if self._fixture_root:
+            name = "feed_space_page2.json" if offset else "feed_space.json"
+            path = self._fixture_root / name
+            if not path.is_file():
+                path = self._fixture_root / "feed_space.json"
+            return parse_dynamic_feed(json.loads(path.read_text()))
+
+        if not self._client:
+            raise AuthRequired("no session")
+
+        try:
+            return fetch_dynamic_feed_page(self._client, host_mid=sec_uid, offset=offset)
+        except PlatformChanged:
+            raise
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
+            raise ParseFailed(f"dynamic feed failed: {exc}") from exc
 
     def check_platform_changed_fixture(self) -> None:
         """Test helper: raise PlatformChanged from fixture."""

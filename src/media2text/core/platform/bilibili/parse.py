@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
+from media2text.core.platform.bilibili.models_dynamic import ParsedDynamic
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 
 
@@ -128,6 +130,151 @@ def parse_archive_cursor_list(
 def parse_video_playurl(payload: dict) -> str:
     """Parse x/player/playurl for VOD download."""
     return parse_play_url(payload)
+
+
+def _normalize_dynamic_type(raw: str | None) -> str:
+    if not raw:
+        return "unknown"
+    text = str(raw)
+    if text.startswith("DYNAMIC_TYPE_"):
+        text = text[len("DYNAMIC_TYPE_") :]
+    return text.lower() or "unknown"
+
+
+def _append_unique_url(urls: list[str], url: str | None) -> None:
+    if not url:
+        return
+    u = str(url).strip()
+    if u and u not in urls:
+        urls.append(u)
+
+
+def _extract_major_text(major: dict) -> str:
+    parts: list[str] = []
+    for key in ("opus", "archive", "draw", "common", "article"):
+        block = major.get(key)
+        if not isinstance(block, dict):
+            continue
+        for field in ("title", "desc", "summary", "content"):
+            val = block.get(field)
+            if isinstance(val, str) and val.strip():
+                parts.append(val.strip())
+            elif isinstance(val, dict):
+                text = val.get("text")
+                if isinstance(text, str) and text.strip():
+                    parts.append(text.strip())
+    return "\n\n".join(parts).strip()
+
+
+def _extract_major_images(major: dict) -> list[str]:
+    urls: list[str] = []
+    major_type = major.get("type")
+    opus = major.get("opus")
+    if isinstance(opus, dict):
+        for pic in opus.get("pics") or []:
+            if isinstance(pic, dict):
+                _append_unique_url(urls, pic.get("url"))
+    draw = major.get("draw")
+    if isinstance(draw, dict):
+        for pic in draw.get("items") or draw.get("pics") or []:
+            if isinstance(pic, dict):
+                _append_unique_url(urls, pic.get("src") or pic.get("url"))
+    archive = major.get("archive")
+    if isinstance(archive, dict):
+        _append_unique_url(urls, archive.get("cover"))
+    common = major.get("common")
+    if isinstance(common, dict):
+        _append_unique_url(urls, common.get("cover"))
+    if major_type == "MAJOR_TYPE_PICTURES":
+        pictures = major.get("pictures")
+        if isinstance(pictures, dict):
+            for pic in pictures.get("pics") or []:
+                if isinstance(pic, dict):
+                    _append_unique_url(urls, pic.get("url"))
+    return urls
+
+
+def _parse_dynamic_item(item: dict) -> ParsedDynamic | None:
+    dynamic_id = item.get("id_str")
+    if not dynamic_id:
+        return None
+    dynamic_id = str(dynamic_id)
+    modules = item.get("modules") or {}
+    author = modules.get("module_author") or {}
+    pub_ts = author.get("pub_ts")
+    published_at: str | None = None
+    create_ts: int | None = None
+    if pub_ts is not None:
+        try:
+            create_ts = int(pub_ts)
+            published_at = datetime.fromtimestamp(create_ts, tz=timezone.utc).isoformat()
+        except (TypeError, ValueError, OSError):
+            published_at = None
+            create_ts = None
+
+    module_dynamic = modules.get("module_dynamic") or {}
+    desc = module_dynamic.get("desc")
+    text_parts: list[str] = []
+    if isinstance(desc, str) and desc.strip():
+        text_parts.append(desc.strip())
+    elif isinstance(desc, dict):
+        dtext = desc.get("text")
+        if isinstance(dtext, str) and dtext.strip():
+            text_parts.append(dtext.strip())
+
+    major = module_dynamic.get("major") or {}
+    if isinstance(major, dict):
+        major_text = _extract_major_text(major)
+        if major_text:
+            text_parts.append(major_text)
+
+    image_urls = _extract_major_images(major) if isinstance(major, dict) else []
+
+    bvid: str | None = None
+    opus_id: str | None = None
+    if isinstance(major, dict):
+        archive = major.get("archive")
+        if isinstance(archive, dict):
+            raw_bvid = archive.get("bvid")
+            if raw_bvid:
+                bvid = str(raw_bvid).strip()
+        opus = major.get("opus")
+        if isinstance(opus, dict):
+            jump = opus.get("jump_url") or ""
+            if "/opus/" in str(jump):
+                opus_id = str(jump).split("/opus/")[-1].split("?")[0].strip("/")
+            if not opus_id and dynamic_id:
+                opus_id = dynamic_id
+
+    return ParsedDynamic(
+        dynamic_id=dynamic_id,
+        dynamic_type=_normalize_dynamic_type(item.get("type")),
+        text="\n\n".join(text_parts).strip(),
+        image_urls=image_urls,
+        bvid=bvid,
+        opus_id=opus_id,
+        published_at=published_at,
+        pub_ts=create_ts,
+    )
+
+
+def parse_dynamic_feed(
+    payload: dict,
+) -> tuple[list[ParsedDynamic], str | None, bool]:
+    """Parse polymer web-dynamic feed/space response."""
+    check_api_code(payload)
+    data = payload.get("data") or {}
+    items: list[ParsedDynamic] = []
+    for raw in data.get("items") or []:
+        if not isinstance(raw, dict):
+            continue
+        parsed = _parse_dynamic_item(raw)
+        if parsed:
+            items.append(parsed)
+    has_more = bool(data.get("has_more"))
+    offset = data.get("offset")
+    next_offset = str(offset) if has_more and offset not in (None, "") else None
+    return items, next_offset, has_more
 
 
 def parse_space_live_room(payload: dict) -> LiveRoomInfo:
