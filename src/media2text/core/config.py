@@ -21,7 +21,9 @@ class BilibiliPlatformConfig(BaseModel):
     archive_poll_interval_sec: int = 300
     dynamic_poll_interval_sec: int = 120
     dynamic_poll_interval_min_sec: int = 5
+    max_sync_pages: int = 0
     max_dynamic_sync_pages: int = 0
+    download_concurrency: int = 3
     download_dynamic_images: bool = True
     max_dynamic_images_per_item: int = 50
 

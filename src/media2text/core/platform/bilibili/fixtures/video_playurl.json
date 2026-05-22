@@ -1,0 +1,19 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "quality": 64,
+    "format": "flv",
+    "timelength": 120000,
+    "accept_format": "mp4",
+    "durl": [
+      {
+        "order": 1,
+        "length": 120000,
+        "size": 1024,
+        "url": "https://example.com/bilibili-fixture-video.mp4"
+      }
+    ]
+  }
+}

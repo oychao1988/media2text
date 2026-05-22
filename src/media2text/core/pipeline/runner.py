@@ -4,8 +4,7 @@ from pathlib import Path
 
 from media2text.core.config import AppConfig
 from media2text.core.manifest import refresh_manifest
-from media2text.core.platform.douyin.catalog import sync_creator
-from media2text.core.platform.douyin.download import download_pending
+from media2text.core.platform.vod import download_pending, sync_creator
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
 from media2text.core.transcribe.errors import TranscribeConfigError
 from media2text.core.transcribe.factory import create_transcribe_backend, transcribe_engine_available

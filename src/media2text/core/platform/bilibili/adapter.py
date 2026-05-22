@@ -7,6 +7,10 @@ from pathlib import Path
 import httpx
 
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
+from media2text.core.platform.bilibili.http_archive import (
+    fetch_archive_page,
+    resolve_video_download_url,
+)
 from media2text.core.platform.bilibili.http_live import (
     fetch_play_url,
     fetch_space_profile,
@@ -14,9 +18,11 @@ from media2text.core.platform.bilibili.http_live import (
 )
 from media2text.core.platform.bilibili.parse import (
     check_api_code,
+    parse_archive_cursor_list,
     parse_play_url,
     parse_room_info,
     parse_space_acc_info,
+    parse_video_playurl,
 )
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 
@@ -101,12 +107,43 @@ class BilibiliAdapterV1:
         max_cursor: str = "",
         count: int = 18,
     ) -> tuple[list[AwemeItem], str | None, bool]:
-        del sec_uid, max_cursor, count
-        raise NotImplementedError("bilibili archive catalog is not implemented (P6b)")
+        if self._fixture_root:
+            name = (
+                "archive_cursor_page2.json"
+                if max_cursor == "100002"
+                else "archive_cursor.json"
+            )
+            return parse_archive_cursor_list(self._load_fixture(name))
+
+        try:
+            return fetch_archive_page(
+                self._client,
+                mid=sec_uid,
+                max_cursor=max_cursor,
+                count=count,
+            )
+        except PlatformChanged:
+            raise
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
+            raise ParseFailed(f"archive list failed: {exc}") from exc
 
     def resolve_download_url(self, *, aweme_id: str) -> str:
-        del aweme_id
-        raise NotImplementedError("bilibili download is not implemented (P6b)")
+        if self._fixture_root:
+            return parse_video_playurl(self._load_fixture("video_playurl.json"))
+
+        if not self._client:
+            raise AuthRequired("no session")
+
+        try:
+            return resolve_video_download_url(self._client, bvid=aweme_id)
+        except PlatformChanged:
+            raise
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
+            raise ParseFailed(f"playurl failed for {aweme_id}: {exc}") from exc
 
     def check_platform_changed_fixture(self) -> None:
         """Test helper: raise PlatformChanged from fixture."""

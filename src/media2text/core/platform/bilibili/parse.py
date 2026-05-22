@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
-from media2text.core.platform.douyin.models import LiveRoomInfo, UserProfile
+from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 
 
 def _dig(data: Any, *keys: str) -> Any:
@@ -81,6 +81,53 @@ def parse_space_acc_info(payload: dict) -> UserProfile:
         signature=str(sign) if sign else None,
         follower_count=fans,
     )
+
+
+def parse_archive_cursor_list(
+    payload: dict,
+) -> tuple[list[AwemeItem], str | None, bool]:
+    """Parse app.biliapi.com space/archive/cursor response."""
+    check_api_code(payload)
+    data = payload.get("data") or {}
+    items: list[AwemeItem] = []
+    last_aid: str | None = None
+    for raw in data.get("item") or []:
+        if not isinstance(raw, dict):
+            continue
+        if raw.get("goto") not in (None, "av", ""):
+            continue
+        bvid = raw.get("bvid")
+        if not bvid:
+            continue
+        bvid_str = str(bvid).strip()
+        if not bvid_str.startswith("BV"):
+            continue
+        ctime = raw.get("ctime")
+        create_time: int | None = None
+        if ctime is not None:
+            try:
+                create_time = int(ctime)
+            except (TypeError, ValueError):
+                create_time = None
+        title = raw.get("title")
+        items.append(
+            AwemeItem(
+                aweme_id=bvid_str,
+                title=str(title) if title else None,
+                create_time=create_time,
+            )
+        )
+        param = raw.get("param")
+        if param not in (None, ""):
+            last_aid = str(param)
+    has_more = bool(data.get("has_next"))
+    next_cursor = last_aid if has_more and last_aid else None
+    return items, next_cursor, has_more
+
+
+def parse_video_playurl(payload: dict) -> str:
+    """Parse x/player/playurl for VOD download."""
+    return parse_play_url(payload)
 
 
 def parse_space_live_room(payload: dict) -> LiveRoomInfo:
