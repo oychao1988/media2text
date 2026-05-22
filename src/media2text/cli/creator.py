@@ -7,7 +7,7 @@ from media2text.core.errors import ParseFailed
 from media2text.core.json_out import emit
 from media2text.core.manifest import refresh_manifest
 from media2text.core.platform.douyin.auth import session_path
-from media2text.core.platform.douyin.catalog import sync_creator
+from media2text.core.platform.vod import sync_creator
 from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.platform.douyin.profile import is_profile_stale, sync_creator_profile
 from media2text.core.platform.bilibili.resolver import resolve_mid

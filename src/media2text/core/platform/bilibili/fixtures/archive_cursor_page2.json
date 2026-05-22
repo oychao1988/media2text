@@ -1,0 +1,20 @@
+{
+  "code": 0,
+  "message": "0",
+  "ttl": 1,
+  "data": {
+    "count": 1,
+    "has_next": false,
+    "has_prev": true,
+    "item": [
+      {
+        "title": "Fixture archive page two",
+        "bvid": "BV1fixture003",
+        "param": "100003",
+        "ctime": 1710691203,
+        "goto": "av",
+        "duration": 60
+      }
+    ]
+  }
+}

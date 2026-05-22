@@ -3,7 +3,7 @@ import typer
 from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.manifest import refresh_manifest
-from media2text.core.platform.douyin.download import download_pending
+from media2text.core.platform.vod import download_pending
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 

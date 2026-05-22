@@ -5,6 +5,12 @@ platforms:
     poll_interval_sec: 60
     download_concurrency: 3
     max_sync_pages: 0
+  bilibili:
+    live_poll_interval_sec: 0
+    archive_poll_interval_sec: 300
+    dynamic_poll_interval_sec: 120
+    max_sync_pages: 0
+    download_concurrency: 3
 
 monitor:
   live_poll_interval_sec: 60
