@@ -36,7 +36,7 @@ def download_via_ytdlp_bilibili(
             "--cookies",
             str(cookies_path),
             "-f",
-            "best[ext=mp4]/best",
+            "bv*+ba/b[ext=mp4]/b",
             "-o",
             out_template,
             page_url,

@@ -3,6 +3,9 @@ from __future__ import annotations
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
+from media2text.core.platform.bilibili.archive_fallback import (
+    list_awemes_from_dynamics_workspace,
+)
 from media2text.core.platform.bilibili.auth import session_path
 from media2text.core.platform.bilibili.httpx_client import client_from_storage
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
@@ -66,11 +69,30 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
             "error": str(exc),
         }
     except ParseFailed as exc:
+        if "-799" in str(exc):
+            creator_root = cfg.ensure_workspace() / "creators" / creator.sec_uid
+            fallback_items = list_awemes_from_dynamics_workspace(creator_root)
+            if fallback_items:
+                fb_new = 0
+                for item in fallback_items:
+                    if awemes.upsert_listed(creator_id=creator.id, item=item):
+                        fb_new += 1
+                return {
+                    "ok": True,
+                    "creator_id": creator_id,
+                    "new_count": fb_new,
+                    "total_listed": len(fallback_items),
+                    "pages": 0,
+                    "auth_required": False,
+                    "platform_changed": False,
+                    "dynamics_fallback": True,
+                    "warning": str(exc),
+                }
         return {
             "ok": False,
             "creator_id": creator_id,
             "auth_required": False,
-            "platform_changed": True,
+            "platform_changed": False,
             "error": str(exc),
         }
 

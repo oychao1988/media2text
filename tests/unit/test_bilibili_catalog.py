@@ -5,13 +5,28 @@ import pytest
 from media2text.core.config import AppConfig
 from media2text.core.errors import PlatformChanged
 from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
+from media2text.core.platform.bilibili.archive_fallback import (
+    list_awemes_from_dynamics_workspace,
+)
 from media2text.core.platform.bilibili.catalog import build_adapter, sync_creator
 from media2text.core.platform.bilibili.dedupe import register_bvid
-from media2text.core.platform.bilibili.parse import parse_archive_cursor_list
+from media2text.core.platform.bilibili.parse import (
+    parse_arc_search_list,
+    parse_archive_cursor_list,
+)
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo
 from media2text.core.workspace import open_db
 
 FIXTURES = FIXTURE_ROOT
+
+
+def test_parse_arc_search_list_from_fixture() -> None:
+    payload = json.loads((FIXTURES / "arc_search.json").read_text())
+    items, next_cursor, has_more = parse_arc_search_list(payload)
+    assert len(items) == 2
+    assert items[0].aweme_id == "BV1fixture001"
+    assert next_cursor == "2"
+    assert has_more is True
 
 
 def test_parse_archive_cursor_list_from_fixture() -> None:
@@ -46,7 +61,7 @@ def test_adapter_list_awemes_fixture_pagination() -> None:
     page1, cursor, more = adapter.list_awemes(sec_uid="12345")
     assert len(page1) == 2
     assert more is True
-    assert cursor == "100002"
+    assert cursor == "2"
     page2, cursor2, more2 = adapter.list_awemes(sec_uid="12345", max_cursor=cursor or "")
     assert len(page2) == 1
     assert page2[0].aweme_id == "BV1fixture003"
@@ -106,3 +121,24 @@ def test_build_adapter_uses_fixture_without_session(tmp_path) -> None:
     adapter = build_adapter(cfg)
     items, _, _ = adapter.list_awemes(sec_uid="1")
     assert len(items) >= 1
+
+
+def test_list_awemes_from_dynamics_workspace(tmp_path) -> None:
+    root = tmp_path / "creators" / "123"
+    dyn = root / "dynamics" / "999"
+    dyn.mkdir(parents=True)
+    (dyn / "meta.json").write_text(
+        json.dumps(
+            {
+                "published_at": "2026-03-12T08:43:16+00:00",
+                "refs": {"bvid": "BV1fromdyn"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (dyn / "content.md").write_text("# Dynamic title\n", encoding="utf-8")
+    items = list_awemes_from_dynamics_workspace(root)
+    assert len(items) == 1
+    assert items[0].aweme_id == "BV1fromdyn"
+    assert items[0].title == "Dynamic title"
+    assert items[0].create_time is not None

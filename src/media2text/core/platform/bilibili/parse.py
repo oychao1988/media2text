@@ -23,8 +23,10 @@ def check_api_code(payload: dict) -> None:
         return
     if code in (-101, -111):
         raise AuthRequired(f"bilibili api code {code}")
-    if code in (-352, -400, -403):
+    if code in (-352, -403):
         raise PlatformChanged(f"bilibili api code {code}: {payload.get('message', '')}")
+    if code == -400:
+        raise ParseFailed(f"bilibili api code {code}: {payload.get('message', '')}")
     raise ParseFailed(f"bilibili api code {code}: {payload.get('message', '')}")
 
 
@@ -83,6 +85,57 @@ def parse_space_acc_info(payload: dict) -> UserProfile:
         signature=str(sign) if sign else None,
         follower_count=fans,
     )
+
+
+def parse_arc_search_list(
+    payload: dict,
+) -> tuple[list[AwemeItem], str | None, bool]:
+    """Parse api.bilibili.com x/space/arc/search response."""
+    check_api_code(payload)
+    data = payload.get("data") or {}
+    list_block = data.get("list")
+    vlist: list = []
+    if isinstance(list_block, dict):
+        vlist = list_block.get("vlist") or []
+    elif isinstance(list_block, list):
+        vlist = list_block
+
+    items: list[AwemeItem] = []
+    for raw in vlist:
+        if not isinstance(raw, dict):
+            continue
+        bvid = raw.get("bvid")
+        if not bvid:
+            continue
+        bvid_str = str(bvid).strip()
+        if not bvid_str.startswith("BV"):
+            continue
+        created = raw.get("created")
+        create_time: int | None = None
+        if created is not None:
+            try:
+                create_time = int(created)
+            except (TypeError, ValueError):
+                create_time = None
+        title = raw.get("title")
+        items.append(
+            AwemeItem(
+                aweme_id=bvid_str,
+                title=str(title) if title else None,
+                create_time=create_time,
+            )
+        )
+
+    page = data.get("page") or {}
+    try:
+        pn = int(page.get("pn") or 1)
+        ps = int(page.get("ps") or 30)
+        count = int(page.get("count") or 0)
+    except (TypeError, ValueError):
+        pn, ps, count = 1, 30, 0
+    has_more = bool(count and pn * ps < count)
+    next_cursor = str(pn + 1) if has_more else None
+    return items, next_cursor, has_more
 
 
 def parse_archive_cursor_list(
