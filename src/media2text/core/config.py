@@ -4,8 +4,10 @@ import os
 from pathlib import Path
 
 import yaml
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
+
+from media2text.core.errors import ConfigError
 
 
 class DouyinPlatformConfig(BaseModel):
@@ -14,8 +16,29 @@ class DouyinPlatformConfig(BaseModel):
     max_sync_pages: int = 0
 
 
+class BilibiliPlatformConfig(BaseModel):
+    live_poll_interval_sec: int = 0
+    archive_poll_interval_sec: int = 300
+    dynamic_poll_interval_sec: int = 120
+    dynamic_poll_interval_min_sec: int = 5
+    max_dynamic_sync_pages: int = 0
+    download_dynamic_images: bool = True
+    max_dynamic_images_per_item: int = 50
+
+
 class PlatformsConfig(BaseModel):
     douyin: DouyinPlatformConfig = Field(default_factory=DouyinPlatformConfig)
+    bilibili: BilibiliPlatformConfig = Field(default_factory=BilibiliPlatformConfig)
+
+    @model_validator(mode="after")
+    def _validate_bilibili_dynamic_poll(self) -> PlatformsConfig:
+        b = self.bilibili
+        min_sec = b.dynamic_poll_interval_min_sec
+        if b.dynamic_poll_interval_sec < min_sec:
+            raise ConfigError(
+                f"platforms.bilibili.dynamic_poll_interval_sec must be >= {min_sec}"
+            )
+        return self
 
 
 class MonitorConfig(BaseModel):

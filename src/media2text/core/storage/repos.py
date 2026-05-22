@@ -15,6 +15,7 @@ class CreatorRepo:
         *,
         sec_uid: str,
         profile_url: str,
+        platform: str = "douyin",
         monitor_enabled: bool = False,
         display_name: str | None = None,
         unique_id: str | None = None,
@@ -32,10 +33,11 @@ class CreatorRepo:
               monitor_enabled, unique_id, avatar_url, signature, follower_count,
               profile_synced_at, created_at
             )
-            VALUES (?, 'douyin', ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 cid,
+                platform,
                 sec_uid,
                 display_name,
                 profile_url,
