@@ -93,6 +93,8 @@ class TranscribeConfig(BaseModel):
 class NotifyEventsConfig(BaseModel):
     live_started: bool = True
     new_aweme: bool = True
+    new_archive: bool = True
+    new_dynamic: bool = True
     recording_completed: bool = True
     transcribe_completed: bool = True
 

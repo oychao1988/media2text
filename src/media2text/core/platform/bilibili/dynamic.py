@@ -9,6 +9,9 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
+from media2text.core.manifest import refresh_manifest
+from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.labels import creator_label
 from media2text.core.platform.bilibili.dedupe import register_bvid
 from media2text.core.platform.bilibili.catalog import build_adapter
 from media2text.core.platform.bilibili.models_dynamic import ParsedDynamic
@@ -268,6 +271,14 @@ def sync_creator_dynamics(cfg: AppConfig, creator_id: str) -> dict:
             "error": str(exc),
         }
 
+    if new_count > 0:
+        refresh_manifest(
+            conn,
+            sec_uid=creator.sec_uid,
+            workspace=cfg.ensure_workspace(),
+            platform="bilibili",
+        )
+
     return {
         "ok": not errors,
         "creator_id": creator_id,
@@ -282,7 +293,12 @@ def sync_creator_dynamics(cfg: AppConfig, creator_id: str) -> dict:
     }
 
 
-def run_dynamic_tick(cfg: AppConfig, *, creator_id: str | None = None) -> dict:
+def run_dynamic_tick(
+    cfg: AppConfig,
+    *,
+    creator_id: str | None = None,
+    notify: NotifyService | None = None,
+) -> dict:
     conn = open_db(cfg)
     creators = CreatorRepo(conn)
     targets = [c for c in creators.list_monitored() if c.platform == "bilibili"]
@@ -318,9 +334,18 @@ def run_dynamic_tick(cfg: AppConfig, *, creator_id: str | None = None) -> dict:
         if outcome.get("errors"):
             for item in outcome["errors"]:
                 errors.append({"creator_id": creator.id, **item})
-        total_new += int(outcome.get("new_count") or 0)
+        new_n = int(outcome.get("new_count") or 0)
+        total_new += new_n
         total_images += int(outcome.get("images_downloaded") or 0)
         results.append(outcome)
+        if notify and new_n > 0:
+            notify.emit(
+                NotifyEvent(
+                    kind=EventKind.NEW_DYNAMIC,
+                    title=creator_label(creator),
+                    body=f"同步到 {new_n} 条新动态",
+                )
+            )
 
     return {
         "creators": len(targets),

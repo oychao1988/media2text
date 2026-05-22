@@ -7,6 +7,7 @@ from media2text.core.platform.bilibili.adapter import FIXTURE_ROOT
 from media2text.core.platform.bilibili.dynamic import sync_creator_dynamics
 from media2text.core.platform.bilibili.parse import parse_dynamic_feed
 from media2text.core.storage.db import connect
+from media2text.core.manifest import refresh_manifest
 from media2text.core.storage.repos import CreatorRepo, DynamicRepo
 
 
@@ -70,6 +71,15 @@ def test_sync_creator_dynamics_persists_files_and_dedupes_bvid(tmp_path, monkeyp
     dynamics = DynamicRepo(conn)
     assert dynamics.is_synced("dyn_opus_001")
     assert dynamics.is_synced("dyn_av_002")
+
+    manifest_path = refresh_manifest(
+        conn, sec_uid="12345", workspace=cfg.ensure_workspace(), platform="bilibili"
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["platform"] == "bilibili"
+    assert len(manifest["dynamics"]) == 2
+    assert manifest["dynamics"][0]["dynamic_id"] in ("dyn_opus_001", "dyn_av_002")
+    assert any("content_md" in d for d in manifest["dynamics"])
 
     second = sync_creator_dynamics(cfg, cid)
     assert second["new_count"] == 0

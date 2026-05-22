@@ -218,6 +218,21 @@ def monitor_cmd(
     )
 
 
+@app.command("sync-dynamics")
+def sync_dynamics(
+    creator_id: str = typer.Argument(...),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    from media2text.core.platform.bilibili.dynamic import sync_creator_dynamics
+
+    cfg = AppConfig.load()
+    result = sync_creator_dynamics(cfg, creator_id)
+    emit({"command": "creator sync-dynamics", **result}, as_json=json_out)
+    from media2text.core.cli_exit import raise_for_result
+
+    raise_for_result(result)
+
+
 @app.command("sync")
 def sync(
     creator_id: str = typer.Argument(...),

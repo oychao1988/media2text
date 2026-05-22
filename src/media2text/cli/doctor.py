@@ -9,7 +9,9 @@ from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
 from media2text.core.exit_codes import EXIT_GENERAL, EXIT_OK
 from media2text.core.json_out import emit
-from media2text.core.platform.douyin.auth import session_exists
+from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
+from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
+from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 
 def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
@@ -29,19 +31,42 @@ def _playwright_ok() -> bool:
 def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
     cfg = AppConfig.load()
     ws = cfg.ensure_workspace()
-    session_ok = session_exists(ws)
+    conn = open_db(cfg)
+    has_douyin = any(c.platform == "douyin" for c in CreatorRepo(conn).list_all())
+    has_bilibili = any(c.platform == "bilibili" for c in CreatorRepo(conn).list_all())
+
+    douyin_session_ok = douyin_session_exists(ws)
+    bilibili_session_ok = bilibili_session_exists(ws)
+
     checks = [
         {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path))},
         {"name": "playwright", "ok": _playwright_ok()},
-        {
-            "name": "session",
-            "ok": session_ok,
-            "auth_required": not session_ok,
-        },
         {"name": "disk", "ok": _disk_ok(ws)},
     ]
-    ok = all(c["ok"] for c in checks if c["name"] != "session") and session_ok
-    conn = open_db(cfg)
+    if has_douyin or not has_bilibili:
+        checks.append(
+            {
+                "name": "session_douyin",
+                "ok": douyin_session_ok,
+                "auth_required": not douyin_session_ok,
+                "relevant": has_douyin,
+            }
+        )
+    if has_bilibili:
+        checks.append(
+            {
+                "name": "session_bilibili",
+                "ok": bilibili_session_ok,
+                "auth_required": not bilibili_session_ok,
+                "relevant": True,
+            }
+        )
+
+    ok = all(c["ok"] for c in checks)
+    if has_douyin or not has_bilibili:
+        ok = ok and douyin_session_ok
+    if has_bilibili:
+        ok = ok and bilibili_session_ok
     emit(
         {
             "ok": ok,

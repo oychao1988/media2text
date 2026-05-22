@@ -5,7 +5,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-from media2text.core.storage.repos import AwemeRepo, CreatorRepo
+from media2text.core.storage.repos import AwemeRepo, CreatorRepo, DynamicRepo
 
 
 def _transcript_sidecar_path(media_path: str | None) -> str | None:
@@ -13,6 +13,34 @@ def _transcript_sidecar_path(media_path: str | None) -> str | None:
         return None
     json_path = Path(media_path).with_suffix(".transcript.json")
     return str(json_path) if json_path.is_file() else None
+
+
+def _dynamic_manifest_entry(workspace: Path, sec_uid: str, row) -> dict:
+    rel_dir = row.local_dir or f"dynamics/{row.dynamic_id}"
+    rel_path = Path(rel_dir)
+    base = workspace / "creators" / sec_uid / rel_path
+    content_md = base / "content.md"
+    images: list[str] = []
+    images_dir = base / "images"
+    if images_dir.is_dir():
+        images = sorted(
+            str((rel_path / "images" / p.name).as_posix())
+            for p in images_dir.iterdir()
+            if p.is_file()
+        )
+    entry: dict = {
+        "dynamic_id": row.dynamic_id,
+        "type": row.dynamic_type,
+        "path": rel_dir.replace("\\", "/"),
+        "status": row.sync_status,
+        "published_at": row.published_at,
+        "image_count": row.image_count,
+    }
+    if content_md.is_file():
+        entry["content_md"] = f"{rel_dir}/content.md".replace("\\", "/")
+    if images:
+        entry["images"] = images
+    return entry
 
 
 def refresh_manifest(
@@ -24,6 +52,7 @@ def refresh_manifest(
 ) -> Path:
     creators = CreatorRepo(conn)
     awemes = AwemeRepo(conn)
+    dynamics = DynamicRepo(conn)
 
     if platform:
         creator = creators.get_by_sec_uid(sec_uid, platform=platform)
@@ -64,16 +93,25 @@ def refresh_manifest(
             }
         )
 
+    dynamic_items: list[dict] = []
+    if creator.platform == "bilibili":
+        for row in dynamics.list_for_creator(creator.id):
+            if row.sync_status == "synced":
+                dynamic_items.append(
+                    _dynamic_manifest_entry(workspace, sec_uid, row)
+                )
+
     payload = {
         "platform": creator.platform,
         "sec_uid": sec_uid,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "items": vod_items + live_items,
+        "items": vod_items + live_items + dynamic_items,
         "live": live_items,
         "archives": vod_items,
     }
     if creator.platform == "bilibili":
         payload["mid"] = sec_uid
+        payload["dynamics"] = dynamic_items
 
     out_dir = workspace / "creators" / sec_uid
     out_dir.mkdir(parents=True, exist_ok=True)
