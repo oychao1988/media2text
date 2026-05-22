@@ -9,13 +9,37 @@ from media2text.core.errors import AuthRequired
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.pipeline.runner import run_pipeline
-from media2text.core.transcribe.factory import transcribe_engine_available
-from media2text.core.platform.douyin.live import LiveWatcher
+from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
+from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo
+from media2text.core.transcribe.factory import transcribe_engine_available
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
+
+
+def _merge_live_results(douyin: dict, bilibili: dict) -> dict:
+    auth_required = bool(douyin.get("auth_required") or bilibili.get("auth_required"))
+    platform_changed = bool(
+        douyin.get("platform_changed") or bilibili.get("platform_changed")
+    )
+    errors = list(douyin.get("errors") or []) + list(bilibili.get("errors") or [])
+    started = list(douyin.get("started") or []) + list(bilibili.get("started") or [])
+    finalized = list(douyin.get("finalized") or []) + list(bilibili.get("finalized") or [])
+    active = int(douyin.get("active") or 0) + int(bilibili.get("active") or 0)
+    payload: dict = {
+        "douyin": douyin,
+        "bilibili": bilibili,
+        "started": started,
+        "active": active,
+        "errors": errors,
+        "auth_required": auth_required,
+        "platform_changed": platform_changed,
+    }
+    if finalized:
+        payload["finalized"] = finalized
+    return payload
 
 
 class MonitorWatcher:
@@ -24,18 +48,27 @@ class MonitorWatcher:
         self._ws = cfg.ensure_workspace()
         self._conn = open_db(cfg)
         self._creators = CreatorRepo(self._conn)
-        self._live = LiveWatcher(cfg)
+        self._douyin_live = DouyinLiveWatcher(cfg)
+        self._bilibili_live = BilibiliLiveWatcher(cfg)
         self._notify = NotifyService(cfg)
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
-        live_result = self._live.run_once(creator_id=creator_id)
+        douyin_live = self._douyin_live.run_once(creator_id=creator_id)
+        bilibili_live = self._bilibili_live.run_once(creator_id=creator_id)
+        live_result = _merge_live_results(douyin_live, bilibili_live)
+
         vod_result = self._run_vod_tick(creator_id=creator_id)
-        errors = list(vod_result.get("errors") or [])
+        errors = list(live_result.get("errors") or []) + list(vod_result.get("errors") or [])
+        auth_required = bool(
+            live_result.get("auth_required") or vod_result.get("auth_required")
+        )
+        platform_changed = bool(live_result.get("platform_changed"))
         return {
             "live": live_result,
             "vod": vod_result,
             "errors": errors,
-            "auth_required": vod_result.get("auth_required", False),
+            "auth_required": auth_required,
+            "platform_changed": platform_changed,
         }
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
@@ -49,7 +82,8 @@ class MonitorWatcher:
                     vod_poll=self._cfg.monitor.vod_poll_interval_sec,
                 )
                 while True:
-                    self._live.run_once(creator_id=creator_id)
+                    self._douyin_live.run_once(creator_id=creator_id)
+                    self._bilibili_live.run_once(creator_id=creator_id)
                     now = time.time()
                     if now - last_vod >= self._cfg.monitor.vod_poll_interval_sec:
                         self._run_vod_tick(creator_id=creator_id)
@@ -60,10 +94,12 @@ class MonitorWatcher:
             raise
 
     def _run_vod_tick(self, *, creator_id: str | None = None) -> dict:
-        targets = self._creators.list_monitored()
+        targets = [
+            c for c in self._creators.list_monitored() if c.platform in ("douyin",)
+        ]
         if creator_id:
             row = self._creators.get(creator_id)
-            targets = [row] if row and row.monitor_enabled else []
+            targets = [row] if row and row.monitor_enabled and row.platform == "douyin" else []
         max_n = self._cfg.monitor.max_creators_per_vod_tick
         if max_n > 0:
             targets = targets[:max_n]

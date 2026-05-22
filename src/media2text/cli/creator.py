@@ -1,3 +1,5 @@
+from datetime import datetime, timezone
+
 import typer
 
 from media2text.core.config import AppConfig
@@ -8,6 +10,7 @@ from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.catalog import sync_creator
 from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.platform.douyin.profile import is_profile_stale, sync_creator_profile
+from media2text.core.platform.bilibili.resolver import resolve_mid
 from media2text.core.platform.douyin.resolver import resolve_sec_uid
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
@@ -18,6 +21,7 @@ app = typer.Typer(help="Creator registry")
 def _creator_list_item(row, *, stale_days: int) -> dict:
     return {
         "id": row.id,
+        "platform": row.platform,
         "sec_uid": row.sec_uid,
         "display_name": row.display_name,
         "unique_id": row.unique_id,
@@ -33,29 +37,42 @@ def _creator_list_item(row, *, stale_days: int) -> dict:
 
 @app.command("add")
 def add(
-    url: str = typer.Argument(..., help="Douyin profile URL"),
+    url: str = typer.Argument(..., help="Creator profile URL (Douyin or Bilibili space)"),
+    platform: str = typer.Option("douyin", "--platform"),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
+    plat = platform.strip().lower()
+    if plat not in ("douyin", "bilibili"):
+        raise typer.BadParameter("platform must be douyin or bilibili")
+
     cfg = AppConfig.load()
     ws = cfg.ensure_workspace()
     client = None
     session = session_path(ws)
-    if session.is_file():
+    if plat == "douyin" and session.is_file():
         client = client_from_storage(session)
+
     try:
-        sec_uid = resolve_sec_uid(url, client)
+        if plat == "bilibili":
+            sec_uid = resolve_mid(url)
+        else:
+            sec_uid = resolve_sec_uid(url, client)
     except ParseFailed as exc:
-        emit({"ok": False, "command": "creator add", "error": str(exc)}, as_json=json_out)
+        emit(
+            {"ok": False, "command": "creator add", "platform": plat, "error": str(exc)},
+            as_json=json_out,
+        )
         raise typer.Exit(3) from exc
 
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
-    existing = repo.get_by_sec_uid(sec_uid)
+    existing = repo.get_by_sec_uid(sec_uid, platform=plat)
     if existing:
         emit(
             {
                 "ok": True,
                 "command": "creator add",
+                "platform": plat,
                 "creator_id": existing.id,
                 "sec_uid": sec_uid,
                 "already_exists": True,
@@ -65,16 +82,45 @@ def add(
         )
         return
 
-    creator_id = repo.add(sec_uid=sec_uid, profile_url=url, monitor_enabled=False)
+    creator_id = repo.add(
+        sec_uid=sec_uid,
+        profile_url=url,
+        platform=plat,
+        monitor_enabled=False,
+    )
     profile_result: dict | None = None
-    if session.is_file():
+    if plat == "douyin" and session.is_file():
         profile_result = sync_creator_profile(cfg, creator_id)
+    elif plat == "bilibili":
+        from media2text.core.errors import AuthRequired
+        from media2text.core.platform.bilibili.auth import session_path as bili_session_path
+        from media2text.core.platform.bilibili.catalog import build_adapter
+
+        bsession = bili_session_path(ws)
+        if bsession.is_file():
+            try:
+                adapter = build_adapter(cfg)
+                profile = adapter.get_user_profile(sec_uid=sec_uid)
+                repo.update_profile(
+                    creator_id,
+                    display_name=profile.display_name,
+                    avatar_url=profile.avatar_url,
+                    signature=profile.signature,
+                    follower_count=profile.follower_count,
+                    profile_synced_at=datetime.now(timezone.utc).isoformat(),
+                )
+                profile_result = {"ok": True}
+            except AuthRequired as exc:
+                profile_result = {"ok": False, "auth_required": True, "error": str(exc)}
+            except Exception as exc:  # noqa: BLE001
+                profile_result = {"ok": False, "error": str(exc)}
 
     row = repo.get(creator_id)
     emit(
         {
             "ok": True,
             "command": "creator add",
+            "platform": plat,
             "creator_id": creator_id,
             "sec_uid": sec_uid,
             "monitor_enabled": False,
@@ -86,6 +132,7 @@ def add(
                 if profile_result and not profile_result.get("ok")
                 else None
             ),
+            "auth_required": bool(profile_result and profile_result.get("auth_required")),
         },
         as_json=json_out,
     )

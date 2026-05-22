@@ -1,0 +1,11 @@
+{
+  "code": 0,
+  "message": "0",
+  "data": {
+    "durl": [
+      {
+        "url": "https://example.com/bilibili-live.flv"
+      }
+    ]
+  }
+}

@@ -14,8 +14,14 @@ def test_monitor_run_once_vod_tick(tmp_path, monkeypatch) -> None:
         profile_url="https://example.com/vod",
         monitor_enabled=True,
     )
+    live_stub = {"started": [], "active": 0, "errors": [], "auth_required": False}
     with (
-        patch.object(watcher._live, "run_once", return_value={"started": [], "active": 0}),
+        patch.object(watcher._douyin_live, "run_once", return_value=live_stub),
+        patch.object(
+            watcher._bilibili_live,
+            "run_once",
+            return_value={**live_stub, "platform": "bilibili", "checked": 0},
+        ),
         patch(
             "media2text.core.monitor.watcher.run_pipeline",
             return_value={

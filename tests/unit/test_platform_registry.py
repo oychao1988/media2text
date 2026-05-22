@@ -14,9 +14,12 @@ def test_get_adapter_douyin_uses_fixture_without_session(tmp_path) -> None:
     assert profile.display_name
 
 
-def test_get_adapter_bilibili_not_implemented() -> None:
-    with pytest.raises(ConfigError, match="not implemented"):
-        get_adapter("bilibili", AppConfig())
+def test_get_adapter_bilibili_returns_adapter(tmp_path) -> None:
+    from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1
+
+    cfg = AppConfig(workspace=tmp_path / "data")
+    adapter = get_adapter("bilibili", cfg)
+    assert isinstance(adapter, BilibiliAdapterV1)
 
 
 def test_get_adapter_unknown_platform() -> None:

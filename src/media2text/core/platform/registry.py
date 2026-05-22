@@ -13,5 +13,7 @@ def get_adapter(platform: str, cfg: AppConfig) -> PlatformAdapter:
 
         return build_adapter(cfg)
     if key == "bilibili":
-        raise ConfigError("bilibili platform adapter is not implemented yet (P6)")
+        from media2text.core.platform.bilibili.catalog import build_adapter
+
+        return build_adapter(cfg)
     raise ConfigError(f"unsupported platform: {platform!r}")

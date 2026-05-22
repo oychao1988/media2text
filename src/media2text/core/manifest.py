@@ -15,17 +15,26 @@ def _transcript_sidecar_path(media_path: str | None) -> str | None:
     return str(json_path) if json_path.is_file() else None
 
 
-def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
+def refresh_manifest(
+    conn,
+    *,
+    sec_uid: str,
+    workspace: Path,
+    platform: str | None = None,
+) -> Path:
     creators = CreatorRepo(conn)
     awemes = AwemeRepo(conn)
 
-    creator = next((c for c in creators.list_all() if c.sec_uid == sec_uid), None)
+    if platform:
+        creator = creators.get_by_sec_uid(sec_uid, platform=platform)
+    else:
+        creator = next((c for c in creators.list_all() if c.sec_uid == sec_uid), None)
     if not creator:
         raise ValueError(f"creator not found for sec_uid={sec_uid}")
 
-    items: list[dict] = []
+    vod_items: list[dict] = []
     for row in awemes.list_for_creator(creator.id):
-        items.append(
+        vod_items.append(
             {
                 "id": row.aweme_id,
                 "type": "vod",
@@ -36,6 +45,7 @@ def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
             }
         )
 
+    live_items: list[dict] = []
     live_rows = conn.execute(
         "SELECT * FROM live_sessions WHERE creator_id = ? ORDER BY started_at DESC",
         (creator.id,),
@@ -43,7 +53,7 @@ def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
     for row in live_rows:
         data = dict(row)
         local_path = data.get("local_path")
-        items.append(
+        live_items.append(
             {
                 "id": data["id"],
                 "type": "live",
@@ -55,10 +65,15 @@ def refresh_manifest(conn, *, sec_uid: str, workspace: Path) -> Path:
         )
 
     payload = {
+        "platform": creator.platform,
         "sec_uid": sec_uid,
         "updated_at": datetime.now(timezone.utc).isoformat(),
-        "items": items,
+        "items": vod_items + live_items,
+        "live": live_items,
+        "archives": vod_items,
     }
+    if creator.platform == "bilibili":
+        payload["mid"] = sec_uid
 
     out_dir = workspace / "creators" / sec_uid
     out_dir.mkdir(parents=True, exist_ok=True)
