@@ -7,7 +7,7 @@ const GATEWAY_HOST = "127.0.0.1";
 const GATEWAY_PORT = 18789;
 const GATEWAY_HEALTH_URL = `http://${GATEWAY_HOST}:${GATEWAY_PORT}/health`;
 const GATEWAY_START_TIMEOUT_MS = 60_000;
-const MIN_NODE = [22, 14, 0];
+const MIN_NODE = [22, 16, 0];
 
 let spawnedGatewayPid = null;
 let spawnedGatewayChild = null;
@@ -83,7 +83,7 @@ function resolveNodeBin(resourcesRoot) {
   }
 
   throw new Error(
-    "未找到 Node ≥22.14。请安装 nvm 并执行：source ~/.nvm/nvm.sh && nvm install 22",
+    "未找到 Node ≥22.16。请安装 nvm 并执行：source ~/.nvm/nvm.sh && nvm install 22",
   );
 }
 
