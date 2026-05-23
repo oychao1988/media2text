@@ -31,8 +31,20 @@
 | P0 | [#35](https://github.com/oychao1988/media2text/issues/35) | [#36](https://github.com/oychao1988/media2text/pull/36) | [zhuanzhu-electron-openclaw-chat.md](./zhuanzhu-electron-openclaw-chat.md) | `issue-35-zhuanzhu-electron-chat` ✅ |
 | P1 | [#37](https://github.com/oychao1988/media2text/issues/37) | — | [zhuanzhu-p1-bundled-gateway.md](./zhuanzhu-p1-bundled-gateway.md) | `issue-37-zhuanzhu-p1-gateway` |
 | P2 | [#38](https://github.com/oychao1988/media2text/issues/38) | — | [zhuanzhu-p2-installer.md](./zhuanzhu-p2-installer.md) | `issue-38-zhuanzhu-p2-installer` |
-| P3 | [#39](https://github.com/oychao1988/media2text/issues/39) | — | [zhuanzhu-p3-media2text-sidecar.md](./zhuanzhu-p3-media2text-sidecar.md) | `issue-39-zhuanzhu-p3-m2t-sidecar` |
+| P3 | [#39](https://github.com/oychao1988/media2text/issues/39) | [#42](https://github.com/oychao1988/media2text/pull/42) | [zhuanzhu-p3-media2text-sidecar.md](./zhuanzhu-p3-media2text-sidecar.md) | `issue-39-zhuanzhu-p3-m2t-sidecar` ✅ |
 
-**合并顺序**：#36 → #37 → #38 → #39。
+**合并顺序（P0–P3）**：#36 → #37 → #38 → #39 → #42。
+
+### 转注 Work 产品化（P4–P8）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| P4 | [#43](https://github.com/oychao1988/media2text/issues/43) | — | [zhuanzhu-p4-ui-shell-migration.md](./zhuanzhu-p4-ui-shell-migration.md) | `issue-43-zhuanzhu-p4-ui-shell` |
+| P5 | [#44](https://github.com/oychao1988/media2text/issues/44) | — | [zhuanzhu-p5-chat-streaming.md](./zhuanzhu-p5-chat-streaming.md) | `issue-44-zhuanzhu-p5-chat-stream` |
+| P6 | [#45](https://github.com/oychao1988/media2text/issues/45) | — | [zhuanzhu-p6-agent-lens.md](./zhuanzhu-p6-agent-lens.md) | `issue-45-zhuanzhu-p6-agent-lens` |
+| P7 | [#46](https://github.com/oychao1988/media2text/issues/46) | — | [zhuanzhu-p7-bundle-runtime.md](./zhuanzhu-p7-bundle-runtime.md) | `issue-46-zhuanzhu-p7-bundle-runtime` |
+| P8 | [#47](https://github.com/oychao1988/media2text/issues/47) | — | [zhuanzhu-p8-distribution.md](./zhuanzhu-p8-distribution.md) | `issue-47-zhuanzhu-p8-distribution` |
+
+**合并顺序（P4–P8）**：#43 → #44 → #45；#46 → #47（P7/P8 可与 P5/P6 并行，但 bundle 建议先于公证）。
 
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
