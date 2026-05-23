@@ -474,10 +474,14 @@
                 <div class="composer-bar">
                   <div class="composer-pills">
                     <span class="pill-btn" id="session-pill">OpenClaw · agent:main:main</span>
-                    <label class="pill-btn pill-toggle" title="关闭深度思考，请求 Gateway thinking=off">
-                      <input type="checkbox" id="chat-fast-toggle" />
-                      快速回复
-                    </label>
+                    <div class="chat-mode-segment" id="chat-mode-segment" role="group" aria-label="聊天模式">
+                      <button type="button" class="chat-mode-btn" data-mode="agent" aria-pressed="true">
+                        Agent
+                      </button>
+                      <button type="button" class="chat-mode-btn" data-mode="fast" aria-pressed="false">
+                        快速
+                      </button>
+                    </div>
                   </div>
                   <div class="composer-actions">
                     <button type="button" class="btn-send" id="btn-send" title="发送">↑</button>

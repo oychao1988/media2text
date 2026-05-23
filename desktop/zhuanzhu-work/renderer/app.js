@@ -19,7 +19,8 @@ const inputEl = document.getElementById("composer-input");
 const sendBtn = document.getElementById("btn-send");
 const statusBanner = document.getElementById("status-banner");
 const sessionPill = document.getElementById("session-pill");
-const chatFastToggle = document.getElementById("chat-fast-toggle");
+const chatModeSegment = document.getElementById("chat-mode-segment");
+let currentChatMode = "agent";
 const refChipsEl = document.getElementById("ref-chips");
 const atPickerEl = document.getElementById("at-picker");
 
@@ -842,27 +843,45 @@ async function bindAutoUpdater() {
   });
 }
 
-bindNavigation();
-
-if (chatFastToggle && window.zhuanzhu?.app?.setChatFastMode) {
-  chatFastToggle.addEventListener("change", async () => {
-    try {
-      await window.zhuanzhu.app.setChatFastMode(chatFastToggle.checked);
-    } catch (err) {
-      showBanner(err?.message || String(err), "warn");
-      chatFastToggle.checked = !chatFastToggle.checked;
-    }
+function applyChatModeUi(mode) {
+  currentChatMode = mode === "fast" ? "fast" : "agent";
+  if (!chatModeSegment) return;
+  chatModeSegment.querySelectorAll(".chat-mode-btn").forEach((btn) => {
+    const active = btn.dataset.mode === currentChatMode;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
   });
 }
+
+function bindChatModeSegment() {
+  if (!chatModeSegment || !window.zhuanzhu?.app?.setChatMode) return;
+  chatModeSegment.querySelectorAll(".chat-mode-btn").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const mode = btn.dataset.mode === "fast" ? "fast" : "agent";
+      if (mode === currentChatMode) return;
+      const prev = currentChatMode;
+      applyChatModeUi(mode);
+      try {
+        await window.zhuanzhu.app.setChatMode(mode);
+      } catch (err) {
+        applyChatModeUi(prev);
+        showBanner(err?.message || String(err), "warn");
+      }
+    });
+  });
+}
+
+bindNavigation();
+bindChatModeSegment();
 
 async function initMain() {
   showView("chat", { agent: currentAgent, resetChat: true, focusInput: false });
 
   if (window.zhuanzhu?.app?.getBootstrap) {
     const state = await window.zhuanzhu.app.getBootstrap();
-    if (chatFastToggle) {
-      chatFastToggle.checked = Boolean(state.chatFastMode);
-    }
+    const mode =
+      state.chatMode === "fast" || state.chatFastMode ? "fast" : "agent";
+    applyChatModeUi(mode);
     if (!state.setup?.complete) {
       showBanner(
         `OpenClaw 配置未完成，请在 ${state.configPath} 中设置 gateway.auth.token 与模型 API Key。`,

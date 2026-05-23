@@ -51,8 +51,9 @@ npm run dev
 | 变量 | 说明 |
 |------|------|
 | `ZHUANZHU_SKIP_SPAWN=1` | 不自动 spawn Gateway（Gateway 已手动运行时使用，E2E 默认） |
-| `ZHUANZHU_CHAT_FAST=1` | 聊天请求强制 `thinking=off` / `fast=true`（覆盖 UI 与 config.json） |
-| `chat.fastMode` | 应用配置 `~/Library/Application Support/zhuanzhu-work/config.json`；UI「快速回复」开关持久化 |
+| `ZHUANZHU_CHAT_FAST=1` | 聊天请求强制进入 **快速** 模式（覆盖 UI 与 config.json） |
+| `chat.mode` | 应用配置 `~/Library/Application Support/zhuanzhu-work/config.json`：`agent`（默认）或 `fast`；composer 旁 segmented control 持久化 |
+| `chat.fastMode` | **已废弃**（L3）；若仅有此项为 `true` 且无 `mode`，启动时迁移为 `fast` |
 | `OPENCLAW_CONFIG_PATH` | 覆盖 openclaw.json 路径 |
 | `OPENCLAW_BIN` | 覆盖 openclaw 可执行文件路径 |
 | `ZHUANZU_WORKSPACE` | 覆盖 media2text workspace（默认 `userData/data`） |
@@ -80,12 +81,25 @@ Gateway 已就绪（`curl -sf http://127.0.0.1:18789/health`）时，从仓库�
 
 ```bash
 bash scripts/benchmark-chat-latency.sh --runs 3
-bash scripts/benchmark-chat-latency.sh --thinking off --fast --runs 2
+bash scripts/benchmark-chat-latency.sh --mode agent --runs 5
+bash scripts/benchmark-chat-latency.sh --mode fast --runs 5
+bash scripts/benchmark-chat-latency.sh --thinking off --fast --runs 2  # 等价于 --mode fast
 ```
 
 输出 JSON 含每轮 `ttfb_ms`、`ttft_ms`（首个 content delta）、`total_ms` 及 `ttft_ms_p50`。  
 流式回复在首字到达前会显示分阶段等待文案（连接 Gateway → Agent 处理中 → 已等待 Ns）。  
 Token 从 `~/.openclaw/openclaw.json` 或 `OPENCLAW_GATEWAY_TOKEN` 读取，脚本不会打印 token。
+
+### 聊天模式（Issue [#61](https://github.com/oychao1988/media2text/issues/61)）
+
+Composer 旁 **Agent / 快速** segmented control（默认 Agent）：
+
+| 模式 | Gateway 行为 | 适用 |
+|------|--------------|------|
+| **Agent** | lens 对应 `session_key`（如 `agent:main:wanzhan`）；完整 skills / tools | 档案检索、@ 引用、lens 复盘、需工具链 |
+| **快速** | 专用 `agent:main:fast` + `thinking=off` + `fast=true`；消息仍带 lens prefix / @ / archive | 短问答、低 TTFT |
+
+切换模式 **不会** 清空聊天历史；lens 切换逻辑不变。L3「快速回复」checkbox 已合并为本控件；旧 `chat.fastMode: true` 会在读取时迁移为 `chat.mode: "fast"`。
 
 ### E2E 冒烟
 

@@ -3,12 +3,25 @@ const path = require("path");
 
 const DEFAULTS = {
   chat: {
+    mode: "agent",
+    /** @deprecated use chat.mode — kept for migration from L3 */
     fastMode: false,
   },
 };
 
 function settingsPath(app) {
   return path.join(app.getPath("userData"), "config.json");
+}
+
+function normalizeChatSettings(chat = {}) {
+  let mode = chat.mode;
+  if (mode !== "fast" && mode !== "agent") {
+    mode = chat.fastMode === true ? "fast" : "agent";
+  }
+  return {
+    mode,
+    fastMode: mode === "fast",
+  };
 }
 
 function loadAppSettings(app) {
@@ -20,9 +33,8 @@ function loadAppSettings(app) {
   }
   try {
     const raw = JSON.parse(fs.readFileSync(filePath, "utf8"));
-    return {
-      chat: { ...DEFAULTS.chat, ...(raw.chat || {}) },
-    };
+    const chat = normalizeChatSettings({ ...DEFAULTS.chat, ...(raw.chat || {}) });
+    return { chat };
   } catch {
     return {
       chat: { ...DEFAULTS.chat },
@@ -36,11 +48,18 @@ function saveAppSettings(app, settings) {
   fs.writeFileSync(filePath, `${JSON.stringify(settings, null, 2)}\n`, "utf8");
 }
 
-function setChatFastMode(app, enabled) {
+function setChatMode(app, mode) {
   const settings = loadAppSettings(app);
-  settings.chat.fastMode = Boolean(enabled);
+  const normalized = mode === "fast" ? "fast" : "agent";
+  settings.chat.mode = normalized;
+  settings.chat.fastMode = normalized === "fast";
   saveAppSettings(app, settings);
   return settings.chat;
+}
+
+/** @deprecated L3 — prefer setChatMode */
+function setChatFastMode(app, enabled) {
+  return setChatMode(app, enabled ? "fast" : "agent");
 }
 
 module.exports = {
@@ -48,5 +67,7 @@ module.exports = {
   settingsPath,
   loadAppSettings,
   saveAppSettings,
+  normalizeChatSettings,
+  setChatMode,
   setChatFastMode,
 };

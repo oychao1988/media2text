@@ -60,6 +60,10 @@ contextBridge.exposeInMainWorld("zhuanzhu", {
     getOpenclawHygiene() {
       return ipcRenderer.invoke("app:openclaw-hygiene");
     },
+    setChatMode(mode) {
+      return ipcRenderer.invoke("app:set-chat-mode", mode);
+    },
+    /** @deprecated L3 — use setChatMode */
     setChatFastMode(enabled) {
       return ipcRenderer.invoke("app:set-chat-fast-mode", Boolean(enabled));
     },
