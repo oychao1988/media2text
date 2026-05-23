@@ -48,4 +48,20 @@
 
 **合并顺序（P4–P9）**：#43 → #44 → #45；#46 → #47 → **#53** ✅（P9 已合并 main）。
 
+### 转注 Work 聊天延迟优化（L1–L7，2026-05-24）
+
+> 背景：OpenClaw 聊天 TTFT ~5s 根因分析；**不含**模型切换。Agent B 按 [issue-implementer](.claude/agents/issue-implementer.md) 一 Issue 一分支。
+
+| 顺序 | GitHub | 文件 | 建议分支 | 说明 |
+|------|--------|------|----------|------|
+| L1 | [#56](https://github.com/oychao1988/media2text/issues/56) | [zhuanzhu-l1-chat-latency-benchmark.md](./zhuanzhu-l1-chat-latency-benchmark.md) | `issue-56-zhuanzhu-chat-latency-bench` | 基准脚本，后续 PR 必附 before/after |
+| L2 | [#57](https://github.com/oychao1988/media2text/issues/57) | [zhuanzhu-l2-gateway-fail-fast.md](./zhuanzhu-l2-gateway-fail-fast.md) | `issue-57-zhuanzhu-gateway-fail-fast` | Gateway 秒退 fail-fast |
+| L3 | [#58](https://github.com/oychao1988/media2text/issues/58) | [zhuanzhu-l3-chat-fast-config.md](./zhuanzhu-l3-chat-fast-config.md) | `issue-58-zhuanzhu-chat-fast-config` | fast 模式 UI/配置 |
+| L4 | [#59](https://github.com/oychao1988/media2text/issues/59) | [zhuanzhu-l4-openclaw-config-hygiene.md](./zhuanzhu-l4-openclaw-config-hygiene.md) | `issue-59-zhuanzhu-openclaw-hygiene` | agents/skills doctor |
+| L5 | [#60](https://github.com/oychao1988/media2text/issues/60) | [zhuanzhu-l5-chat-waiting-ux.md](./zhuanzhu-l5-chat-waiting-ux.md) | `issue-60-zhuanzhu-chat-waiting-ux` | TTFT 等待态 UX |
+| L6 | [#61](https://github.com/oychao1988/media2text/issues/61) | [zhuanzhu-l6-dual-mode-chat.md](./zhuanzhu-l6-dual-mode-chat.md) | `issue-61-zhuanzhu-dual-mode-chat` | 快速 vs Agent |
+| L7 | [#62](https://github.com/oychao1988/media2text/issues/62) | [zhuanzhu-l7-chat-websocket.md](./zhuanzhu-l7-chat-websocket.md) | `issue-62-zhuanzhu-chat-websocket` | WS chat.send（可选） |
+
+**建议实施顺序**：#56 → #57 → #58 → #59 → #60 → #61 → #62（#56 为度量基线；#61/#62 依赖 Gateway 能力调研）。
+
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
