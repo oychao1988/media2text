@@ -195,12 +195,34 @@ function appendStreamingAssistant() {
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = "正在思考…";
+  bubble.textContent = "连接 Gateway…";
+
+  const started = Date.now();
+  const updateWaitingText = () => {
+    const elapsedSec = Math.floor((Date.now() - started) / 1000);
+    if (elapsedSec >= 2) {
+      bubble.textContent = `Agent 处理中… 已等待 ${elapsedSec}s`;
+      return;
+    }
+    if (Date.now() - started >= 500) {
+      bubble.textContent = "Agent 处理中…";
+      return;
+    }
+    bubble.textContent = "连接 Gateway…";
+  };
+  updateWaitingText();
+  const waitingTimer = setInterval(updateWaitingText, 500);
 
   row.append(avatar, bubble);
   messagesEl.appendChild(row);
   messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
-  return { row, bubble };
+  return {
+    row,
+    bubble,
+    stopWaiting() {
+      clearInterval(waitingTimer);
+    },
+  };
 }
 
 function highlightNav(viewId) {
@@ -466,8 +488,9 @@ async function sendMessage() {
   renderRefChips();
   setBusy(true);
 
-  const { row, bubble } = appendStreamingAssistant();
+  const { row, bubble, stopWaiting } = appendStreamingAssistant();
   let streamed = "";
+  let waitingStopped = false;
 
   const lens = getLens();
 
@@ -478,6 +501,11 @@ async function sendMessage() {
         message: outbound,
         sessionKey: lens.sessionKey,
         onDelta(delta) {
+          if (!waitingStopped) {
+            stopWaiting();
+            waitingStopped = true;
+            bubble.textContent = "";
+          }
           streamed += delta;
           bubble.textContent = streamed;
           messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
@@ -506,11 +534,13 @@ async function sendMessage() {
       }
     }
   } catch (err) {
+    stopWaiting();
     row.remove();
     const errText = err?.message || String(err);
     showBanner(errText);
     appendMessage("error", errText, "error");
   } finally {
+    stopWaiting();
     setBusy(false);
     inputEl.focus();
   }

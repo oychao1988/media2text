@@ -84,6 +84,7 @@ bash scripts/benchmark-chat-latency.sh --thinking off --fast --runs 2
 ```
 
 输出 JSON 含每轮 `ttfb_ms`、`ttft_ms`（首个 content delta）、`total_ms` 及 `ttft_ms_p50`。  
+流式回复在首字到达前会显示分阶段等待文案（连接 Gateway → Agent 处理中 → 已等待 Ns）。  
 Token 从 `~/.openclaw/openclaw.json` 或 `OPENCLAW_GATEWAY_TOKEN` 读取，脚本不会打印 token。
 
 ### E2E 冒烟
