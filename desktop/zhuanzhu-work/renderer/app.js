@@ -1,16 +1,19 @@
 const SESSION_KEY = "agent:main:main";
 
+const AGENT_LABELS = {
+  default: "默认协调",
+  archive: "档案助手",
+  wanzhan: "万战寻道",
+  nuwa: "女娲蒸馏",
+};
+
+let currentAgent = "default";
+
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("composer-input");
 const sendBtn = document.getElementById("btn-send");
 const statusBanner = document.getElementById("status-banner");
-
-const navItems = document.querySelectorAll(".nav-item");
-const viewPanels = {
-  chat: document.getElementById("view-chat"),
-  archive: document.getElementById("view-archive"),
-  doctor: document.getElementById("view-doctor"),
-};
+const sessionPill = document.getElementById("session-pill");
 
 const archiveQueryEl = document.getElementById("archive-query");
 const archiveSearchBtn = document.getElementById("btn-archive-search");
@@ -21,6 +24,7 @@ const doctorRefreshBtn = document.getElementById("btn-doctor-refresh");
 const doctorStatusEl = document.getElementById("doctor-status");
 const doctorChecksEl = document.getElementById("doctor-checks");
 const doctorMetaEl = document.getElementById("doctor-meta");
+const complianceBadgeEl = document.getElementById("compliance-badge");
 
 function setBusy(busy) {
   inputEl.disabled = busy;
@@ -55,19 +59,65 @@ function appendMessage(role, text, extraClass = "") {
   return row;
 }
 
-function switchView(view) {
-  navItems.forEach((btn) => {
-    btn.classList.toggle("active", btn.dataset.view === view);
+function highlightNav(viewId) {
+  document.querySelectorAll(".nav-item[data-view]").forEach((el) => {
+    const isSub = el.classList.contains("sub");
+    const matches = el.dataset.view === viewId;
+    if (isSub) {
+      el.classList.toggle("active", matches);
+    } else if (el.dataset.view === "agents") {
+      el.classList.toggle("active", viewId === "agents");
+    }
   });
-  Object.entries(viewPanels).forEach(([name, panel]) => {
-    if (!panel) return;
-    const active = name === view;
-    panel.hidden = !active;
-    panel.classList.toggle("active", active);
+
+  document.querySelectorAll('.nav-item[data-view="chat"][data-agent]').forEach((el) => {
+    el.classList.toggle("active", viewId === "chat" && el.dataset.agent === currentAgent);
   });
-  if (view === "doctor") {
+}
+
+function showView(viewId, opts = {}) {
+  if (opts.agent) {
+    currentAgent = opts.agent;
+  }
+
+  document.querySelectorAll(".page").forEach((page) => {
+    page.classList.toggle("active", page.id === `page-${viewId}`);
+  });
+
+  highlightNav(viewId);
+
+  if (sessionPill) {
+    const label = AGENT_LABELS[currentAgent] || currentAgent;
+    sessionPill.textContent = `OpenClaw · ${SESSION_KEY} · ${label}`;
+  }
+
+  if (viewId === "doctor") {
     refreshDoctor();
   }
+
+  if (viewId === "chat" && opts.focusInput !== false) {
+    inputEl?.focus();
+  }
+}
+
+function bindNavigation() {
+  document.body.addEventListener("click", (event) => {
+    const trigger = event.target.closest("[data-view]");
+    if (!trigger || trigger.disabled) return;
+
+    const viewId = trigger.dataset.view;
+    if (!viewId) return;
+
+    const opts = {};
+    if (trigger.dataset.agent) {
+      opts.agent = trigger.dataset.agent;
+    }
+    if (trigger.dataset.newChat === "1") {
+      opts.newChat = true;
+    }
+
+    showView(viewId, opts);
+  });
 }
 
 async function sendMessage() {
@@ -121,10 +171,10 @@ function renderArchiveResults(hits) {
 
   hits.forEach((hit) => {
     const card = document.createElement("article");
-    card.className = "result-card";
+    card.className = "timeline-item";
     card.innerHTML = `
-      <div class="result-meta">${hit.creator_id || ""} · ${hit.session_type || ""} · ${hit.started_at || hit.session_id || ""}</div>
-      <p class="result-excerpt">${escapeHtml(hit.excerpt || "")}</p>
+      <div class="meta">${escapeHtml(hit.creator_id || "")} · ${escapeHtml(hit.session_type || "")} · ${escapeHtml(hit.started_at || hit.session_id || "")}</div>
+      <p class="excerpt">${escapeHtml(hit.excerpt || "")}</p>
       <code class="result-path">${escapeHtml(hit.transcript_path || hit.open_path || "")}</code>
     `;
     archiveResultsEl.appendChild(card);
@@ -216,6 +266,11 @@ function renderDoctor(data) {
     parts.push(`monitor watch PID：${data.monitor_lock_pid}`);
   }
   doctorMetaEl.textContent = parts.join(" · ");
+
+  if (complianceBadgeEl) {
+    complianceBadgeEl.textContent = data.compliance_accepted ? "已接受免责声明" : "未接受免责声明";
+    complianceBadgeEl.className = data.compliance_accepted ? "badge ok" : "badge warn";
+  }
 }
 
 async function refreshDoctor() {
@@ -256,10 +311,6 @@ inputEl.addEventListener("keydown", (event) => {
   }
 });
 
-navItems.forEach((btn) => {
-  btn.addEventListener("click", () => switchView(btn.dataset.view));
-});
-
 archiveSearchBtn.addEventListener("click", runArchiveSearch);
 archiveQueryEl.addEventListener("keydown", (event) => {
   if (event.key === "Enter") {
@@ -270,7 +321,11 @@ archiveQueryEl.addEventListener("keydown", (event) => {
 
 doctorRefreshBtn.addEventListener("click", refreshDoctor);
 
+bindNavigation();
+
 async function initMain() {
+  showView("chat", { agent: "default", focusInput: false });
+
   if (window.zhuanzhu?.app?.getBootstrap) {
     const state = await window.zhuanzhu.app.getBootstrap();
     if (!state.setup?.complete) {
@@ -281,7 +336,7 @@ async function initMain() {
     }
     if (!state.media2textBin) {
       showBanner(
-        "未找到 media2text CLI。请在仓库根目录 pip install -e \".[dev]\" 或配置 PATH。",
+        '未找到 media2text CLI。请在仓库根目录 pip install -e ".[dev]" 或配置 PATH。',
         "warn",
       );
     }
@@ -289,7 +344,7 @@ async function initMain() {
 
   appendMessage(
     "assistant",
-    "转注 Work 已就绪。Gateway 由应用自动管理；侧栏可打开档案检索与环境检查。",
+    "转注 Work 已就绪。侧栏可切换智能体画廊与各能力页；档案检索与环境检查已接 media2text CLI。",
   );
   inputEl.focus();
 }
