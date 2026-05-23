@@ -21,3 +21,5 @@ config.yaml
 .playwright-mcp/
 midscene_run/
 *.log
+node_modules/
+desktop/zhuanzhu-work/node_modules/
