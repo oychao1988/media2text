@@ -1,6 +1,6 @@
 # 转注 Work — Electron 桌面壳
 
-Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](https://github.com/oychao1988/media2text/issues/37)（P1）+ [#38](https://github.com/oychao1988/media2text/issues/38)（P2）+ [#39](https://github.com/oychao1988/media2text/issues/39)（P3）：聊天 UI、Gateway 自动拉起、安装包、**media2text 档案检索 / 环境检查**。
+Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](https://github.com/oychao1988/media2text/issues/37)（P1）+ [#38](https://github.com/oychao1988/media2text/issues/38)（P2）+ [#39](https://github.com/oychao1988/media2text/issues/39)（P3）+ [#43](https://github.com/oychao1988/media2text/issues/43)（P4）：聊天 UI、Gateway、安装包、media2text sidecar、**finalized.html IA 壳**。
 
 ## 普通用户
 
@@ -147,6 +147,21 @@ cd desktop/zhuanzhu-work && npm run dev
 # 侧栏 → 档案检索 / 环境检查
 ```
 
+## UI 壳（P4 / Issue #43）
+
+主界面 IA 对齐 gstack `finalized.html`（原型文件不删改，仅迁入 `renderer/`）。
+
+| 页面 | 状态 |
+|------|------|
+| 聊天 | ✅ OpenClaw HTTP（P0） |
+| 档案检索 | ✅ `media2text archive search`（P3） |
+| 环境检查 | ✅ `media2text doctor`（P3） |
+| 智能体画廊 | 静态卡片；「+ 对话」切聊天（P6 接 session/lens） |
+| 监控守护 / 平台登录 / 技能库 / 流水线 / 通知渠道 | 静态占位，按钮 disabled 或「即将接入 CLI」 |
+| 合规声明 | 静态文案；状态联动 doctor 的 compliance 字段 |
+
+导航：`renderer/app.js` 中 `showView()` + `[data-view]` 委托；样式见 `renderer/styles.css`（合并原型 CSS 变量与组件类）。
+
 ## Preload API
 
 ```javascript
@@ -193,7 +208,8 @@ desktop/zhuanzhu-work/
 - 应用内自动更新（GitHub Releases）
 - 内置完整 OpenClaw npm 包（`prepare-bundle` 仅占位 manifest）
 - WebSocket 流式
-- 完整迁移 gstack `finalized.html` 所有页面
+- 多 Agent sessionKey / lens prompt（P6）
+- 能力页真正调用 monitor/auth/pipeline CLI（后续 Issue）
 - 打包内置 Python / PyInstaller media2text（`resources/media2text` 仅占位）
 - 应用内自动启动 `monitor watch` 守护进程
 
