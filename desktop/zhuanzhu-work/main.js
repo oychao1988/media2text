@@ -7,12 +7,20 @@ const {
   killSpawnedGateway,
   gatewayUnreachableMessage,
 } = require("./lib/gateway");
+const { ensureAppConfig } = require("./lib/media2text-config");
+const {
+  archiveSearch,
+  complianceAccept,
+  complianceStatus,
+  doctor,
+  runMedia2text,
+  resolveMedia2textBin,
+} = require("./lib/media2text-sidecar");
 const {
   acceptCompliance,
   isComplianceAccepted,
   openClawConfigDir,
   openClawConfigPath,
-  workspacePath,
 } = require("./lib/paths");
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
@@ -57,6 +65,7 @@ function sendBootstrap(channel, payload) {
 }
 
 function bootstrapState() {
+  const { configPath: media2textConfigPath, workspace } = ensureAppConfig(app);
   const complianceAccepted = isComplianceAccepted(app);
   const setup = assessOpenClawSetup();
   return {
@@ -64,7 +73,9 @@ function bootstrapState() {
     setup,
     configPath: openClawConfigPath(),
     configDir: openClawConfigDir(),
-    workspace: workspacePath(app),
+    workspace,
+    media2textConfigPath,
+    media2textBin: resolveMedia2textBin(app),
     needsWizard: !complianceAccepted || !setup.complete,
   };
 }
@@ -185,10 +196,28 @@ function registerIpc() {
 
   ipcMain.handle("app:get-bootstrap", () => bootstrapState());
 
-  ipcMain.handle("app:accept-compliance", () => {
+  ipcMain.handle("app:accept-compliance", async () => {
+    ensureAppConfig(app);
     const record = acceptCompliance(app);
-    return { ok: true, record };
+    const cli = await complianceAccept(app);
+    return {
+      ok: true,
+      record,
+      media2text: cli.data || { ok: cli.ok, error: cli.error },
+    };
   });
+
+  ipcMain.handle("media2text:run", (_event, payload) =>
+    runMedia2text(app, payload?.argv || [], payload || {}),
+  );
+
+  ipcMain.handle("media2text:archive-search", (_event, payload) =>
+    archiveSearch(app, payload?.query, payload || {}),
+  );
+
+  ipcMain.handle("media2text:doctor", () => doctor(app));
+
+  ipcMain.handle("media2text:compliance-status", () => complianceStatus(app));
 
   ipcMain.handle("app:open-config-dir", async () => {
     const dir = openClawConfigDir();
@@ -205,6 +234,7 @@ function registerIpc() {
 }
 
 app.whenReady().then(async () => {
+  ensureAppConfig(app);
   registerIpc();
   mainWindow = createShellWindow();
   mainWindow.loadFile(path.join(__dirname, "renderer", "splash.html"));

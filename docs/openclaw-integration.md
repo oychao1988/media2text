@@ -135,7 +135,7 @@ flowchart LR
 | **P0** | 开发态联调 | `finalized.html` 发一条消息 → Gateway → 助手回复（脚本或 preload） |
 | **P1** | 单进程启动 | 双击 app → Gateway 自动 ready → 聊天可用 |
 | **P2** | 安装包 | `.dmg` / `.exe`；`~/.openclaw` 配置与升级策略文档化 ✅（Issue #38） |
-| **P3** | media2text 集成 | preload 调 `media2text` CLI（`archive search`、`monitor watch` 状态） |
+| **P3** | media2text 集成 | preload IPC 调 `media2text` CLI（`archive search`、`doctor`）✅ Issue #39 |
 
 ### Tauri 备选（CEO 计划 P1）
 
@@ -206,9 +206,23 @@ open http://127.0.0.1:18789/
 1. **修 LaunchAgent Node 版本** → `openclaw gateway install --force`（nvm 22.17 环境下）
 2. **Electron 开发壳**（`desktop/zhuanzhu-work`）：聊天 UI + preload HTTP 联调 ✅（Issue #35）
 3. **会话/agent 映射**：万战 lens → OpenClaw agent 或 system prompt + skill 路径
-4. **media2text sidecar**：preload 执行 `media2text archive search --json`，结果注入聊天
+4. **media2text sidecar**：preload IPC 执行 `archive search` / `doctor` ✅（Issue #39）；后续可注入聊天上下文
 
 ---
+
+## 9. media2text sidecar（P3）
+
+桌面壳通过 main 进程 spawn `media2text` CLI（开发态：仓库 `.venv/bin/media2text`；发布态：`resources/media2text` 占位）。
+
+| IPC | CLI |
+|-----|-----|
+| `media2text:archive-search` | `archive search <q> --json` |
+| `media2text:doctor` | `doctor --json` |
+| `media2text:run` | 任意 argv |
+
+工作区默认：`~/Library/Application Support/转注 Work/data`，由 `userData/config.yaml` 的 `workspace` 字段指向；与向导合规文件同目录。
+
+开箱清单见 [desktop/zhuanzhu-work/README.md](../desktop/zhuanzhu-work/README.md#media2text-集成p3--issue-39)。
 
 ## 7. 安全
 
