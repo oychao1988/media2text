@@ -4,7 +4,7 @@ Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](h
 
 ## 普通用户
 
-1. 安装 **Node.js ≥ 22.14**（推荐 [nvm](https://github.com/nvm-sh/nvm)）与 **OpenClaw CLI**（YonClaw 或 `npm i -g openclaw`）。
+1. 安装 **Node.js ≥ 22.16**（OpenClaw 要求；推荐 [nvm](https://github.com/nvm-sh/nvm)）与 **OpenClaw CLI**（YonClaw 或 `npm i -g openclaw`）。
 2. 在项目目录执行一次 `npm install`（见下方「开发者」）。
 3. 双击或运行 `npm run dev` — 应用会：
    - 检测 `127.0.0.1:18789` 是否已有 Gateway；
@@ -24,7 +24,7 @@ Gateway 日志（可选）：`~/Library/Logs/转注Work/gateway.log`（macOS）�
 
 | 项 | 要求 |
 |----|------|
-| Node.js | **≥ 22.14**（OpenClaw 硬性要求；子进程 PATH 会优先 bundled `resources/node` 若存在） |
+| Node.js | **≥ 22.16**（OpenClaw 硬性要求；子进程 PATH 会优先 bundled `resources/node` 若存在） |
 | OpenClaw CLI | `which openclaw` 可用 |
 | 配置 | `~/.openclaw/openclaw.json` 含 `gateway.auth.token` 与模型 Provider API Key |
 
@@ -88,7 +88,7 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 
 | 项 | **bundled dmg**（P9 archive） | **开发态**（`npm run dev`） |
 |----|------------------------------|------------------------------|
-| Node ≥22.14 | ✅ 首次启动从 tar.gz 解压到 `userData/runtime/` | 系统 nvm / Node，或 `ZHUANZHU_RUNTIME_MODE=expanded` |
+| Node ≥22.16（bundle pin **22.22.3**） | ✅ 首次启动从 tar.gz 解压到 `userData/runtime/` | 系统 nvm / Node，或 `ZHUANZHU_RUNTIME_MODE=expanded` |
 | OpenClaw CLI | ✅ 同上 | 系统 `openclaw` / YonClaw |
 | media2text | ✅ slim bundle（**需系统 Python 3.12+**；无 playwright） | 仓库 `.venv/bin/media2text` |
 | OpenClaw 配置 | `~/.openclaw/openclaw.json` | 同左 |
@@ -113,7 +113,7 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 
 | 项 | 要求 |
 |----|------|
-| Node.js | **≥ 22.14**（prepare-bundle 会下载到 `resources/node`；开发态用系统 Node） |
+| Node.js | **≥ 22.16**（prepare-bundle 默认 pin **22.22.3** 到 `resources/node`；开发态用系统 Node） |
 | macOS | 用于 `package:mac`（本机或 CI macOS runner） |
 | 签名 | 见下方「签名与公证」；无证书时用 `package:mac:unsigned` |
 

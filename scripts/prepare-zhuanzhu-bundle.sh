@@ -6,7 +6,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RES="$ROOT/desktop/zhuanzhu-work/resources"
-NODE_VERSION="${NODE_PIN:-22.14.0}"
+NODE_VERSION="${NODE_PIN:-22.22.3}"
 OPENCLAW_VERSION="${OPENCLAW_PIN:-2026.5.5}"
 GENERATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
 RUNTIME_MODE="${ZHUANZHU_RUNTIME_MODE:-archive}"
@@ -122,7 +122,13 @@ install_openclaw_to() {
 
   if [[ ! -x "$node_bin" ]]; then
     node_bin="$(command -v node)"
+  fi
+  if [[ ! -x "$npm_bin" ]]; then
     npm_bin="$(command -v npm)"
+  fi
+  if [[ -z "$npm_bin" || ! -x "$npm_bin" ]]; then
+    log "no npm for openclaw install (bundled or system)"
+    return 1
   fi
 
   log "npm install openclaw@${OPENCLAW_VERSION} -> $dest"
@@ -331,7 +337,6 @@ STAGE="$(mktemp -d)"
 trap 'rm -rf "$STAGE"' EXIT
 
 download_node_to "$STAGE/node"
-prune_node_bundle "$STAGE/node"
 
 if [[ "${ZHUANZHU_SKIP_OPENCLAW_INSTALL:-0}" == "1" && -d "$RES/openclaw/node_modules" ]]; then
   log "copy openclaw from existing resources/openclaw (ZHUANZHU_SKIP_OPENCLAW_INSTALL=1)"
@@ -340,6 +345,7 @@ if [[ "${ZHUANZHU_SKIP_OPENCLAW_INSTALL:-0}" == "1" && -d "$RES/openclaw/node_mo
 else
   install_openclaw_to "$STAGE/openclaw" "$STAGE/node"
 fi
+prune_node_bundle "$STAGE/node"
 prune_openclaw_bundle "$STAGE/openclaw" "$STAGE/node"
 bundle_media2text_to "$STAGE/media2text"
 
