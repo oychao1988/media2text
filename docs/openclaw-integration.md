@@ -82,7 +82,12 @@ flowchart LR
 | 路径 | 适用 | 优点 | 注意 |
 |------|------|------|------|
 | **A. WebSocket RPC** | 正式产品、要流式/会话/工具事件 | 与 Accio / Control UI 一致；`chat.send` + `chat` 事件流 | 浏览器需 `controlUi.allowedOrigins` + 设备认证；Electron 用 preload 最省事 |
-| **B. HTTP `/v1/chat/completions`** | **最快 PoC**、Electron preload | 已本机验证 200 + SSE 流式 | 跨域浏览器需代理；会话/工具能力弱于 WS |
+| **B. HTTP `/v1/chat/completions`** | **转注 Work 当前默认**、Electron preload | 已本机验证 200 + **SSE 流式**（`stream: true`）；失败时 fallback 非流式 | 跨域浏览器需代理；会话/工具能力弱于 WS |
+
+转注 Work（P5）聊天路径：**SSE 流式优先** → 失败时 **非流式 HTTP fallback**。用户消息可带：
+
+- `@file:<workspace 相对路径>` — 来自 composer `@` picker 的转写引用
+- `[archive context keyword="…"] … [/archive context]` — 来自档案检索页「发送到聊天」或 `/search 关键词`
 
 ### WebSocket 核心调用（Control UI 同款）
 
@@ -102,7 +107,7 @@ flowchart LR
 |----|---------|
 | 左侧会话 | `sessionKey`（可按 agent 前缀：`agent:main:…`） |
 | 智能体切换（万战/档案/女娲） | `agents.list` + 不同 workspace / system prompt（后续） |
-| `@transcript.md` | 拼进 `message` 或 `chat.inject` |
+| `@transcript.md` | 拼进 `message`（`@file:…` 前缀）或 `chat.inject` |
 | 档案检索结果 | 作为 user 消息上下文，或 media2text skill 工具 |
 
 ---

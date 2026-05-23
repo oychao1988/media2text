@@ -1,4 +1,5 @@
 const SESSION_KEY = "agent:main:main";
+const ARCHIVE_CONTEXT_LIMIT = 5;
 
 const AGENT_LABELS = {
   default: "默认协调",
@@ -8,12 +9,17 @@ const AGENT_LABELS = {
 };
 
 let currentAgent = "default";
+let attachedRefs = [];
+let transcriptRefsCache = null;
+let lastArchiveHits = [];
 
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("composer-input");
 const sendBtn = document.getElementById("btn-send");
 const statusBanner = document.getElementById("status-banner");
 const sessionPill = document.getElementById("session-pill");
+const refChipsEl = document.getElementById("ref-chips");
+const atPickerEl = document.getElementById("at-picker");
 
 const archiveQueryEl = document.getElementById("archive-query");
 const archiveSearchBtn = document.getElementById("btn-archive-search");
@@ -57,6 +63,24 @@ function appendMessage(role, text, extraClass = "") {
   messagesEl.appendChild(row);
   messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
   return row;
+}
+
+function appendStreamingAssistant() {
+  const row = document.createElement("div");
+  row.className = "msg assistant streaming";
+
+  const avatar = document.createElement("div");
+  avatar.className = "msg-av";
+  avatar.textContent = "🤖";
+
+  const bubble = document.createElement("div");
+  bubble.className = "bubble";
+  bubble.textContent = "";
+
+  row.append(avatar, bubble);
+  messagesEl.appendChild(row);
+  messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
+  return { row, bubble };
 }
 
 function highlightNav(viewId) {
@@ -120,39 +144,243 @@ function bindNavigation() {
   });
 }
 
-async function sendMessage() {
-  const message = inputEl.value.trim();
-  if (!message) return;
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
 
-  if (!window.zhuanzhu?.openclaw?.chat) {
+function renderRefChips() {
+  if (!refChipsEl) return;
+  refChipsEl.innerHTML = "";
+  if (!attachedRefs.length) {
+    refChipsEl.hidden = true;
+    return;
+  }
+  refChipsEl.hidden = false;
+  attachedRefs.forEach((ref, index) => {
+    const chip = document.createElement("span");
+    chip.className = "ref-chip";
+    chip.innerHTML = `@${escapeHtml(ref.label || ref.path)} <button type="button" aria-label="移除">×</button>`;
+    chip.querySelector("button").addEventListener("click", () => {
+      attachedRefs.splice(index, 1);
+      renderRefChips();
+    });
+    refChipsEl.appendChild(chip);
+  });
+}
+
+function addAttachedRef(ref) {
+  if (attachedRefs.some((r) => r.path === ref.path)) return;
+  attachedRefs.push(ref);
+  renderRefChips();
+}
+
+function buildArchiveContextBlock(keyword, hits) {
+  const lines = hits.slice(0, ARCHIVE_CONTEXT_LIMIT).map((hit, i) => {
+    const meta = [hit.creator_id, hit.session_type, hit.started_at || hit.session_id]
+      .filter(Boolean)
+      .join(" · ");
+    const excerpt = (hit.excerpt || "").replace(/\s+/g, " ").trim();
+    return `${i + 1}. (${meta}) ${excerpt}`;
+  });
+  return `[archive context keyword="${keyword}"]\n${lines.join("\n")}\n[/archive context]`;
+}
+
+function formatOutboundMessage(rawText) {
+  const parts = [];
+  if (attachedRefs.length) {
+    parts.push(attachedRefs.map((r) => `@file:${r.path}`).join("\n"));
+  }
+  const body = String(rawText || "").trim();
+  if (body) parts.push(body);
+  return parts.join("\n\n");
+}
+
+function parseSearchCommand(text) {
+  const trimmed = text.trim();
+  if (!trimmed.toLowerCase().startsWith("/search")) return null;
+  const rest = trimmed.slice(7).trim();
+  const spaceIdx = rest.indexOf(" ");
+  if (spaceIdx === -1) {
+    return { keyword: rest, question: "" };
+  }
+  return {
+    keyword: rest.slice(0, spaceIdx).trim(),
+    question: rest.slice(spaceIdx + 1).trim(),
+  };
+}
+
+async function ensureTranscriptRefs() {
+  if (transcriptRefsCache) return transcriptRefsCache;
+  if (!window.zhuanzhu?.media2text?.listTranscriptRefs) {
+    transcriptRefsCache = [];
+    return transcriptRefsCache;
+  }
+  const result = await window.zhuanzhu.media2text.listTranscriptRefs({ limit: 40 });
+  transcriptRefsCache = result.ok ? result.refs || [] : [];
+  return transcriptRefsCache;
+}
+
+function hideAtPicker() {
+  if (atPickerEl) atPickerEl.hidden = true;
+}
+
+function showAtPicker(filter = "") {
+  if (!atPickerEl) return;
+  ensureTranscriptRefs().then((refs) => {
+    const q = filter.toLowerCase();
+    const matches = refs.filter(
+      (r) =>
+        !q ||
+        r.path.toLowerCase().includes(q) ||
+        (r.label || "").toLowerCase().includes(q),
+    );
+    atPickerEl.innerHTML = "";
+    if (!matches.length) {
+      atPickerEl.hidden = true;
+      return;
+    }
+    matches.slice(0, 8).forEach((ref) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "at-picker-item";
+      btn.textContent = ref.path;
+      btn.addEventListener("click", () => {
+        addAttachedRef(ref);
+        const value = inputEl.value;
+        const atIdx = value.lastIndexOf("@");
+        if (atIdx >= 0) {
+          inputEl.value = `${value.slice(0, atIdx).trimEnd()} `;
+        }
+        hideAtPicker();
+        inputEl.focus();
+      });
+      atPickerEl.appendChild(btn);
+    });
+    atPickerEl.hidden = false;
+  });
+}
+
+function handleComposerInput() {
+  const value = inputEl.value;
+  const atIdx = value.lastIndexOf("@");
+  if (atIdx < 0) {
+    hideAtPicker();
+    return;
+  }
+  const tail = value.slice(atIdx + 1);
+  if (/\s/.test(tail)) {
+    hideAtPicker();
+    return;
+  }
+  showAtPicker(tail);
+}
+
+async function resolveSearchContext(parsed) {
+  if (!window.zhuanzhu?.media2text?.archiveSearch) {
+    return { ok: false, error: "media2text 桥接未就绪" };
+  }
+  const result = await window.zhuanzhu.media2text.archiveSearch(parsed.keyword);
+  const data = result.data || {};
+  if (data.compliance_required) {
+    return {
+      ok: false,
+      error: data.error || "请先接受免责声明（compliance accept）",
+      compliance_required: true,
+    };
+  }
+  if (!result.ok) {
+    return { ok: false, error: result.error || data.error || "档案检索失败" };
+  }
+  const hits = data.hits || [];
+  if (!hits.length) {
+    return { ok: false, error: `未找到「${parsed.keyword}」相关命中` };
+  }
+  const block = buildArchiveContextBlock(parsed.keyword, hits);
+  const question = parsed.question || `请基于以上档案上下文，总结「${parsed.keyword}」相关要点。`;
+  return { ok: true, message: `${block}\n\n${question}`, hits };
+}
+
+async function sendMessage() {
+  const rawInput = inputEl.value.trim();
+  if (!rawInput && !attachedRefs.length) return;
+
+  if (!window.zhuanzhu?.openclaw?.chatStream && !window.zhuanzhu?.openclaw?.chat) {
     showBanner("preload 桥接未就绪，请重启应用。");
     return;
   }
 
   hideBanner();
-  appendMessage("user", message);
+  hideAtPicker();
+
+  let displayText = rawInput;
+  let outbound = formatOutboundMessage(rawInput);
+
+  const searchCmd = parseSearchCommand(rawInput);
+  if (searchCmd?.keyword) {
+    setBusy(true);
+    const ctx = await resolveSearchContext(searchCmd);
+    if (!ctx.ok) {
+      showBanner(ctx.error, ctx.compliance_required ? "warn" : "error");
+      setBusy(false);
+      return;
+    }
+    outbound = ctx.message;
+    displayText = rawInput;
+    lastArchiveHits = ctx.hits || [];
+  }
+
+  if (!outbound.trim()) {
+    return;
+  }
+
+  appendMessage("user", displayText);
   inputEl.value = "";
+  attachedRefs = [];
+  renderRefChips();
   setBusy(true);
 
-  const pending = appendMessage("assistant", "思考中…", "pending");
+  const { row, bubble } = appendStreamingAssistant();
+  let streamed = "";
 
   try {
-    const result = await window.zhuanzhu.openclaw.chat({
-      message,
-      sessionKey: SESSION_KEY,
-    });
-
-    pending.remove();
-
-    if (result.ok && result.content) {
-      appendMessage("assistant", result.content);
+    const chatStream = window.zhuanzhu.openclaw.chatStream;
+    if (chatStream) {
+      const result = await chatStream({
+        message: outbound,
+        sessionKey: SESSION_KEY,
+        onDelta(delta) {
+          streamed += delta;
+          bubble.textContent = streamed;
+          messagesEl.parentElement.scrollTop = messagesEl.parentElement.scrollHeight;
+        },
+      });
+      row.classList.remove("streaming");
+      if (result.fallback) {
+        bubble.textContent = result.content || streamed;
+      }
+      if (!streamed && result.content) {
+        bubble.textContent = result.content;
+      }
     } else {
-      const errText = result.error || "未知错误";
-      showBanner(errText);
-      appendMessage("error", errText, "error");
+      const result = await window.zhuanzhu.openclaw.chat({
+        message: outbound,
+        sessionKey: SESSION_KEY,
+      });
+      row.remove();
+      if (result.ok && result.content) {
+        appendMessage("assistant", result.content);
+      } else {
+        const errText = result.error || "未知错误";
+        showBanner(errText);
+        appendMessage("error", errText, "error");
+      }
     }
   } catch (err) {
-    pending.remove();
+    row.remove();
     const errText = err?.message || String(err);
     showBanner(errText);
     appendMessage("error", errText, "error");
@@ -162,12 +390,24 @@ async function sendMessage() {
   }
 }
 
+function injectArchiveToChat(hits, keyword) {
+  if (!hits?.length) return;
+  lastArchiveHits = hits;
+  const block = buildArchiveContextBlock(keyword, hits);
+  showView("chat");
+  inputEl.value = `${block}\n\n请基于以上档案上下文回答：`;
+  inputEl.focus();
+}
+
 function renderArchiveResults(hits) {
   archiveResultsEl.innerHTML = "";
+  lastArchiveHits = hits || [];
   if (!hits?.length) {
     archiveResultsEl.innerHTML = '<p class="empty-hint">无命中结果</p>';
     return;
   }
+
+  const keyword = archiveQueryEl.value.trim();
 
   hits.forEach((hit) => {
     const card = document.createElement("article");
@@ -176,17 +416,15 @@ function renderArchiveResults(hits) {
       <div class="meta">${escapeHtml(hit.creator_id || "")} · ${escapeHtml(hit.session_type || "")} · ${escapeHtml(hit.started_at || hit.session_id || "")}</div>
       <p class="excerpt">${escapeHtml(hit.excerpt || "")}</p>
       <code class="result-path">${escapeHtml(hit.transcript_path || hit.open_path || "")}</code>
+      <div class="result-actions">
+        <button type="button" class="btn-secondary btn-send-chat">发送到聊天</button>
+      </div>
     `;
+    card.querySelector(".btn-send-chat").addEventListener("click", () => {
+      injectArchiveToChat(hits, keyword);
+    });
     archiveResultsEl.appendChild(card);
   });
-}
-
-function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }
 
 async function runArchiveSearch() {
@@ -309,7 +547,12 @@ inputEl.addEventListener("keydown", (event) => {
     event.preventDefault();
     sendMessage();
   }
+  if (event.key === "Escape") {
+    hideAtPicker();
+  }
 });
+
+inputEl.addEventListener("input", handleComposerInput);
 
 archiveSearchBtn.addEventListener("click", runArchiveSearch);
 archiveQueryEl.addEventListener("keydown", (event) => {
@@ -344,7 +587,7 @@ async function initMain() {
 
   appendMessage(
     "assistant",
-    "转注 Work 已就绪。侧栏可切换智能体画廊与各能力页；档案检索与环境检查已接 media2text CLI。",
+    "转注 Work 已就绪。聊天支持 SSE 流式输出；输入 @ 引用转写，/search 关键词 注入档案上下文。",
   );
   inputEl.focus();
 }
