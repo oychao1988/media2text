@@ -202,7 +202,12 @@ open http://127.0.0.1:18789/
 | `~/Library/Application Support/转注 Work/` | Electron `userData`（合规确认、未来 media2text workspace） |
 | `~/Library/Logs/转注Work/gateway.log` | 本应用 spawn 的 Gateway 日志（macOS） |
 
-**升级策略（当前）**：下载新版 dmg 覆盖安装即可；OpenClaw 配置沿用 `~/.openclaw`。`npm run prepare-bundle` 会 pin Node/openclaw 到 `resources/`（见 `bundle-manifest.json`）；应用内自动更新尚未实现。
+**升级策略（P8）**：
+
+1. **应用内**：打包版启动后静默检查 GitHub Release（tag `zhuanzhu-v*`）；侧栏「升级」可下载并重启安装（需 Release 含 `latest-mac.yml`）。
+2. **手动**：下载新版 dmg 覆盖安装；OpenClaw 配置仍用 `~/.openclaw`。
+
+详见 [docs/zhuanzhu-release-checklist.md](./zhuanzhu-release-checklist.md) 与 [desktop/zhuanzhu-work/README.md](../desktop/zhuanzhu-work/README.md#签名与公证-p8--issue-47)。
 
 **未签名应用**：无 Apple 公证时，首次启动需在 Finder 中右键 → 打开，或在「隐私与安全性」中允许。
 

@@ -13,6 +13,7 @@ const {
   runMedia2text,
   resolveMedia2textBin,
 } = require("./lib/media2text-sidecar");
+const { createAutoUpdater } = require("./lib/auto-updater");
 const { openclawChat, openclawChatStream } = require("./lib/openclaw-chat");
 const {
   acceptCompliance,
@@ -30,6 +31,8 @@ function bundledResourcesRoot() {
   return path.join(APP_ROOT, "resources");
 }
 let mainWindow = null;
+/** @type {ReturnType<typeof createAutoUpdater> | null} */
+let autoUpdaterCtl = null;
 
 function createShellWindow() {
   const win = new BrowserWindow({
@@ -157,12 +160,36 @@ function registerIpc() {
     }
     return { ok: true };
   });
+
+  ipcMain.handle("app:get-version", () => app.getVersion());
+
+  ipcMain.handle("app:is-packaged", () => app.isPackaged);
+
+  ipcMain.handle("app:get-update-state", () =>
+    autoUpdaterCtl ? autoUpdaterCtl.getState() : { status: "dev", currentVersion: app.getVersion() },
+  );
+
+  ipcMain.handle("app:check-updates", async () => {
+    if (!autoUpdaterCtl) return { skipped: true, reason: "dev" };
+    return autoUpdaterCtl.checkForUpdates();
+  });
+
+  ipcMain.handle("app:download-update", async () => {
+    if (!autoUpdaterCtl) return { skipped: true, reason: "dev" };
+    return autoUpdaterCtl.downloadUpdate();
+  });
+
+  ipcMain.handle("app:quit-and-install", () => {
+    autoUpdaterCtl?.quitAndInstall();
+    return { ok: true };
+  });
 }
 
 app.whenReady().then(async () => {
   ensureAppConfig(app);
   registerIpc();
   mainWindow = createShellWindow();
+  autoUpdaterCtl = createAutoUpdater(() => mainWindow);
   mainWindow.loadFile(path.join(__dirname, "renderer", "splash.html"));
   mainWindow.webContents.once("did-finish-load", () => {
     runBootstrap().catch((err) => {

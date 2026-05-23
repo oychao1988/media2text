@@ -28,6 +28,10 @@ const doctorStatusEl = document.getElementById("doctor-status");
 const doctorChecksEl = document.getElementById("doctor-checks");
 const doctorMetaEl = document.getElementById("doctor-meta");
 const complianceBadgeEl = document.getElementById("compliance-badge");
+const upgradeBtn = document.getElementById("btn-upgrade");
+
+/** @type {{ status: string, version?: string | null, progress?: { percent?: number } | null, error?: string | null }} */
+let updateState = { status: "idle" };
 
 function getLens(agentId = currentAgent) {
   return LENSES[agentId] || LENSES.default;
@@ -636,6 +640,93 @@ archiveQueryEl.addEventListener("keydown", (event) => {
 
 doctorRefreshBtn.addEventListener("click", refreshDoctor);
 
+function renderUpgradeButton() {
+  if (!upgradeBtn) return;
+  const { status, version, progress, error, currentVersion } = updateState;
+  switch (status) {
+    case "checking":
+      upgradeBtn.textContent = "检查中…";
+      upgradeBtn.disabled = true;
+      break;
+    case "available":
+      upgradeBtn.textContent = version ? `下载 ${version}` : "下载更新";
+      upgradeBtn.disabled = false;
+      upgradeBtn.title = `发现新版本 ${version}`;
+      break;
+    case "downloading":
+      upgradeBtn.textContent =
+        progress?.percent != null ? `下载 ${Math.round(progress.percent)}%` : "下载中…";
+      upgradeBtn.disabled = true;
+      break;
+    case "ready":
+      upgradeBtn.textContent = "重启安装";
+      upgradeBtn.disabled = false;
+      upgradeBtn.title = version ? `已下载 ${version}，点击重启安装` : "点击重启安装";
+      break;
+    case "uptodate":
+      upgradeBtn.textContent = "已是最新";
+      upgradeBtn.disabled = true;
+      upgradeBtn.title = currentVersion ? `当前 ${currentVersion}` : "已是最新";
+      break;
+    case "error":
+      upgradeBtn.textContent = "重试";
+      upgradeBtn.disabled = false;
+      upgradeBtn.title = error || "检查更新失败";
+      break;
+    case "dev":
+      upgradeBtn.textContent = "升级";
+      upgradeBtn.disabled = true;
+      upgradeBtn.title = "仅打包版可检查更新";
+      break;
+    default:
+      upgradeBtn.textContent = "升级";
+      upgradeBtn.disabled = !updateState.packaged;
+      upgradeBtn.title = currentVersion ? `当前 ${currentVersion}` : "检查更新";
+  }
+}
+
+async function bindAutoUpdater() {
+  if (!upgradeBtn || !window.zhuanzhu?.app) return;
+
+  window.zhuanzhu.app.onUpdateStatus((payload) => {
+    updateState = payload || { status: "idle" };
+    renderUpgradeButton();
+  });
+
+  try {
+    const [version, packaged, state] = await Promise.all([
+      window.zhuanzhu.app.getVersion(),
+      window.zhuanzhu.app.isPackaged(),
+      window.zhuanzhu.app.getUpdateState(),
+    ]);
+    updateState = { ...state, currentVersion: version, packaged };
+    renderUpgradeButton();
+    if (packaged) {
+      await window.zhuanzhu.app.checkForUpdates();
+    }
+  } catch {
+    renderUpgradeButton();
+  }
+
+  upgradeBtn.addEventListener("click", async () => {
+    if (!window.zhuanzhu?.app) return;
+    try {
+      if (updateState.status === "ready") {
+        await window.zhuanzhu.app.quitAndInstall();
+        return;
+      }
+      if (updateState.status === "available") {
+        upgradeBtn.disabled = true;
+        await window.zhuanzhu.app.downloadUpdate();
+        return;
+      }
+      await window.zhuanzhu.app.checkForUpdates();
+    } catch (err) {
+      showBanner(err?.message || String(err), "warn");
+    }
+  });
+}
+
 bindNavigation();
 
 async function initMain() {
@@ -658,6 +749,7 @@ async function initMain() {
   }
 
   inputEl.focus();
+  bindAutoUpdater();
 }
 
 initMain();
