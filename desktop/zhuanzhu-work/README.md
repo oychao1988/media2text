@@ -76,15 +76,27 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 
 截图参考：`docs/zhuanzhu-e2e-screenshots/`。
 
-## 发布构建（P2 / Issue #38）
+## 发布构建（P2 / Issue #38 + P7 bundle）
 
-将应用打成 macOS `.dmg` 安装包（Windows `.exe` 可选）。**本阶段不内置**完整 OpenClaw npm / portable Node，安装后仍依赖系统 `openclaw` CLI 与 Node ≥22.14；`resources/bundle-manifest.json` 记录未来 pin 版本。
+将应用打成 macOS `.dmg` 安装包（Windows `.exe` 可选）。
+
+### 开箱清单：bundled dmg vs 开发态
+
+| 项 | **bundled dmg**（`npm run prepare-bundle` 后打包） | **开发态**（`npm run dev`） |
+|----|-----------------------------------------------------|------------------------------|
+| Node ≥22.14 | ✅ `resources/node` 内置 | 系统 nvm / Node |
+| OpenClaw CLI | ✅ `resources/openclaw` npm | 系统 `openclaw` / YonClaw |
+| media2text | ✅ `resources/media2text/bin`（**需系统 Python 3.12+**） | 仓库 `.venv/bin/media2text` |
+| OpenClaw 配置 | `~/.openclaw/openclaw.json`（token + API Key） | 同左 |
+| ffmpeg / Chromium | 仍须用户自行安装（doctor 会提示） | 同左 |
+
+打包后 **无需** 全局 `openclaw` 或 repo venv 即可启动 Gateway；档案/doctor 走 bundled `media2text` wrapper（依赖本机 `python3`）。
 
 ### 前提
 
 | 项 | 要求 |
 |----|------|
-| Node.js | **≥ 22.14**（与 OpenClaw 一致） |
+| Node.js | **≥ 22.14**（prepare-bundle 会下载到 `resources/node`；开发态用系统 Node） |
 | macOS | 用于 `package:mac`（本机或 CI macOS runner） |
 | 签名 | 未做 Apple 公证；首次打开可能需右键 → 打开 |
 
@@ -94,7 +106,18 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 source ~/.nvm/nvm.sh
 cd desktop/zhuanzhu-work
 npm install
-npm run prepare-bundle   # 生成 resources/bundle-manifest.json + build/icon.png
+npm run prepare-bundle   # 下载 node/openclaw + pip media2text → resources/
+npm run verify-bundle    # 验证 bundled 路径（无需全局 openclaw）
+```
+
+若 npm / curl 很慢，先开本地代理再执行：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890
+npm run prepare-bundle
+```
+
+```bash
 npm run package:mac        # 产出 dist/转注 Work-<version>.dmg
 # Windows（可选）：npm run package:win
 ```
@@ -109,12 +132,14 @@ export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-b
 
 产物：`desktop/zhuanzhu-work/dist/转注 Work-0.1.0.dmg`（版本号随 `package.json`）。
 
-### 安装后冒烟
+### 安装后冒烟（bundled dmg）
 
 1. 打开 dmg，将「转注 Work」拖入「应用程序」。
-2. 确保 `openclaw` 在 PATH 且 `~/.openclaw/openclaw.json` 已配置。
-3. 启动应用 → 完成向导 → 发送 `回复两个字：收到`。
-4. Gateway 日志：`~/Library/Logs/转注Work/gateway.log`。
+2. 配置 `~/.openclaw/openclaw.json`（token + 模型 API Key）；**无需**全局 `openclaw`。
+3. 安装 **Python 3.12+**（仅档案/doctor 需要；聊天/Gateway 不依赖）。
+4. 启动应用 → 完成向导 → 发送 `回复两个字：收到`。
+5. Gateway 日志：`~/Library/Logs/转注Work/gateway.log`。
+6. 侧栏 → 环境检查（doctor）应能调用 bundled `media2text`。
 
 打包后 bundled 资源路径：`Contents/Resources/resources/`（见 `lib/gateway.js` 的 `bundledResourcesRoot()`）。
 
@@ -206,7 +231,7 @@ desktop/zhuanzhu-work/
 ├── preload.js
 ├── e2e/gui-smoke.mjs
 ├── build/               # 打包图标（generate-icon.js）
-├── resources/           # bundle-manifest + 未来 bundled node/openclaw
+├── resources/           # bundle-manifest + bundled node/openclaw/media2text (P7)
 └── renderer/
     ├── splash.html      # 启动页
     ├── wizard.html      # 首次向导
@@ -218,11 +243,9 @@ desktop/zhuanzhu-work/
 
 - Apple 公证 / 开发者 ID 签名（见上方「发布构建」）
 - 应用内自动更新（GitHub Releases）
-- 内置完整 OpenClaw npm 包（`prepare-bundle` 仅占位 manifest）
 - WebSocket 流式
-- 多 Agent sessionKey / lens prompt（P6）→ 见 [zhuanzhu-work-ia.md](./zhuanzhu-work-ia.md)
 - 能力页真正调用 monitor/auth/pipeline CLI（后续 Issue）
-- 打包内置 Python / PyInstaller media2text（`resources/media2text` 仅占位）
+- 内置 Python 运行时 / PyInstaller onefile（P7 使用 site-packages + 系统 python3）
 - 应用内自动启动 `monitor watch` 守护进程
 
 详见 [docs/openclaw-integration.md](../../docs/openclaw-integration.md) 与 [docs/issues/zhuanzhu-p1-bundled-gateway.md](../../docs/issues/zhuanzhu-p1-bundled-gateway.md)。

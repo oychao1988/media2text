@@ -10,6 +10,7 @@
     "start": "electron .",
     "e2e:gui": "node e2e/gui-smoke.mjs",
     "prepare-bundle": "bash ../../scripts/prepare-zhuanzhu-bundle.sh && node build/generate-icon.js",
+    "verify-bundle": "bash ../../scripts/verify-zhuanzhu-bundle.sh",
     "predist": "npm run prepare-bundle",
     "package:mac": "npm run prepare-bundle && electron-builder --mac dmg",
     "package:win": "npm run prepare-bundle && electron-builder --win nsis",

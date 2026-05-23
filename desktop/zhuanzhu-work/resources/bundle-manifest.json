@@ -1,13 +1,19 @@
 {
-  "generated_at": "2026-05-23T07:34:30Z",
-  "note": "Placeholder manifest. A future release will download portable Node and openclaw npm into resources/.",
+  "generated_at": "2026-05-23T15:26:15Z",
+  "note": "Portable Node + openclaw npm + media2text site-packages (P7). media2text wrapper uses system python3.",
   "pins": {
     "node": "22.14.0",
     "openclaw": "2026.5.5"
   },
   "paths": {
     "node": "resources/node",
-    "openclaw": "resources/openclaw"
+    "openclaw": "resources/openclaw",
+    "media2text": "resources/media2text"
   },
-  "bundled": false
+  "components": {
+    "node": true,
+    "openclaw": true,
+    "media2text": true
+  },
+  "bundled": true
 }
