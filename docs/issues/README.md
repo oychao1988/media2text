@@ -40,7 +40,7 @@
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
 | P4 | [#43](https://github.com/oychao1988/media2text/issues/43) | — | [zhuanzhu-p4-ui-shell-migration.md](./zhuanzhu-p4-ui-shell-migration.md) | `issue-43-zhuanzhu-p4-ui-shell` 🚧 |
-| P5 | [#44](https://github.com/oychao1988/media2text/issues/44) | — | [zhuanzhu-p5-chat-streaming.md](./zhuanzhu-p5-chat-streaming.md) | `issue-44-zhuanzhu-p5-chat-stream` |
+| P5 | [#44](https://github.com/oychao1988/media2text/issues/44) | — | [zhuanzhu-p5-chat-streaming.md](./zhuanzhu-p5-chat-streaming.md) | `issue-44-zhuanzhu-p5-chat-stream` 🚧 |
 | P6 | [#45](https://github.com/oychao1988/media2text/issues/45) | — | [zhuanzhu-p6-agent-lens.md](./zhuanzhu-p6-agent-lens.md) | `issue-45-zhuanzhu-p6-agent-lens` |
 | P7 | [#46](https://github.com/oychao1988/media2text/issues/46) | — | [zhuanzhu-p7-bundle-runtime.md](./zhuanzhu-p7-bundle-runtime.md) | `issue-46-zhuanzhu-p7-bundle-runtime` |
 | P8 | [#47](https://github.com/oychao1988/media2text/issues/47) | — | [zhuanzhu-p8-distribution.md](./zhuanzhu-p8-distribution.md) | `issue-47-zhuanzhu-p8-distribution` |

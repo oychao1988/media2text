@@ -1,32 +1,25 @@
 const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const path = require("path");
 
-const { assessOpenClawSetup, readGatewayToken } = require("./lib/config");
-const {
-  ensureGateway,
-  killSpawnedGateway,
-  gatewayUnreachableMessage,
-} = require("./lib/gateway");
+const { assessOpenClawSetup } = require("./lib/config");
+const { ensureGateway, killSpawnedGateway } = require("./lib/gateway");
 const { ensureAppConfig } = require("./lib/media2text-config");
 const {
   archiveSearch,
   complianceAccept,
   complianceStatus,
   doctor,
+  listTranscriptRefs,
   runMedia2text,
   resolveMedia2textBin,
 } = require("./lib/media2text-sidecar");
+const { openclawChat, openclawChatStream } = require("./lib/openclaw-chat");
 const {
   acceptCompliance,
   isComplianceAccepted,
   openClawConfigDir,
   openClawConfigPath,
 } = require("./lib/paths");
-
-const DEFAULT_SESSION_KEY = "agent:main:main";
-const GATEWAY_URL =
-  process.env.OPENCLAW_GATEWAY_HTTP ||
-  "http://127.0.0.1:18789/v1/chat/completions";
 
 const APP_ROOT = __dirname;
 
@@ -80,88 +73,6 @@ function bootstrapState() {
   };
 }
 
-async function openclawChat({ message, sessionKey }) {
-  const trimmed = String(message || "").trim();
-  if (!trimmed) {
-    return { ok: false, error: "消息不能为空" };
-  }
-
-  let token;
-  try {
-    token = readGatewayToken();
-  } catch (err) {
-    const setup = assessOpenClawSetup();
-    const hint = setup.complete
-      ? err.message
-      : `${err.message} 可在「${openClawConfigPath()}」完成配置。`;
-    return { ok: false, error: hint, configIncomplete: !setup.complete };
-  }
-
-  const body = {
-    model: "openclaw",
-    stream: false,
-    session_key: sessionKey || DEFAULT_SESSION_KEY,
-    messages: [{ role: "user", content: trimmed }],
-  };
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 120_000);
-
-  try {
-    const resp = await fetch(GATEWAY_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-      signal: controller.signal,
-    });
-
-    const raw = await resp.text();
-    let data;
-    try {
-      data = raw ? JSON.parse(raw) : {};
-    } catch {
-      data = { raw };
-    }
-
-    if (!resp.ok) {
-      const detail =
-        data?.error?.message || data?.message || raw || resp.statusText;
-      const setup = assessOpenClawSetup();
-      const suffix = setup.complete
-        ? ""
-        : ` 请检查模型 Provider API Key：${openClawConfigPath()}`;
-      return {
-        ok: false,
-        error: `Gateway 返回 ${resp.status}：${detail}${suffix}`,
-        configIncomplete: !setup.complete,
-      };
-    }
-
-    const choices = data?.choices || [];
-    const content = choices[0]?.message?.content;
-    if (typeof content === "string" && content.trim()) {
-      return {
-        ok: true,
-        content: content.trim(),
-        sessionKey: body.session_key,
-      };
-    }
-
-    return {
-      ok: false,
-      error: "Gateway 响应中无 assistant 内容",
-      raw: data,
-    };
-  } catch (err) {
-    return { ok: false, error: gatewayUnreachableMessage(err) };
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
 async function runBootstrap() {
   sendBootstrap("bootstrap:status", {
     phase: "gateway",
@@ -194,6 +105,17 @@ async function runBootstrap() {
 function registerIpc() {
   ipcMain.handle("openclaw:chat", (_event, payload) => openclawChat(payload));
 
+  ipcMain.handle("openclaw:chat-stream", async (event, payload) => {
+    const streamId =
+      payload?.streamId ||
+      `stream-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    return openclawChatStream({
+      ...payload,
+      streamId,
+      sender: event.sender,
+    });
+  });
+
   ipcMain.handle("app:get-bootstrap", () => bootstrapState());
 
   ipcMain.handle("app:accept-compliance", async () => {
@@ -213,6 +135,10 @@ function registerIpc() {
 
   ipcMain.handle("media2text:archive-search", (_event, payload) =>
     archiveSearch(app, payload?.query, payload || {}),
+  );
+
+  ipcMain.handle("media2text:list-transcript-refs", (_event, payload) =>
+    listTranscriptRefs(app, payload || {}),
   );
 
   ipcMain.handle("media2text:doctor", () => doctor(app));

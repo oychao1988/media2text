@@ -1,7 +1,9 @@
-const { spawn } = require("child_process");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 const { spawnSync } = require("child_process");
+
+const { ensureAppConfig } = require("./media2text-config");
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const APP_ROOT = path.join(__dirname, "..");
@@ -165,6 +167,53 @@ async function complianceStatus(app) {
   };
 }
 
+function listTranscriptRefs(app, options = {}) {
+  const limit = Math.min(Number(options.limit) || 40, 100);
+  const { workspace } = ensureAppConfig(app);
+  const creatorsRoot = path.join(workspace, "creators");
+  if (!fs.existsSync(creatorsRoot)) {
+    return { ok: true, refs: [] };
+  }
+
+  const refs = [];
+  const suffixes = [".transcript.md", ".transcript.json"];
+
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      if (!suffixes.some((s) => entry.name.endsWith(s))) continue;
+      let mtimeMs = 0;
+      try {
+        mtimeMs = fs.statSync(full).mtimeMs;
+      } catch {
+        // skip
+      }
+      const rel = path.relative(workspace, full);
+      refs.push({
+        path: rel.split(path.sep).join("/"),
+        label: entry.name,
+        mtimeMs,
+      });
+    }
+  }
+
+  walk(creatorsRoot);
+  refs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+
+  return { ok: true, refs: refs.slice(0, limit) };
+}
+
 module.exports = {
   resolveMedia2textBin,
   runMedia2text,
@@ -172,4 +221,5 @@ module.exports = {
   doctor,
   complianceAccept,
   complianceStatus,
+  listTranscriptRefs,
 };

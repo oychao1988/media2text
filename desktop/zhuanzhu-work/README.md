@@ -153,12 +153,14 @@ cd desktop/zhuanzhu-work && npm run dev
 
 | 页面 | 状态 |
 |------|------|
-| 聊天 | ✅ OpenClaw HTTP（P0） |
-| 档案检索 | ✅ `media2text archive search`（P3） |
+| 聊天 | ✅ OpenClaw HTTP + **SSE 流式**（P5），失败 fallback 非流式 |
+| 档案检索 | ✅ `media2text archive search`（P3）；**发送到聊天**（P5） |
 | 环境检查 | ✅ `media2text doctor`（P3） |
 | 智能体画廊 | 静态卡片；「+ 对话」切聊天（P6 接 session/lens） |
 | 监控守护 / 平台登录 / 技能库 / 流水线 / 通知渠道 | 静态占位，按钮 disabled 或「即将接入 CLI」 |
 | 合规声明 | 静态文案；状态联动 doctor 的 compliance 字段 |
+
+Composer（P5）：输入 `@` 弹出最近转写路径；`/search 关键词 [问题]` 注入档案上下文块。
 
 导航：`renderer/app.js` 中 `showView()` + `[data-view]` 委托；样式见 `renderer/styles.css`（合并原型 CSS 变量与组件类）。
 
@@ -169,6 +171,16 @@ await window.zhuanzhu.openclaw.chat({
   message: "你好",
   sessionKey: "agent:main:main",
 });
+
+await window.zhuanzhu.openclaw.chatStream({
+  message: "你好",
+  sessionKey: "agent:main:main",
+  onDelta(chunk) {
+    console.log(chunk);
+  },
+});
+
+await window.zhuanzhu.media2text.listTranscriptRefs({ limit: 40 });
 
 await window.zhuanzhu.app.getBootstrap();
 await window.zhuanzhu.app.acceptCompliance();

@@ -456,11 +456,13 @@
               <div class="messages" id="messages"></div>
             </div>
             <div class="composer-wrap">
-              <div class="composer">
+              <div id="ref-chips" class="ref-chips" hidden></div>
+              <div class="composer composer-relative">
+                <div id="at-picker" class="at-picker" hidden role="listbox"></div>
                 <textarea
                   id="composer-input"
                   rows="2"
-                  placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"
+                  placeholder="输入问题… 输入 @ 引用转写，/search 关键词 注入档案上下文"
                 ></textarea>
                 <div class="composer-bar">
                   <div class="composer-pills">
