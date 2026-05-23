@@ -12,12 +12,17 @@
     "prepare-bundle": "bash ../../scripts/prepare-zhuanzhu-bundle.sh && node build/generate-icon.js",
     "verify-bundle": "bash ../../scripts/verify-zhuanzhu-bundle.sh",
     "predist": "npm run prepare-bundle",
-    "package:mac": "npm run prepare-bundle && electron-builder --mac dmg",
-    "package:win": "npm run prepare-bundle && electron-builder --win nsis",
+    "package:mac": "electron-builder --mac dmg",
+    "package:mac:unsigned": "CSC_IDENTITY_AUTO_DISCOVERY=false npm run package:mac",
+    "package:publish:mac": "electron-builder --mac dmg --publish always",
+    "package:win": "electron-builder --win nsis",
     "package": "npm run package:mac"
   },
   "engines": {
     "node": ">=22.14.0"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.3"
   },
   "devDependencies": {
     "electron": "^34.2.0",
@@ -47,25 +52,41 @@
       {
         "from": "resources",
         "to": "resources",
-        "filter": ["**/*"]
+        "filter": [
+          "**/*"
+        ]
       }
     ],
     "asar": true,
     "mac": {
       "category": "public.app-category.productivity",
-      "target": ["dmg"],
-      "icon": "build/icon.png"
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.png",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "dmg": {
       "title": "转注 Work ${version}",
-      "artifactName": "转注 Work-${version}.${ext}"
+      "artifactName": "zhuanzhu-work-${version}.${ext}"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.png"
     },
     "nsis": {
       "artifactName": "转注 Work-Setup-${version}.${ext}"
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "oychao1988",
+      "repo": "media2text",
+      "releaseType": "release"
     }
   }
 }

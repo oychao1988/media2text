@@ -98,7 +98,7 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 |----|------|
 | Node.js | **≥ 22.14**（prepare-bundle 会下载到 `resources/node`；开发态用系统 Node） |
 | macOS | 用于 `package:mac`（本机或 CI macOS runner） |
-| 签名 | 未做 Apple 公证；首次打开可能需右键 → 打开 |
+| 签名 | 见下方「签名与公证」；无证书时用 `package:mac:unsigned` |
 
 ### 命令
 
@@ -130,7 +130,51 @@ export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
 export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
 ```
 
-产物：`desktop/zhuanzhu-work/dist/转注 Work-0.1.0.dmg`（版本号随 `package.json`）。
+产物：`desktop/zhuanzhu-work/dist/zhuanzhu-work-0.1.0.dmg`（版本号随 `package.json`；`productName` 仍为「转注 Work」）。
+
+### 签名与公证（P8 / Issue #47）
+
+证书与 Apple 账号**仅通过环境变量**注入，勿提交仓库。
+
+| 变量 | 说明 |
+|------|------|
+| `CSC_LINK` | Developer ID `.p12` 路径，或 base64 内容 |
+| `CSC_KEY_PASSWORD` | 证书密码 |
+| `APPLE_ID` | Apple ID 邮箱 |
+| `APPLE_APP_SPECIFIC_PASSWORD` | 应用专用密码 |
+| `APPLE_TEAM_ID` | Team ID |
+
+**无证书**（默认本地 / CI 无 secrets）：
+
+```bash
+npm run package:mac:unsigned
+```
+
+**有证书**：
+
+```bash
+export CSC_LINK="$HOME/certs/zhuanzhu.p12"
+export CSC_KEY_PASSWORD="***"
+export APPLE_ID="you@example.com"
+export APPLE_APP_SPECIFIC_PASSWORD="****"
+export APPLE_TEAM_ID="XXXXXXXXXX"
+npm run package:mac
+spctl -a -vv -t install "dist/mac/转注 Work.app"
+```
+
+发布清单与 Release 资产说明：[docs/zhuanzhu-release-checklist.md](../../docs/zhuanzhu-release-checklist.md)。
+
+### 自动更新（P8）
+
+打包版集成 `electron-updater`，启动约 8s 后静默检查 GitHub Releases；侧栏底部 **升级** 可手动检查 / 下载 / 重启安装。
+
+Release tag 约定：`zhuanzhu-v<version>`（例 `zhuanzhu-v0.1.0`）。需上传 `latest-mac.yml` 与 `.blockmap`（`electron-builder` 自动生成）。
+
+推送 tag 触发 CI：`.github/workflows/zhuanzhu-release.yml`（无 Apple secrets 时产出未签名 dmg）。
+
+```bash
+npm run package:publish:mac   # 本地发布到 GitHub（需 GH_TOKEN）
+```
 
 ### 安装后冒烟（bundled dmg）
 
@@ -241,8 +285,8 @@ desktop/zhuanzhu-work/
 
 ## 非目标（本仓库当前阶段）
 
-- Apple 公证 / 开发者 ID 签名（见上方「发布构建」）
-- 应用内自动更新（GitHub Releases）
+- Mac App Store / Microsoft Store 上架
+- 差分更新优化、beta/stable 多 channel UI
 - WebSocket 流式
 - 能力页真正调用 monitor/auth/pipeline CLI（后续 Issue）
 - 内置 Python 运行时 / PyInstaller onefile（P7 使用 site-packages + 系统 python3）

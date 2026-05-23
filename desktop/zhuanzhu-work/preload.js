@@ -59,6 +59,29 @@ contextBridge.exposeInMainWorld("zhuanzhu", {
       ipcRenderer.on("bootstrap:status", listener);
       return () => ipcRenderer.removeListener("bootstrap:status", listener);
     },
+    getVersion() {
+      return ipcRenderer.invoke("app:get-version");
+    },
+    isPackaged() {
+      return ipcRenderer.invoke("app:is-packaged");
+    },
+    getUpdateState() {
+      return ipcRenderer.invoke("app:get-update-state");
+    },
+    checkForUpdates() {
+      return ipcRenderer.invoke("app:check-updates");
+    },
+    downloadUpdate() {
+      return ipcRenderer.invoke("app:download-update");
+    },
+    quitAndInstall() {
+      return ipcRenderer.invoke("app:quit-and-install");
+    },
+    onUpdateStatus(callback) {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on("app:update-status", listener);
+      return () => ipcRenderer.removeListener("app:update-status", listener);
+    },
   },
   media2text: {
     run(argv, options) {
