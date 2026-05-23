@@ -209,6 +209,22 @@ async function openclawChatStream({
     sender.send("openclaw:chat-chunk", { streamId, ...payload });
   };
 
+  if (process.env.ZHUANZHU_CHAT_WS !== "0") {
+    try {
+      const { openclawChatStreamWs } = require("./openclaw-chat-ws");
+      return await openclawChatStreamWs({
+        message: trimmed,
+        sessionKey,
+        streamId,
+        sender,
+        chatMode,
+        fastMode,
+      });
+    } catch {
+      // Fall through to HTTP SSE (P5 pattern).
+    }
+  }
+
   try {
     const resp = await fetch(GATEWAY_URL, {
       method: "POST",
