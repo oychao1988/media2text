@@ -71,6 +71,18 @@ npm run dev
 ./scripts/openclaw-gateway-http-chat.sh "回复两个字：收到"
 ```
 
+### 聊天延迟基准（Issue [#56](https://github.com/oychao1988/media2text/issues/56)）
+
+Gateway 已就绪（`curl -sf http://127.0.0.1:18789/health`）时，从仓库根目录：
+
+```bash
+bash scripts/benchmark-chat-latency.sh --runs 3
+bash scripts/benchmark-chat-latency.sh --thinking off --fast --runs 2
+```
+
+输出 JSON 含每轮 `ttfb_ms`、`ttft_ms`（首个 content delta）、`total_ms` 及 `ttft_ms_p50`。  
+Token 从 `~/.openclaw/openclaw.json` 或 `OPENCLAW_GATEWAY_TOKEN` 读取，脚本不会打印 token。
+
 ### E2E 冒烟
 
 ```bash
