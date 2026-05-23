@@ -72,6 +72,31 @@ download_node() {
   "$RES/node/bin/node" -v
 }
 
+prune_node_bundle() {
+  if [[ ! -d "$RES/node" ]]; then
+    return 0
+  fi
+
+  log "prune bundled node (runtime only; drop nvm global modules & headers)"
+  rm -rf "$RES/node/lib/node_modules"
+  rm -rf "$RES/node/include"
+  rm -f "$RES/node/README.md" "$RES/node/CHANGELOG.md" "$RES/node/LICENSE"
+
+  if [[ -d "$RES/node/bin" ]]; then
+    while IFS= read -r -d '' entry; do
+      base="$(basename "$entry")"
+      case "$base" in
+        node | npm | npx) ;;
+        *) rm -rf "$entry" ;;
+      esac
+    done < <(find "$RES/node/bin" -mindepth 1 -maxdepth 1 -print0 2>/dev/null || true)
+  fi
+
+  local size
+  size="$(du -sh "$RES/node" 2>/dev/null | awk '{print $1}')"
+  log "node bundle size after prune: ${size:-unknown}"
+}
+
 install_openclaw() {
   if [[ "${ZHUANZHU_SKIP_OPENCLAW_INSTALL:-0}" == "1" ]]; then
     log "skip openclaw install (ZHUANZHU_SKIP_OPENCLAW_INSTALL=1)"
@@ -181,6 +206,7 @@ EOF
 
 mkdir -p "$RES"
 download_node
+prune_node_bundle
 install_openclaw
 bundle_media2text
 write_manifest

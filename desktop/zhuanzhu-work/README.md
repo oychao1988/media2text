@@ -49,6 +49,7 @@ npm run dev
 | 变量 | 说明 |
 |------|------|
 | `ZHUANZHU_SKIP_SPAWN=1` | 不自动 spawn Gateway（Gateway 已手动运行时使用，E2E 默认） |
+| `ZHUANZHU_CHAT_FAST=1` | 聊天请求尝试 `thinking=off` / `fast=true`（需 Gateway 支持） |
 | `OPENCLAW_CONFIG_PATH` | 覆盖 openclaw.json 路径 |
 | `OPENCLAW_BIN` | 覆盖 openclaw 可执行文件路径 |
 | `ZHUANZU_WORKSPACE` | 覆盖 media2text workspace（默认 `userData/data`） |
@@ -91,6 +92,8 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 | ffmpeg / Chromium | 仍须用户自行安装（doctor 会提示） | 同左 |
 
 打包后 **无需** 全局 `openclaw` 或 repo venv 即可启动 Gateway；档案/doctor 走 bundled `media2text` wrapper（依赖本机 `python3`）。
+
+**体积说明**：`prepare-bundle` 会在 Node 解压/复制后 **自动 prune**（删除 nvm 全局 `lib/node_modules`、headers 等）。若曾用 `NODE_SOURCE` 指向 nvm 整包，prune 后 Node 约 **120MB**（此前可能 >2GB）。完整 bundle 约 **700–900MB**（Node + openclaw + media2text），而非 3GB。
 
 ### 前提
 
