@@ -169,6 +169,42 @@ flowchart LR
 
 ---
 
+## 3.5 配置卫生（agents 膨胀 + skills symlink）
+
+Gateway 冷启动与每轮聊天前的 skills 扫描，会受 `~/.openclaw/openclaw.json` 与 `~/.openclaw/skills/` 影响。转注 Work **不会**自动修改用户配置，但会在 bootstrap / doctor 面板提示。
+
+### 检查
+
+```bash
+# JSON 报告（exit 0=通过，2=有 warn）
+bash scripts/openclaw-config-hygiene.sh
+bash scripts/openclaw-config-hygiene.sh --dry-run
+
+# 转注 Work 内：环境检查页刷新，或启动时顶部 warn 横幅（可点击打开配置目录）
+```
+
+字段示例：
+
+```json
+{
+  "ok": false,
+  "agents_list_count": 729,
+  "agents_list_warn": true,
+  "skills_symlink_issues": 23,
+  "skills_symlink_samples": ["some-skill"],
+  "hints": ["agents.list 有 729 条（建议 ≤50）：…"]
+}
+```
+
+### 修复指引（手动）
+
+1. **备份** `~/.openclaw/openclaw.json`（及可选 `agents/` 目录）。
+2. **agents.list**：移除长期不用的历史条目（如大量 `ozon-user-*`）；保留仍在用的 `main` / 自定义 agent。
+3. **skills symlink**：若 symlink 指向 `~/.openclaw/skills` 外，Gateway 会 skip 并拖慢每轮扫描 — 将 skill **复制**到 `~/.openclaw/skills/<name>/`，或删除逃逸 symlink。
+4. 重启 Gateway 后复测：`bash scripts/benchmark-chat-latency.sh`（见仓库 `scripts/`）。
+
+---
+
 ## 4. 本地验证命令速查
 
 ```bash

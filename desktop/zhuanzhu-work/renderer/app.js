@@ -633,7 +633,7 @@ async function runArchiveSearch() {
   }
 }
 
-function renderDoctor(data) {
+function renderDoctor(data, hygiene) {
   doctorChecksEl.innerHTML = "";
   if (!data) {
     doctorStatusEl.textContent = "无数据";
@@ -641,8 +641,10 @@ function renderDoctor(data) {
     return;
   }
 
-  doctorStatusEl.textContent = data.ok ? "环境就绪" : "存在未通过项";
-  doctorStatusEl.className = `panel-status ${data.ok ? "ok" : "warn"}`;
+  const hygieneOk = !hygiene || hygiene.ok;
+  const allOk = data.ok && hygieneOk;
+  doctorStatusEl.textContent = allOk ? "环境就绪" : "存在未通过项";
+  doctorStatusEl.className = `panel-status ${allOk ? "ok" : "warn"}`;
 
   (data.checks || []).forEach((check) => {
     const li = document.createElement("li");
@@ -650,6 +652,20 @@ function renderDoctor(data) {
     li.textContent = `${check.ok ? "✓" : "✗"} ${check.name}`;
     doctorChecksEl.appendChild(li);
   });
+
+  if (hygiene) {
+    const agentsOk = !hygiene.agents_list_warn;
+    const liAgents = document.createElement("li");
+    liAgents.className = agentsOk ? "check-ok" : "check-fail";
+    liAgents.textContent = `${agentsOk ? "✓" : "✗"} OpenClaw agents.list（${hygiene.agents_list_count ?? "?"} 条）`;
+    doctorChecksEl.appendChild(liAgents);
+
+    const skillsOk = (hygiene.skills_symlink_issues || 0) === 0;
+    const liSkills = document.createElement("li");
+    liSkills.className = skillsOk ? "check-ok" : "check-fail";
+    liSkills.textContent = `${skillsOk ? "✓" : "✗"} OpenClaw skills symlink（${hygiene.skills_symlink_issues || 0} 处逃逸）`;
+    doctorChecksEl.appendChild(liSkills);
+  }
 
   const parts = [];
   parts.push(`合规：${data.compliance_accepted ? "已接受" : "未接受"}`);
@@ -659,12 +675,28 @@ function renderDoctor(data) {
   if (data.monitor_lock_pid) {
     parts.push(`monitor watch PID：${data.monitor_lock_pid}`);
   }
+  if (hygiene?.hints?.length) {
+    parts.push(hygiene.hints.join(" "));
+  }
   doctorMetaEl.textContent = parts.join(" · ");
 
   if (complianceBadgeEl) {
     complianceBadgeEl.textContent = data.compliance_accepted ? "已接受免责声明" : "未接受免责声明";
     complianceBadgeEl.className = data.compliance_accepted ? "badge ok" : "badge warn";
   }
+}
+
+function showOpenClawHygieneBanner(hygiene) {
+  if (!statusBanner || !hygiene || hygiene.ok) return;
+  const summary =
+    hygiene.hints?.[0] ||
+    `OpenClaw 配置可能影响性能（agents ${hygiene.agents_list_count ?? "?"} 条）`;
+  statusBanner.textContent = `${summary} — 点击打开配置目录`;
+  statusBanner.className = "status-banner visible warn";
+  statusBanner.style.cursor = "pointer";
+  statusBanner.onclick = () => {
+    window.zhuanzhu?.app?.openConfigDir?.();
+  };
 }
 
 async function refreshDoctor() {
@@ -679,7 +711,10 @@ async function refreshDoctor() {
   doctorStatusEl.className = "panel-status";
 
   try {
-    const result = await window.zhuanzhu.media2text.doctor();
+    const [result, hygiene] = await Promise.all([
+      window.zhuanzhu.media2text.doctor(),
+      window.zhuanzhu.app?.getOpenclawHygiene?.() ?? null,
+    ]);
     if (!result.data && !result.ok) {
       doctorStatusEl.textContent = result.error || "doctor 失败";
       doctorStatusEl.className = "panel-status error";
@@ -687,7 +722,7 @@ async function refreshDoctor() {
       doctorMetaEl.textContent = result.stderr || "";
       return;
     }
-    renderDoctor(result.data);
+    renderDoctor(result.data, hygiene);
   } catch (err) {
     doctorStatusEl.textContent = err?.message || String(err);
     doctorStatusEl.className = "panel-status error";
@@ -839,6 +874,8 @@ async function initMain() {
         '未找到 media2text CLI。请在仓库根目录 pip install -e ".[dev]" 或配置 PATH。',
         "warn",
       );
+    } else if (state.openclawConfigHygiene && !state.openclawConfigHygiene.ok) {
+      showOpenClawHygieneBanner(state.openclawConfigHygiene);
     }
   }
 

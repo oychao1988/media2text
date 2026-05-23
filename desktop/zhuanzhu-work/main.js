@@ -16,6 +16,7 @@ const {
   resolveMedia2textBin,
 } = require("./lib/media2text-sidecar");
 const { createAutoUpdater } = require("./lib/auto-updater");
+const { checkOpenClawHygiene } = require("./lib/openclaw-hygiene");
 const { openclawChat, openclawChatStream } = require("./lib/openclaw-chat");
 const {
   acceptCompliance,
@@ -65,9 +66,11 @@ function bootstrapState() {
   const complianceAccepted = isComplianceAccepted(app);
   const setup = assessOpenClawSetup();
   const chatSettings = loadAppSettings(app).chat;
+  const openclawConfigHygiene = checkOpenClawHygiene();
   return {
     complianceAccepted,
     setup,
+    openclawConfigHygiene,
     configPath: openClawConfigPath(),
     configDir: openClawConfigDir(),
     workspace,
@@ -143,6 +146,8 @@ function registerIpc() {
   });
 
   ipcMain.handle("app:get-chat-settings", () => loadAppSettings(app).chat);
+
+  ipcMain.handle("app:openclaw-hygiene", () => checkOpenClawHygiene());
 
   ipcMain.handle("app:set-chat-fast-mode", (_event, enabled) => ({
     ok: true,

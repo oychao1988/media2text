@@ -57,6 +57,9 @@ contextBridge.exposeInMainWorld("zhuanzhu", {
     getChatSettings() {
       return ipcRenderer.invoke("app:get-chat-settings");
     },
+    getOpenclawHygiene() {
+      return ipcRenderer.invoke("app:openclaw-hygiene");
+    },
     setChatFastMode(enabled) {
       return ipcRenderer.invoke("app:set-chat-fast-mode", Boolean(enabled));
     },
