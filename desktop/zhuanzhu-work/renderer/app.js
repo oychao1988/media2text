@@ -89,8 +89,22 @@ inputEl.addEventListener("keydown", (event) => {
   }
 });
 
-appendMessage(
-  "assistant",
-  "转注 Work 开发壳已就绪。请确保 OpenClaw Gateway 在 127.0.0.1:18789 运行，然后发送一条消息测试联调。",
-);
-inputEl.focus();
+async function initMain() {
+  if (window.zhuanzhu?.app?.getBootstrap) {
+    const state = await window.zhuanzhu.app.getBootstrap();
+    if (!state.setup?.complete) {
+      showBanner(
+        `OpenClaw 配置未完成，请在 ${state.configPath} 中设置 gateway.auth.token 与模型 API Key。`,
+        "warn",
+      );
+    }
+  }
+
+  appendMessage(
+    "assistant",
+    "转注 Work 已就绪。Gateway 由应用自动管理，直接发送消息即可开始联调。",
+  );
+  inputEl.focus();
+}
+
+initMain();

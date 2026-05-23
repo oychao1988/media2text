@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'"
+    />
+    <title>转注 Work — 启动中</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="splash-body">
+    <div class="splash-card">
+      <div class="splash-logo">转注 Work</div>
+      <p id="splash-message" class="splash-message">正在启动 OpenClaw Gateway…</p>
+      <div class="splash-spinner" id="splash-spinner" aria-hidden="true"></div>
+      <p id="splash-error" class="splash-error" hidden></p>
+    </div>
+    <script src="splash.js"></script>
+  </body>
+</html>

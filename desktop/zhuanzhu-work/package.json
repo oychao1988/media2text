@@ -6,12 +6,14 @@
   "main": "main.js",
   "scripts": {
     "dev": "electron .",
-    "start": "electron ."
+    "start": "electron .",
+    "e2e:gui": "node e2e/gui-smoke.mjs"
   },
   "engines": {
     "node": ">=22.14.0"
   },
   "devDependencies": {
-    "electron": "^34.2.0"
+    "electron": "^34.2.0",
+    "playwright": "^1.52.0"
   }
 }

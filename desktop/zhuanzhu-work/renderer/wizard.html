@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'"
+    />
+    <title>转注 Work — 首次设置</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="wizard-body">
+    <div class="wizard-card">
+      <h1>欢迎使用转注 Work</h1>
+      <p class="wizard-lead">完成以下步骤后即可开始聊天。</p>
+
+      <section class="wizard-section">
+        <h2>免责声明</h2>
+        <p>
+          转注为<strong>个人研究档案工具</strong>，用于本地录制、转写与检索复盘，<strong>不构成投资咨询</strong>，不提供荐股、跟单或买卖建议。复盘结论请自行核对。
+        </p>
+        <label class="wizard-check">
+          <input type="checkbox" id="compliance-check" />
+          <span>我已阅读并理解上述免责声明</span>
+        </label>
+      </section>
+
+      <section class="wizard-section" id="config-section">
+        <h2>OpenClaw 配置</h2>
+        <p id="config-hint">
+          请在 <code id="config-path">~/.openclaw/openclaw.json</code> 中配置：
+        </p>
+        <ul class="wizard-list">
+          <li><code>gateway.auth.token</code> — Gateway 鉴权</li>
+          <li>模型 Provider 的 API Key（如 OpenAI / Anthropic 等）</li>
+        </ul>
+        <p class="wizard-muted">
+          官方文档：
+          <a
+            href="https://docs.openclaw.ai"
+            target="_blank"
+            rel="noopener noreferrer"
+            >OpenClaw 文档</a
+          >
+        </p>
+      </section>
+
+      <div class="wizard-actions">
+        <button type="button" class="btn-secondary" id="btn-open-config">
+          打开配置目录
+        </button>
+        <button type="button" class="btn-secondary" id="btn-skip">
+          稍后配置
+        </button>
+        <button type="button" class="btn-primary" id="btn-continue" disabled>
+          进入转注 Work
+        </button>
+      </div>
+      <p id="wizard-error" class="wizard-error" hidden></p>
+    </div>
+    <script src="wizard.js"></script>
+  </body>
+</html>

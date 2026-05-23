@@ -24,4 +24,15 @@
 
 **已交付（勿重复开单）**：[`creator-monitor-and-profile.md`](./creator-monitor-and-profile.md) 中 P1–P3 已在代码实现并勾选完成。
 
+### 转注 Work 桌面壳（OpenClaw + 发布里程碑）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| P0 | [#35](https://github.com/oychao1988/media2text/issues/35) | [#36](https://github.com/oychao1988/media2text/pull/36) | [zhuanzhu-electron-openclaw-chat.md](./zhuanzhu-electron-openclaw-chat.md) | `issue-35-zhuanzhu-electron-chat` ✅ |
+| P1 | [#37](https://github.com/oychao1988/media2text/issues/37) | — | [zhuanzhu-p1-bundled-gateway.md](./zhuanzhu-p1-bundled-gateway.md) | `issue-37-zhuanzhu-p1-gateway` |
+| P2 | [#38](https://github.com/oychao1988/media2text/issues/38) | — | [zhuanzhu-p2-installer.md](./zhuanzhu-p2-installer.md) | `issue-38-zhuanzhu-p2-installer` |
+| P3 | [#39](https://github.com/oychao1988/media2text/issues/39) | — | [zhuanzhu-p3-media2text-sidecar.md](./zhuanzhu-p3-media2text-sidecar.md) | `issue-39-zhuanzhu-p3-m2t-sidecar` |
+
+**合并顺序**：#36 → #37 → #38 → #39。
+
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。

@@ -1,43 +1,65 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
-const fs = require("fs");
-const os = require("os");
+const { app, BrowserWindow, ipcMain, shell } = require("electron");
 const path = require("path");
+
+const { assessOpenClawSetup, readGatewayToken } = require("./lib/config");
+const {
+  ensureGateway,
+  killSpawnedGateway,
+  gatewayUnreachableMessage,
+} = require("./lib/gateway");
+const {
+  acceptCompliance,
+  isComplianceAccepted,
+  openClawConfigDir,
+  openClawConfigPath,
+  workspacePath,
+} = require("./lib/paths");
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
 const GATEWAY_URL =
   process.env.OPENCLAW_GATEWAY_HTTP ||
   "http://127.0.0.1:18789/v1/chat/completions";
 
-function readGatewayToken() {
-  if (process.env.OPENCLAW_GATEWAY_TOKEN) {
-    return process.env.OPENCLAW_GATEWAY_TOKEN;
-  }
-  const configPath =
-    process.env.OPENCLAW_CONFIG_PATH ||
-    path.join(os.homedir(), ".openclaw", "openclaw.json");
-  if (!fs.existsSync(configPath)) {
-    throw new Error(
-      `未找到 OpenClaw 配置：${configPath}。请设置 OPENCLAW_GATEWAY_TOKEN 或安装 OpenClaw。`,
-    );
-  }
-  const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
-  const token = config?.gateway?.auth?.token;
-  if (!token) {
-    throw new Error("openclaw.json 中缺少 gateway.auth.token");
-  }
-  return token;
+const APP_ROOT = __dirname;
+let mainWindow = null;
+
+function createShellWindow() {
+  const win = new BrowserWindow({
+    width: 1180,
+    height: 780,
+    minWidth: 900,
+    minHeight: 600,
+    title: "转注 Work",
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, "preload.js"),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+
+  win.once("ready-to-show", () => win.show());
+  return win;
 }
 
-function gatewayUnreachableMessage(cause) {
-  const hint =
-    "请先启动 Gateway：source ~/.nvm/nvm.sh && openclaw gateway run --port 18789 --bind loopback";
-  if (cause?.code === "ECONNREFUSED" || cause?.cause?.code === "ECONNREFUSED") {
-    return `无法连接 OpenClaw Gateway（127.0.0.1:18789）。${hint}`;
+function sendBootstrap(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
   }
-  if (cause?.name === "AbortError") {
-    return `Gateway 请求超时。${hint}`;
-  }
-  return cause?.message || String(cause);
+}
+
+function bootstrapState() {
+  const complianceAccepted = isComplianceAccepted(app);
+  const setup = assessOpenClawSetup();
+  return {
+    complianceAccepted,
+    setup,
+    configPath: openClawConfigPath(),
+    configDir: openClawConfigDir(),
+    workspace: workspacePath(app),
+    needsWizard: !complianceAccepted || !setup.complete,
+  };
 }
 
 async function openclawChat({ message, sessionKey }) {
@@ -50,7 +72,11 @@ async function openclawChat({ message, sessionKey }) {
   try {
     token = readGatewayToken();
   } catch (err) {
-    return { ok: false, error: err.message };
+    const setup = assessOpenClawSetup();
+    const hint = setup.complete
+      ? err.message
+      : `${err.message} 可在「${openClawConfigPath()}」完成配置。`;
+    return { ok: false, error: hint, configIncomplete: !setup.complete };
   }
 
   const body = {
@@ -85,16 +111,25 @@ async function openclawChat({ message, sessionKey }) {
     if (!resp.ok) {
       const detail =
         data?.error?.message || data?.message || raw || resp.statusText;
+      const setup = assessOpenClawSetup();
+      const suffix = setup.complete
+        ? ""
+        : ` 请检查模型 Provider API Key：${openClawConfigPath()}`;
       return {
         ok: false,
-        error: `Gateway 返回 ${resp.status}：${detail}`,
+        error: `Gateway 返回 ${resp.status}：${detail}${suffix}`,
+        configIncomplete: !setup.complete,
       };
     }
 
     const choices = data?.choices || [];
     const content = choices[0]?.message?.content;
     if (typeof content === "string" && content.trim()) {
-      return { ok: true, content: content.trim(), sessionKey: body.session_key };
+      return {
+        ok: true,
+        content: content.trim(),
+        sessionKey: body.session_key,
+      };
     }
 
     return {
@@ -109,32 +144,90 @@ async function openclawChat({ message, sessionKey }) {
   }
 }
 
-function createWindow() {
-  const win = new BrowserWindow({
-    width: 1180,
-    height: 780,
-    minWidth: 900,
-    minHeight: 600,
-    title: "转注 Work",
-    webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
-      contextIsolation: true,
-      nodeIntegration: false,
-      sandbox: true,
-    },
+async function runBootstrap() {
+  sendBootstrap("bootstrap:status", {
+    phase: "gateway",
+    message: "正在启动 OpenClaw Gateway…",
   });
 
-  win.loadFile(path.join(__dirname, "renderer", "index.html"));
+  const gateway = await ensureGateway(APP_ROOT);
+  if (!gateway.ok) {
+    sendBootstrap("bootstrap:status", {
+      phase: "error",
+      message: gateway.error,
+    });
+    return;
+  }
+
+  sendBootstrap("bootstrap:status", {
+    phase: "ready",
+    message: "Gateway 已就绪",
+    spawned: gateway.spawned,
+  });
+
+  const state = bootstrapState();
+  if (state.needsWizard) {
+    mainWindow.loadFile(path.join(__dirname, "renderer", "wizard.html"));
+  } else {
+    mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+  }
 }
 
-app.whenReady().then(() => {
+function registerIpc() {
   ipcMain.handle("openclaw:chat", (_event, payload) => openclawChat(payload));
 
-  createWindow();
+  ipcMain.handle("app:get-bootstrap", () => bootstrapState());
+
+  ipcMain.handle("app:accept-compliance", () => {
+    const record = acceptCompliance(app);
+    return { ok: true, record };
+  });
+
+  ipcMain.handle("app:open-config-dir", async () => {
+    const dir = openClawConfigDir();
+    await shell.openPath(dir);
+    return { ok: true, dir };
+  });
+
+  ipcMain.handle("app:enter-main", () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.loadFile(path.join(__dirname, "renderer", "index.html"));
+    }
+    return { ok: true };
+  });
+}
+
+app.whenReady().then(async () => {
+  registerIpc();
+  mainWindow = createShellWindow();
+  mainWindow.loadFile(path.join(__dirname, "renderer", "splash.html"));
+  mainWindow.webContents.once("did-finish-load", () => {
+    runBootstrap().catch((err) => {
+      sendBootstrap("bootstrap:status", {
+        phase: "error",
+        message: err?.message || String(err),
+      });
+    });
+  });
 
   app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) {
+      mainWindow = createShellWindow();
+      mainWindow.loadFile(path.join(__dirname, "renderer", "splash.html"));
+      mainWindow.webContents.once("did-finish-load", () => {
+        runBootstrap().catch((err) => {
+          sendBootstrap("bootstrap:status", {
+            phase: "error",
+            message: err?.message || String(err),
+          });
+        });
+      });
+    }
   });
+});
+
+app.on("before-quit", () => {
+  killSpawnedGateway();
 });
 
 app.on("window-all-closed", () => {
