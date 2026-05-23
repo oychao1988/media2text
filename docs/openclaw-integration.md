@@ -134,7 +134,7 @@ flowchart LR
 |------|------|----------|
 | **P0** | 开发态联调 | `finalized.html` 发一条消息 → Gateway → 助手回复（脚本或 preload） |
 | **P1** | 单进程启动 | 双击 app → Gateway 自动 ready → 聊天可用 |
-| **P2** | 安装包 | `.dmg` / `.exe`；`~/.openclaw` 配置与升级策略文档化 |
+| **P2** | 安装包 | `.dmg` / `.exe`；`~/.openclaw` 配置与升级策略文档化 ✅（Issue #38） |
 | **P3** | media2text 集成 | preload 调 `media2text` CLI（`archive search`、`monitor watch` 状态） |
 
 ### Tauri 备选（CEO 计划 P1）
@@ -178,6 +178,26 @@ open http://127.0.0.1:18789/
 转注 Work 最小 Electron 聊天壳（Issue #35）：preload 代理 `POST /v1/chat/completions`，开发态联调 Gateway。
 
 - 说明与运行步骤：[desktop/zhuanzhu-work/README.md](../desktop/zhuanzhu-work/README.md)
+
+---
+
+## 8. 发布与安装（P2）
+
+转注 Work 可通过 `electron-builder` 打出 macOS `.dmg`（Windows NSIS 可选）。构建步骤见 [desktop/zhuanzhu-work/README.md](../desktop/zhuanzhu-work/README.md#发布构建p2--issue-38)。
+
+### 用户数据与升级
+
+| 路径 | 说明 |
+|------|------|
+| `~/.openclaw/` | OpenClaw 配置、会话、Gateway token；**卸载应用不会删除** |
+| `~/Library/Application Support/转注 Work/` | Electron `userData`（合规确认、未来 media2text workspace） |
+| `~/Library/Logs/转注Work/gateway.log` | 本应用 spawn 的 Gateway 日志（macOS） |
+
+**升级策略（当前）**：下载新版 dmg 覆盖安装即可；OpenClaw 配置沿用 `~/.openclaw`。应用内自动更新与内置 OpenClaw npm  bundle 尚未实现（见 `resources/bundle-manifest.json`）。
+
+**未签名应用**：无 Apple 公证时，首次启动需在 Finder 中右键 → 打开，或在「隐私与安全性」中允许。
+
+**Windows**：`npm run package:win` 产出 NSIS 安装包；本 Issue 以 macOS 为主，Windows 细节可后续补全。
 
 ---
 

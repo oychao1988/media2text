@@ -21,6 +21,13 @@ const GATEWAY_URL =
   "http://127.0.0.1:18789/v1/chat/completions";
 
 const APP_ROOT = __dirname;
+
+function bundledResourcesRoot() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, "resources");
+  }
+  return path.join(APP_ROOT, "resources");
+}
 let mainWindow = null;
 
 function createShellWindow() {
@@ -150,7 +157,7 @@ async function runBootstrap() {
     message: "正在启动 OpenClaw Gateway…",
   });
 
-  const gateway = await ensureGateway(APP_ROOT);
+  const gateway = await ensureGateway(bundledResourcesRoot());
   if (!gateway.ok) {
     sendBootstrap("bootstrap:status", {
       phase: "error",
