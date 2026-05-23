@@ -11,6 +11,31 @@ const MIN_NODE = [22, 16, 0];
 
 let spawnedGatewayPid = null;
 let spawnedGatewayChild = null;
+let gatewayStartupFailure = null;
+
+function readGatewayLogTail(maxLines = 15) {
+  try {
+    const logPath = gatewayLogPath();
+    if (!fs.existsSync(logPath)) return "";
+    const lines = fs.readFileSync(logPath, "utf8").split("\n");
+    return lines.slice(-maxLines).join("\n").trim();
+  } catch {
+    return "";
+  }
+}
+
+function formatGatewayStartupFailure({ code, signal }) {
+  const tail = readGatewayLogTail();
+  const parts = [
+    `OpenClaw Gateway 子进程已退出（code=${code ?? "null"}, signal=${signal ?? "null"}），未就绪。`,
+  ];
+  if (tail) {
+    parts.push(`最近日志（${gatewayLogPath()}）：\n${tail}`);
+  } else {
+    parts.push(`请查看日志：${gatewayLogPath()}`);
+  }
+  return parts.join("\n");
+}
 
 function parseNodeVersion(raw) {
   const match = String(raw || "").trim().match(/^v?(\d+)\.(\d+)\.(\d+)/);
@@ -143,6 +168,8 @@ function spawnGateway(resourcesRoot) {
     return { pid: spawnedGatewayPid, alreadyRunning: true };
   }
 
+  gatewayStartupFailure = null;
+
   const openclawBin = resolveOpenClawBin(resourcesRoot);
   if (!openclawBin) {
     throw new Error(
@@ -180,6 +207,9 @@ function spawnGateway(resourcesRoot) {
     appendGatewayLog(
       `[${new Date().toISOString()}] gateway exited code=${code} signal=${signal}`,
     );
+    if (spawnedGatewayPid === child.pid && code !== 0 && code !== null) {
+      gatewayStartupFailure = { code, signal };
+    }
     if (spawnedGatewayPid === child.pid) {
       spawnedGatewayPid = null;
       spawnedGatewayChild = null;
@@ -192,6 +222,13 @@ function spawnGateway(resourcesRoot) {
 async function waitForGatewayReady(timeoutMs = GATEWAY_START_TIMEOUT_MS) {
   const started = Date.now();
   while (Date.now() - started < timeoutMs) {
+    if (gatewayStartupFailure) {
+      return {
+        ok: false,
+        failFast: true,
+        error: formatGatewayStartupFailure(gatewayStartupFailure),
+      };
+    }
     if (await probeGatewayHealth(1500)) {
       return { ok: true, waitedMs: Date.now() - started };
     }
@@ -253,7 +290,16 @@ module.exports = {
   GATEWAY_PORT,
   ensureGateway,
   probeGatewayHealth,
+  waitForGatewayReady,
   killSpawnedGateway,
   gatewayUnreachableMessage,
   resolveOpenClawBin,
+  _resetGatewayStateForTests() {
+    gatewayStartupFailure = null;
+    spawnedGatewayPid = null;
+    spawnedGatewayChild = null;
+  },
+  _setGatewayStartupFailureForTests(failure) {
+    gatewayStartupFailure = failure;
+  },
 };

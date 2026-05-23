@@ -18,6 +18,8 @@ Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](h
 
 Gateway 日志（可选）：`~/Library/Logs/转注Work/gateway.log`（macOS）。
 
+**排错**：若 bundled Node 版本过低或 openclaw 启动失败，应用应在数秒内报错（fail-fast），而非等待满 60 秒。错误信息会包含 `gateway.log` 末尾摘要；完整日志见上述路径。
+
 ## 开发者
 
 ### 前置条件

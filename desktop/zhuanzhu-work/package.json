@@ -9,6 +9,7 @@
     "dev": "electron .",
     "start": "electron .",
     "e2e:gui": "node e2e/gui-smoke.mjs",
+    "test": "node --test test/*.test.js",
     "prepare-bundle": "bash ../../scripts/prepare-zhuanzhu-bundle.sh && node build/generate-icon.js",
     "verify-bundle": "bash ../../scripts/verify-zhuanzhu-bundle.sh",
     "predist": "npm run prepare-bundle",
