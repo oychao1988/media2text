@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; script-src 'self'"
+    />
+    <title>转注 Work</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="window">
+      <header class="titlebar">
+        <span class="titlebar-title">转注 Work</span>
+      </header>
+      <div class="body">
+        <aside class="sidebar">
+          <div class="sidebar-head">
+            <h1>转注 Work</h1>
+            <button type="button" class="btn-new" disabled>+ 新消息（占位）</button>
+          </div>
+          <div class="nav-scroll">
+            <div class="nav-label">会话（静态占位）</div>
+            <div class="conv-title active">OpenClaw 联调</div>
+            <div class="conv-title">复盘 025049Z 半导体兑现</div>
+            <div class="conv-title">跨场次「半导体」时间线</div>
+          </div>
+          <div class="sidebar-foot">
+            <div class="user-av">O</div>
+            <span class="user-name">开发联调</span>
+          </div>
+        </aside>
+
+        <main class="main">
+          <div id="status-banner" class="status-banner" role="alert"></div>
+          <div class="chat-area">
+            <div class="messages" id="messages"></div>
+          </div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <textarea
+                id="composer-input"
+                rows="2"
+                placeholder="输入问题…（Enter 发送，Shift+Enter 换行）"
+              ></textarea>
+              <div class="composer-bar">
+                <div style="display: flex; gap: 6px; flex-wrap: wrap">
+                  <span class="pill-btn">OpenClaw · agent:main:main</span>
+                </div>
+                <div style="display: flex; gap: 6px; align-items: center">
+                  <button type="button" class="btn-send" id="btn-send" title="发送">
+                    ↑
+                  </button>
+                </div>
+              </div>
+            </div>
+            <p class="disclaimer">
+              转注为个人研究档案工具，不构成投资建议。复盘结论请自行核对。
+            </p>
+          </div>
+        </main>
+      </div>
+    </div>
+    <script src="app.js"></script>
+  </body>
+</html>

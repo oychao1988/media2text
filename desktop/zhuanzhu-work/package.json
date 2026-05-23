@@ -1,0 +1,17 @@
+{
+  "name": "zhuanzhu-work",
+  "version": "0.1.0",
+  "private": true,
+  "description": "转注 Work — Electron 开发壳（OpenClaw 聊天联调）",
+  "main": "main.js",
+  "scripts": {
+    "dev": "electron .",
+    "start": "electron ."
+  },
+  "engines": {
+    "node": ">=22.14.0"
+  },
+  "devDependencies": {
+    "electron": "^34.2.0"
+  }
+}
