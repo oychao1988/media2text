@@ -4,6 +4,7 @@ const { spawn } = require("child_process");
 const { spawnSync } = require("child_process");
 
 const { ensureAppConfig } = require("./media2text-config");
+const { resolveRuntimeRoot } = require("./runtime-bundle");
 
 const DEFAULT_TIMEOUT_MS = 120_000;
 const APP_ROOT = path.join(__dirname, "..");
@@ -24,16 +25,20 @@ function resolveMedia2textBin(app) {
     return process.env.MEDIA2TEXT_BIN;
   }
 
-  if (app?.isPackaged) {
-    const bundled = path.join(
-      process.resourcesPath,
-      "resources",
-      "media2text",
-      "bin",
-      "media2text",
-    );
+  if (app?.isPackaged || process.env.ZHUANZHU_RUNTIME_MODE === "archive") {
+    const root = resolveRuntimeRoot(app);
+    const bundled = path.join(root, "media2text", "bin", "media2text");
     if (fs.existsSync(bundled)) return bundled;
   }
+
+  const devBundled = path.join(
+    APP_ROOT,
+    "resources",
+    "media2text",
+    "bin",
+    "media2text",
+  );
+  if (fs.existsSync(devBundled)) return devBundled;
 
   const venvBin = path.join(repoRoot(), ".venv", "bin", "media2text");
   if (fs.existsSync(venvBin)) return venvBin;

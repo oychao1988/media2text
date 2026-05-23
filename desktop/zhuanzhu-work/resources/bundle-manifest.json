@@ -1,14 +1,17 @@
 {
-  "generated_at": "2026-05-23T15:26:15Z",
-  "note": "Portable Node + openclaw npm + media2text site-packages (P7). media2text wrapper uses system python3.",
+  "generated_at": "2026-05-23T16:57:38Z",
+  "note": "P9 archive: runtime-bundle.tar.gz extracted on first launch to userData/runtime/{hash}/.",
+  "layout": "archive",
+  "archive_hash": "31cd675ece23",
   "pins": {
     "node": "22.14.0",
-    "openclaw": "2026.5.5"
+    "openclaw": "2026.5.5",
+    "media2text_slim": true
   },
   "paths": {
-    "node": "resources/node",
-    "openclaw": "resources/openclaw",
-    "media2text": "resources/media2text"
+    "archive": "resources/runtime-bundle.tar.gz",
+    "runtime_version": "resources/runtime-bundle.version",
+    "extracted": "userData/runtime/31cd675ece23"
   },
   "components": {
     "node": true,

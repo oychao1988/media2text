@@ -53,7 +53,9 @@
         "from": "resources",
         "to": "resources",
         "filter": [
-          "**/*"
+          "runtime-bundle.tar.gz",
+          "runtime-bundle.version",
+          "bundle-manifest.json"
         ]
       }
     ],

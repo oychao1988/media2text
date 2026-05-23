@@ -55,6 +55,9 @@ npm run dev
 | `ZHUANZU_WORKSPACE` | 覆盖 media2text workspace（默认 `userData/data`） |
 | `MEDIA2TEXT_BIN` | 覆盖 media2text 可执行文件 |
 | `MEDIA2TEXT_CONFIG` | 覆盖 `config.yaml`（默认 `userData/config.yaml`） |
+| `ZHUANZHU_RUNTIME_MODE` | `archive`（默认 prepare）或 `expanded`（开发展开目录） |
+| `ZHUANZHU_M2T_SLIM` | prepare 时默认 `1`：media2text 不带 playwright |
+| `ZHUANZHU_KEEP_EXPANDED` | archive 模式下仍复制展开目录到 `resources/`（本地调试） |
 
 若在 Cursor / CI 等环境中设置了 `ELECTRON_RUN_AS_NODE=1`，请先 `unset ELECTRON_RUN_AS_NODE` 再运行 `npm run dev` 或 E2E。
 
@@ -83,17 +86,28 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 
 ### 开箱清单：bundled dmg vs 开发态
 
-| 项 | **bundled dmg**（`npm run prepare-bundle` 后打包） | **开发态**（`npm run dev`） |
-|----|-----------------------------------------------------|------------------------------|
-| Node ≥22.14 | ✅ `resources/node` 内置 | 系统 nvm / Node |
-| OpenClaw CLI | ✅ `resources/openclaw` npm | 系统 `openclaw` / YonClaw |
-| media2text | ✅ `resources/media2text/bin`（**需系统 Python 3.12+**） | 仓库 `.venv/bin/media2text` |
-| OpenClaw 配置 | `~/.openclaw/openclaw.json`（token + API Key） | 同左 |
-| ffmpeg / Chromium | 仍须用户自行安装（doctor 会提示） | 同左 |
+| 项 | **bundled dmg**（P9 archive） | **开发态**（`npm run dev`） |
+|----|------------------------------|------------------------------|
+| Node ≥22.14 | ✅ 首次启动从 tar.gz 解压到 `userData/runtime/` | 系统 nvm / Node，或 `ZHUANZHU_RUNTIME_MODE=expanded` |
+| OpenClaw CLI | ✅ 同上 | 系统 `openclaw` / YonClaw |
+| media2text | ✅ slim bundle（**需系统 Python 3.12+**；无 playwright） | 仓库 `.venv/bin/media2text` |
+| OpenClaw 配置 | `~/.openclaw/openclaw.json` | 同左 |
+| Chromium / ffmpeg | 用户执行 `playwright install chromium`；ffmpeg 自行安装 | 同左 |
 
-打包后 **无需** 全局 `openclaw` 或 repo venv 即可启动 Gateway；档案/doctor 走 bundled `media2text` wrapper（依赖本机 `python3`）。
+**磁盘占用（bundled）**：
 
-**体积说明**：`prepare-bundle` 会在 Node 解压/复制后 **自动 prune**（删除 nvm 全局 `lib/node_modules`、headers 等）。若曾用 `NODE_SOURCE` 指向 nvm 整包，prune 后 Node 约 **120MB**（此前可能 >2GB）。完整 bundle 约 **700–900MB**（Node + openclaw + media2text），而非 3GB。
+| 位置 | 大约 |
+|------|------|
+| 应用程序 `.app` | ~450–550 MB（含压缩 runtime-bundle） |
+| 首次解压 `Application Support/转注Work/runtime/` | ~300–400 MB |
+| 用户数据 `data/` | 随录制/作品增长 |
+| 可选 Chromium | ~150 MB |
+
+**首次启动**：拖入应用程序后，首次打开会显示「正在解压运行环境（首次约 1 分钟）…」，完成后自动启动 Gateway。
+
+打包后 **无需** 全局 `openclaw` 或 repo venv 即可启动 Gateway；档案/doctor 走解压后的 `media2text` wrapper。
+
+**prepare-bundle（P9）** 默认 `ZHUANZHU_RUNTIME_MODE=archive`：产出 `runtime-bundle.tar.gz`，dmg 不再内嵌展开的 node/openclaw 目录。开发可 `ZHUANZHU_RUNTIME_MODE=expanded` 或 `ZHUANZHU_KEEP_EXPANDED=1` 保留展开目录便于调试。
 
 ### 前提
 
@@ -186,9 +200,9 @@ npm run package:publish:mac   # 本地发布到 GitHub（需 GH_TOKEN）
 3. 安装 **Python 3.12+**（仅档案/doctor 需要；聊天/Gateway 不依赖）。
 4. 启动应用 → 完成向导 → 发送 `回复两个字：收到`。
 5. Gateway 日志：`~/Library/Logs/转注Work/gateway.log`。
-6. 侧栏 → 环境检查（doctor）应能调用 bundled `media2text`。
+6. 侧栏 → 环境检查（doctor）应能调用 bundled `media2text`；缺 Chromium 时 doctor 会提示 `playwright install chromium`。
 
-打包后 bundled 资源路径：`Contents/Resources/resources/`（见 `lib/gateway.js` 的 `bundledResourcesRoot()`）。
+打包后运行时：首次启动解压到 `Application Support/转注Work/runtime/{hash}/`；`.app` 内仅 `runtime-bundle.tar.gz`（见 `lib/runtime-bundle.js`）。
 
 ## media2text 集成（P3 / Issue #39）
 
@@ -270,6 +284,7 @@ await window.zhuanzhu.media2text.run(["archive", "index", "--json"]);
 desktop/zhuanzhu-work/
 ├── main.js              # Electron main + 启动引导 + IPC
 ├── lib/
+│   ├── runtime-bundle.js # P9：tar.gz 解压与 runtime 路径
 │   ├── gateway.js       # Gateway 健康检查 / spawn / 退出清理
 │   ├── config.js        # openclaw.json 读取与向导判定
 │   ├── paths.js         # 配置路径、合规文件、日志
@@ -278,7 +293,7 @@ desktop/zhuanzhu-work/
 ├── preload.js
 ├── e2e/gui-smoke.mjs
 ├── build/               # 打包图标（generate-icon.js）
-├── resources/           # bundle-manifest + bundled node/openclaw/media2text (P7)
+├── resources/           # bundle-manifest + runtime-bundle.tar.gz (P9)
 └── renderer/
     ├── splash.html      # 启动页
     ├── wizard.html      # 首次向导

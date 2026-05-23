@@ -44,7 +44,8 @@
 | P6 | [#45](https://github.com/oychao1988/media2text/issues/45) | [#50](https://github.com/oychao1988/media2text/pull/50) | [zhuanzhu-p6-agent-lens.md](./zhuanzhu-p6-agent-lens.md) | ✅ merged |
 | P7 | [#46](https://github.com/oychao1988/media2text/issues/46) | [#51](https://github.com/oychao1988/media2text/pull/51) | [zhuanzhu-p7-bundle-runtime.md](./zhuanzhu-p7-bundle-runtime.md) | ✅ merged |
 | P8 | [#47](https://github.com/oychao1988/media2text/issues/47) | [#52](https://github.com/oychao1988/media2text/pull/52) | [zhuanzhu-p8-distribution.md](./zhuanzhu-p8-distribution.md) | ✅ merged |
+| P9 | [#53](https://github.com/oychao1988/media2text/issues/53) | — | [zhuanzhu-p9-bundle-redesign-accio.md](./zhuanzhu-p9-bundle-redesign-accio.md) | `issue-53-zhuanzhu-p9-runtime-archive` |
 
-**合并顺序（P4–P8）**：#43 → #44 → #45；#46 → #47（P7/P8 可与 P5/P6 并行，但 bundle 建议先于公证）。
+**合并顺序（P4–P9）**：#43 → #44 → #45；#46 → #47 → **#53**（P9 依赖 P7；体积改造建议在下一版 Release 前合并）。
 
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
