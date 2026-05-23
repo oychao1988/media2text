@@ -151,6 +151,12 @@ def main() -> int:
         default=None,
     )
     parser.add_argument("--fast", action="store_true")
+    parser.add_argument(
+        "--mode",
+        choices=["agent", "fast"],
+        default=None,
+        help="Chat mode preset: agent (default lens session) or fast (thinking=off, fast session)",
+    )
     parser.add_argument("--no-stream", action="store_true")
     args = parser.parse_args()
 
@@ -161,8 +167,22 @@ def main() -> int:
         return 1
 
     stream = not args.no_stream
-    fast = True if args.fast else (False if args.thinking == "off" else None)
-    if args.thinking == "off" and fast is None:
+
+    session_key = args.session_key
+    thinking = args.thinking
+    fast: bool | None = True if args.fast else None
+
+    if args.mode == "fast":
+        session_key = "agent:main:fast"
+        thinking = "off"
+        fast = True
+    elif args.mode == "agent":
+        thinking = None
+        fast = None
+
+    if thinking == "off" and fast is None:
+        fast = True
+    if args.fast and fast is None:
         fast = True
 
     runs: list[dict[str, Any]] = []
@@ -171,16 +191,17 @@ def main() -> int:
         result = run_once(
             url=args.url,
             token=token,
-            session_key=args.session_key,
+            session_key=session_key,
             message=args.message,
             stream=stream,
-            thinking=args.thinking,
+            thinking=thinking,
             fast=fast,
         )
         result["run"] = i + 1
-        result["session_key"] = args.session_key
+        result["session_key"] = session_key
         result["stream"] = stream
-        result["thinking"] = args.thinking
+        result["thinking"] = thinking
+        result["mode"] = args.mode
         runs.append(result)
         if not result.get("ok"):
             failures += 1
@@ -191,7 +212,9 @@ def main() -> int:
         "runs": runs,
         "url": args.url,
         "stream": stream,
-        "thinking": args.thinking,
+        "thinking": thinking,
+        "mode": args.mode,
+        "session_key": session_key,
         "failures": failures,
         "ttft_ms_p50": round(sorted(ttfts)[len(ttfts) // 2], 1) if ttfts else None,
     }

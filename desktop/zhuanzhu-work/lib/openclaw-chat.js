@@ -3,9 +3,32 @@ const { openClawConfigPath } = require("./paths");
 const { gatewayUnreachableMessage } = require("./gateway");
 
 const DEFAULT_SESSION_KEY = "agent:main:main";
+/** Dedicated lightweight session for 快速 mode (separate from lens sessions). */
+const FAST_SESSION_KEY = "agent:main:fast";
 const GATEWAY_URL =
   process.env.OPENCLAW_GATEWAY_HTTP ||
   "http://127.0.0.1:18789/v1/chat/completions";
+
+const CHAT_MODES = new Set(["agent", "fast"]);
+
+function normalizeChatMode(mode) {
+  if (mode === "fast" || mode === "agent") return mode;
+  return "agent";
+}
+
+function isFastChatMode(chatMode) {
+  return (
+    process.env.ZHUANZHU_CHAT_FAST === "1" ||
+    normalizeChatMode(chatMode) === "fast"
+  );
+}
+
+function resolveSessionKey({ chatMode, sessionKey }) {
+  if (isFastChatMode(chatMode)) {
+    return FAST_SESSION_KEY;
+  }
+  return sessionKey || DEFAULT_SESSION_KEY;
+}
 
 function gatewayAuthError(err) {
   const setup = assessOpenClawSetup();
@@ -15,16 +38,18 @@ function gatewayAuthError(err) {
   return { ok: false, error: hint, configIncomplete: !setup.complete };
 }
 
-function buildChatBody({ message, sessionKey, stream, fastMode }) {
+function buildChatBody({ message, sessionKey, stream, chatMode, fastMode }) {
+  const mode =
+    fastMode === true && chatMode === undefined
+      ? "fast"
+      : normalizeChatMode(chatMode);
   const body = {
     model: "openclaw",
     stream: Boolean(stream),
-    session_key: sessionKey || DEFAULT_SESSION_KEY,
+    session_key: resolveSessionKey({ chatMode: mode, sessionKey }),
     messages: [{ role: "user", content: message }],
   };
-  const useFast =
-    process.env.ZHUANZHU_CHAT_FAST === "1" || Boolean(fastMode);
-  if (useFast) {
+  if (isFastChatMode(mode)) {
     body.thinking = "off";
     body.fast = true;
   }
@@ -40,7 +65,7 @@ function extractAssistantContent(data) {
   return null;
 }
 
-async function openclawChat({ message, sessionKey, fastMode }) {
+async function openclawChat({ message, sessionKey, chatMode, fastMode }) {
   const trimmed = String(message || "").trim();
   if (!trimmed) {
     return { ok: false, error: "消息不能为空" };
@@ -57,6 +82,7 @@ async function openclawChat({ message, sessionKey, fastMode }) {
     message: trimmed,
     sessionKey,
     stream: false,
+    chatMode,
     fastMode,
   });
   const controller = new AbortController();
@@ -101,6 +127,7 @@ async function openclawChat({ message, sessionKey, fastMode }) {
         ok: true,
         content,
         sessionKey: body.session_key,
+        chatMode: normalizeChatMode(chatMode),
         streamed: false,
       };
     }
@@ -140,6 +167,7 @@ async function openclawChatStream({
   sessionKey,
   streamId,
   sender,
+  chatMode,
   fastMode,
 }) {
   const trimmed = String(message || "").trim();
@@ -171,6 +199,7 @@ async function openclawChatStream({
     message: trimmed,
     sessionKey,
     stream: true,
+    chatMode,
     fastMode,
   });
   const controller = new AbortController();
@@ -242,6 +271,7 @@ async function openclawChatStream({
     const fallback = await openclawChat({
       message: trimmed,
       sessionKey,
+      chatMode,
       fastMode,
     });
     if (fallback.ok && fallback.content) {
@@ -268,5 +298,10 @@ module.exports = {
   openclawChat,
   openclawChatStream,
   buildChatBody,
+  resolveSessionKey,
+  normalizeChatMode,
+  isFastChatMode,
   DEFAULT_SESSION_KEY,
+  FAST_SESSION_KEY,
+  CHAT_MODES,
 };

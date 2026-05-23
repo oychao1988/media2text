@@ -89,6 +89,17 @@ flowchart LR
 - `@file:<workspace 相对路径>` — 来自 composer `@` picker 的转写引用
 - `[archive context keyword="…"] … [/archive context]` — 来自档案检索页「发送到聊天」或 `/search 关键词`
 
+### 聊天模式（Agent vs 快速，Issue #61）
+
+| 模式 | `session_key` | HTTP body 额外字段 | 消息组装 |
+|------|---------------|-------------------|----------|
+| **Agent**（默认） | lens 会话，如 `agent:main:wanzhan` | 无 | lens prefix、@、archive 全保留 |
+| **快速** | 固定 `agent:main:fast` | `thinking: "off"`, `fast: true` | 同上（lens 仍生效）；独立轻量 session 减少与主会话/tool 状态纠缠 |
+
+实现仍 **仅** 走 `POST /v1/chat/completions`（非直连 Provider）。OpenClaw CLI `openclaw --help` 未暴露单独的 lightweight chat 子命令；转注通过 **专用 session + Gateway 已知 fast/thinking 字段** 达成快速路径（与 L1 benchmark `--mode fast` / L3 `ZHUANZHU_CHAT_FAST=1` 一致）。
+
+L3「快速回复」toggle 已合并为 composer **Agent / 快速** segmented control；配置键 `chat.mode`（`agent` | `fast`），旧 `chat.fastMode` 读取时迁移。
+
 ### WebSocket 核心调用（Control UI 同款）
 
 1. 连接 `ws://127.0.0.1:18789`
