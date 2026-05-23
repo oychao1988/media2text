@@ -156,13 +156,13 @@ cd desktop/zhuanzhu-work && npm run dev
 | 聊天 | ✅ OpenClaw HTTP + **SSE 流式**（P5），失败 fallback 非流式 |
 | 档案检索 | ✅ `media2text archive search`（P3）；**发送到聊天**（P5） |
 | 环境检查 | ✅ `media2text doctor`（P3） |
-| 智能体画廊 | 静态卡片；「+ 对话」切聊天（P6 接 session/lens） |
+| 智能体画廊 | 4 个 lens（P6）；「+ 对话」切换 sessionKey + 角色前缀 |
 | 监控守护 / 平台登录 / 技能库 / 流水线 / 通知渠道 | 静态占位，按钮 disabled 或「即将接入 CLI」 |
 | 合规声明 | 静态文案；状态联动 doctor 的 compliance 字段 |
 
 Composer（P5）：输入 `@` 弹出最近转写路径；`/search 关键词 [问题]` 注入档案上下文块。
 
-导航：`renderer/app.js` 中 `showView()` + `[data-view]` 委托；样式见 `renderer/styles.css`（合并原型 CSS 变量与组件类）。
+智能体 Lens（P6）：见 [docs/zhuanzhu-work-ia.md](../../docs/zhuanzhu-work-ia.md)。侧栏与会话 pill 显示当前 lens 与 `sessionKey`。
 
 ## Preload API
 
@@ -220,7 +220,7 @@ desktop/zhuanzhu-work/
 - 应用内自动更新（GitHub Releases）
 - 内置完整 OpenClaw npm 包（`prepare-bundle` 仅占位 manifest）
 - WebSocket 流式
-- 多 Agent sessionKey / lens prompt（P6）
+- 多 Agent sessionKey / lens prompt（P6）→ 见 [zhuanzhu-work-ia.md](./zhuanzhu-work-ia.md)
 - 能力页真正调用 monitor/auth/pipeline CLI（后续 Issue）
 - 打包内置 Python / PyInstaller media2text（`resources/media2text` 仅占位）
 - 应用内自动启动 `monitor watch` 守护进程

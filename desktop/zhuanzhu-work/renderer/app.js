@@ -1,14 +1,11 @@
-const SESSION_KEY = "agent:main:main";
+const LENS_STORAGE_KEY = "zhuanzhu.currentLens";
+const LENS_RECENT_KEY = "zhuanzhu.recentLenses";
 const ARCHIVE_CONTEXT_LIMIT = 5;
 
-const AGENT_LABELS = {
-  default: "默认协调",
-  archive: "档案助手",
-  wanzhan: "万战寻道",
-  nuwa: "女娲蒸馏",
-};
+const LENSES = window.ZHUANZHU_LENSES || {};
+const LENS_ORDER = window.ZHUANZHU_LENS_ORDER || Object.keys(LENSES);
 
-let currentAgent = "default";
+let currentAgent = loadStoredLens() || "default";
 let attachedRefs = [];
 let transcriptRefsCache = null;
 let lastArchiveHits = [];
@@ -31,6 +28,79 @@ const doctorStatusEl = document.getElementById("doctor-status");
 const doctorChecksEl = document.getElementById("doctor-checks");
 const doctorMetaEl = document.getElementById("doctor-meta");
 const complianceBadgeEl = document.getElementById("compliance-badge");
+
+function getLens(agentId = currentAgent) {
+  return LENSES[agentId] || LENSES.default;
+}
+
+function loadStoredLens() {
+  try {
+    const stored = localStorage.getItem(LENS_STORAGE_KEY);
+    return stored && LENSES[stored] ? stored : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistLens(agentId) {
+  try {
+    localStorage.setItem(LENS_STORAGE_KEY, agentId);
+    const recent = loadRecentLenses().filter((id) => id !== agentId);
+    recent.unshift(agentId);
+    localStorage.setItem(LENS_RECENT_KEY, JSON.stringify(recent.slice(0, LENS_ORDER.length)));
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function loadRecentLenses() {
+  try {
+    const raw = localStorage.getItem(LENS_RECENT_KEY);
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed.filter((id) => LENSES[id]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function updateSessionPill() {
+  if (!sessionPill) return;
+  const lens = getLens();
+  sessionPill.textContent = `${lens.label} · ${lens.sessionKey}`;
+}
+
+function clearChatMessages() {
+  if (messagesEl) messagesEl.innerHTML = "";
+}
+
+function lensWelcome(agentId) {
+  const lens = getLens(agentId);
+  const hints = {
+    archive: "可输入 /search 关键词 或直接 @ 引用转写路径。",
+    wanzhan: "可粘贴转写片段，我会按万战寻道 lens 做节奏与兑现复盘。",
+    nuwa: "描述想蒸馏的人名/主题，我会输出 SKILL.md 大纲。",
+    default: "聊天支持 SSE 流式；@ 引用转写，/search 注入档案上下文。",
+  };
+  appendMessage(
+    "assistant",
+    `${lens.emoji} ${lens.label} 已就绪。${hints[lens.id] || hints.default}`,
+  );
+}
+
+function applyLens(agentId, opts = {}) {
+  const { resetChat } = opts;
+  if (!LENSES[agentId]) agentId = "default";
+  const changed = currentAgent !== agentId;
+  currentAgent = agentId;
+  persistLens(agentId);
+  updateSessionPill();
+  highlightNav("chat");
+  const shouldReset = resetChat === true || (resetChat !== false && changed);
+  if (shouldReset) {
+    clearChatMessages();
+    lensWelcome(agentId);
+  }
+}
 
 function setBusy(busy) {
   inputEl.disabled = busy;
@@ -101,7 +171,9 @@ function highlightNav(viewId) {
 
 function showView(viewId, opts = {}) {
   if (opts.agent) {
-    currentAgent = opts.agent;
+    applyLens(opts.agent, { resetChat: opts.resetChat });
+  } else if (opts.newChat) {
+    applyLens(currentAgent, { resetChat: true });
   }
 
   document.querySelectorAll(".page").forEach((page) => {
@@ -109,11 +181,7 @@ function showView(viewId, opts = {}) {
   });
 
   highlightNav(viewId);
-
-  if (sessionPill) {
-    const label = AGENT_LABELS[currentAgent] || currentAgent;
-    sessionPill.textContent = `OpenClaw · ${SESSION_KEY} · ${label}`;
-  }
+  updateSessionPill();
 
   if (viewId === "doctor") {
     refreshDoctor();
@@ -191,6 +259,8 @@ function buildArchiveContextBlock(keyword, hits) {
 
 function formatOutboundMessage(rawText) {
   const parts = [];
+  const prefix = getLens().messagePrefix;
+  if (prefix) parts.push(prefix);
   if (attachedRefs.length) {
     parts.push(attachedRefs.map((r) => `@file:${r.path}`).join("\n"));
   }
@@ -346,12 +416,14 @@ async function sendMessage() {
   const { row, bubble } = appendStreamingAssistant();
   let streamed = "";
 
+  const lens = getLens();
+
   try {
     const chatStream = window.zhuanzhu.openclaw.chatStream;
     if (chatStream) {
       const result = await chatStream({
         message: outbound,
-        sessionKey: SESSION_KEY,
+        sessionKey: lens.sessionKey,
         onDelta(delta) {
           streamed += delta;
           bubble.textContent = streamed;
@@ -368,7 +440,7 @@ async function sendMessage() {
     } else {
       const result = await window.zhuanzhu.openclaw.chat({
         message: outbound,
-        sessionKey: SESSION_KEY,
+        sessionKey: lens.sessionKey,
       });
       row.remove();
       if (result.ok && result.content) {
@@ -394,7 +466,7 @@ function injectArchiveToChat(hits, keyword) {
   if (!hits?.length) return;
   lastArchiveHits = hits;
   const block = buildArchiveContextBlock(keyword, hits);
-  showView("chat");
+  showView("chat", { agent: "archive", resetChat: false });
   inputEl.value = `${block}\n\n请基于以上档案上下文回答：`;
   inputEl.focus();
 }
@@ -567,7 +639,7 @@ doctorRefreshBtn.addEventListener("click", refreshDoctor);
 bindNavigation();
 
 async function initMain() {
-  showView("chat", { agent: "default", focusInput: false });
+  showView("chat", { agent: currentAgent, resetChat: true, focusInput: false });
 
   if (window.zhuanzhu?.app?.getBootstrap) {
     const state = await window.zhuanzhu.app.getBootstrap();
@@ -585,10 +657,6 @@ async function initMain() {
     }
   }
 
-  appendMessage(
-    "assistant",
-    "转注 Work 已就绪。聊天支持 SSE 流式输出；输入 @ 引用转写，/search 关键词 注入档案上下文。",
-  );
   inputEl.focus();
 }
 

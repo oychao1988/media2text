@@ -99,6 +99,8 @@ flowchart LR
 
 `sessionKey` 示例：`agent:main:main`（与 `openclaw health` 里 Session store 一致）。
 
+转注 Work lens 使用同一 agent 下的不同 sessionKey：`agent:main:archive`、`agent:main:wanzhan`、`agent:main:nuwa` 等；详见 [zhuanzhu-work-ia.md](./zhuanzhu-work-ia.md)。
+
 协议全文：[Gateway protocol](https://docs.openclaw.ai/gateway/protocol)
 
 ### 转注 Work 映射
