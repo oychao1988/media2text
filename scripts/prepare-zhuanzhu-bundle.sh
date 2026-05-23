@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Download portable Node + openclaw npm + media2text site-packages for 转注 Work (P7).
+# Download portable Node + openclaw npm + media2text site-packages for 转注 Work (P7/P9).
+# P9: stage → prune → runtime-bundle.tar.gz (+ optional expanded dirs for dev).
 # Slow network: export HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890
 set -euo pipefail
 
@@ -8,6 +9,8 @@ RES="$ROOT/desktop/zhuanzhu-work/resources"
 NODE_VERSION="${NODE_PIN:-22.14.0}"
 OPENCLAW_VERSION="${OPENCLAW_PIN:-2026.5.5}"
 GENERATED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+RUNTIME_MODE="${ZHUANZHU_RUNTIME_MODE:-archive}"
+M2T_SLIM="${ZHUANZHU_M2T_SLIM:-1}"
 
 log() { printf '[prepare-bundle] %s\n' "$*"; }
 
@@ -37,18 +40,27 @@ detect_node_platform() {
   esac
 }
 
-download_node() {
+download_node_to() {
+  local dest="$1"
   if [[ "${ZHUANZHU_SKIP_NODE_DOWNLOAD:-0}" == "1" ]]; then
-    log "skip node download (ZHUANZHU_SKIP_NODE_DOWNLOAD=1)"
+    if [[ -d "$RES/node/bin" && -x "$RES/node/bin/node" ]]; then
+      log "skip node download: copy from resources/node (ZHUANZHU_SKIP_NODE_DOWNLOAD=1)"
+      rm -rf "$dest"
+      mkdir -p "$dest"
+      cp -R "$RES/node"/. "$dest/"
+      "$dest/bin/node" -v
+      return 0
+    fi
+    log "skip node download (ZHUANZHU_SKIP_NODE_DOWNLOAD=1) but no resources/node"
     return 0
   fi
 
   if [[ -n "${NODE_SOURCE:-}" && -d "$NODE_SOURCE" ]]; then
     log "copy Node from NODE_SOURCE=$NODE_SOURCE"
-    rm -rf "$RES/node"
-    mkdir -p "$RES/node"
-    cp -R "$NODE_SOURCE"/. "$RES/node/"
-    "$RES/node/bin/node" -v
+    rm -rf "$dest"
+    mkdir -p "$dest"
+    cp -R "$NODE_SOURCE"/. "$dest/"
+    "$dest/bin/node" -v
     return 0
   fi
 
@@ -65,44 +77,102 @@ download_node() {
     rm -rf "$tmp"
     return 1
   fi
-  rm -rf "$RES/node"
-  mkdir -p "$RES/node"
-  tar -xJf "$tmp/${archive}" -C "$RES/node" --strip-components=1
+  rm -rf "$dest"
+  mkdir -p "$dest"
+  tar -xJf "$tmp/${archive}" -C "$dest" --strip-components=1
   rm -rf "$tmp"
-  "$RES/node/bin/node" -v
+  "$dest/bin/node" -v
 }
 
-install_openclaw() {
+prune_node_bundle() {
+  local node_dir="$1"
+  if [[ ! -d "$node_dir" ]]; then
+    return 0
+  fi
+
+  log "prune bundled node (runtime only; drop nvm global modules & headers)"
+  rm -rf "$node_dir/lib/node_modules"
+  rm -rf "$node_dir/include"
+  rm -f "$node_dir/README.md" "$node_dir/CHANGELOG.md" "$node_dir/LICENSE"
+
+  if [[ -d "$node_dir/bin" ]]; then
+    while IFS= read -r -d '' entry; do
+      base="$(basename "$entry")"
+      case "$base" in
+        node | npm | npx) ;;
+        *) rm -rf "$entry" ;;
+      esac
+    done < <(find "$node_dir/bin" -mindepth 1 -maxdepth 1 -print0 2>/dev/null || true)
+  fi
+
+  local size
+  size="$(du -sh "$node_dir" 2>/dev/null | awk '{print $1}')"
+  log "node bundle size after prune: ${size:-unknown}"
+}
+
+install_openclaw_to() {
+  local dest="$1"
+  local node_bin="$2/bin/node"
+  local npm_bin="$2/bin/npm"
+
   if [[ "${ZHUANZHU_SKIP_OPENCLAW_INSTALL:-0}" == "1" ]]; then
     log "skip openclaw install (ZHUANZHU_SKIP_OPENCLAW_INSTALL=1)"
     return 0
   fi
 
-  local node_bin="$RES/node/bin/node"
-  local npm_bin="$RES/node/bin/npm"
   if [[ ! -x "$node_bin" ]]; then
-    log "bundled node missing; using PATH node for openclaw install"
     node_bin="$(command -v node)"
     npm_bin="$(command -v npm)"
   fi
 
-  log "npm install openclaw@${OPENCLAW_VERSION} -> resources/openclaw"
-  rm -rf "$RES/openclaw/node_modules" "$RES/openclaw/package.json" "$RES/openclaw/package-lock.json"
-  mkdir -p "$RES/openclaw"
-  "$npm_bin" install "openclaw@${OPENCLAW_VERSION}" --prefix "$RES/openclaw" --omit=dev --no-fund --no-audit --ignore-scripts
-  if [[ -f "$RES/openclaw/node_modules/.bin/openclaw" ]]; then
-    chmod +x "$RES/openclaw/node_modules/.bin/openclaw"
+  log "npm install openclaw@${OPENCLAW_VERSION} -> $dest"
+  rm -rf "$dest/node_modules" "$dest/package.json" "$dest/package-lock.json"
+  mkdir -p "$dest"
+  "$npm_bin" install "openclaw@${OPENCLAW_VERSION}" --prefix "$dest" --omit=dev --no-fund --no-audit --ignore-scripts
+  if [[ -f "$dest/node_modules/.bin/openclaw" ]]; then
+    chmod +x "$dest/node_modules/.bin/openclaw"
   fi
-  PATH="$RES/node/bin:${PATH:-}" "$RES/openclaw/node_modules/.bin/openclaw" --version
+  PATH="$2/bin:${PATH:-}" "$dest/node_modules/.bin/openclaw" --version
 }
 
-bundle_media2text() {
+prune_openclaw_bundle() {
+  local oc="$1"
+  local node_prefix="${2:-}"
+  if [[ ! -d "$oc/node_modules" ]]; then
+    return 0
+  fi
+
+  log "prune openclaw bundle (drop tests, docs, source maps)"
+  while IFS= read -r -d '' dir; do
+    rm -rf "$dir"
+  done < <(find "$oc" -type d \( -name test -o -name tests -o -name __tests__ -o -name .github \) -print0 2>/dev/null || true)
+  find "$oc" -type f \( -name '*.md' -o -name '*.markdown' -o -name '*.map' -o -name '*.ts' -o -name '*.flow' \) ! -name 'LICENSE*' -delete 2>/dev/null || true
+
+  local npm_bin=""
+  if [[ -n "$node_prefix" && -x "$node_prefix/bin/npm" ]]; then
+    npm_bin="$node_prefix/bin/npm"
+  elif [[ -x "$RES/node/bin/npm" ]]; then
+    npm_bin="$RES/node/bin/npm"
+  elif command -v npm >/dev/null 2>&1; then
+    npm_bin="$(command -v npm)"
+  fi
+  if [[ -n "$npm_bin" ]]; then
+    "$npm_bin" prune --omit=dev --prefix "$oc" 2>/dev/null || true
+  fi
+
+  local size
+  size="$(du -sh "$oc" 2>/dev/null | awk '{print $1}')"
+  log "openclaw bundle size after prune: ${size:-unknown}"
+}
+
+bundle_media2text_to() {
+  local dest="$1"
   if [[ "${ZHUANZHU_SKIP_M2T_BUNDLE:-0}" == "1" ]]; then
     log "skip media2text bundle (ZHUANZHU_SKIP_M2T_BUNDLE=1)"
     return 0
   fi
 
-  local py site="$RES/media2text/site-packages" bin="$RES/media2text/bin"
+  local py site="$dest/site-packages" bin="$dest/bin"
   py=""
   for candidate in python3.13 python3.12 python3; do
     if command -v "$candidate" >/dev/null 2>&1 &&
@@ -116,10 +186,22 @@ bundle_media2text() {
     return 0
   fi
 
-  log "pip install media2text -> resources/media2text/site-packages (using $py)"
   rm -rf "$site"
   mkdir -p "$site" "$bin"
-  "$py" -m pip install "$ROOT" --target "$site" --upgrade --no-warn-script-location
+
+  if [[ "$M2T_SLIM" == "1" ]]; then
+    log "pip install media2text (slim, playwright package without browser driver) -> $site (using $py)"
+    "$py" -m pip install "$ROOT" --target "$site" --upgrade --no-warn-script-location --no-deps
+    "$py" -m pip install \
+      "typer>=0.12" "pydantic>=2.6" "pydantic-settings>=2.2" "httpx>=0.27" \
+      "playwright>=1.42" \
+      "structlog>=24.1" "pyyaml>=6.0" "python-dotenv>=1.0" \
+      --target "$site" --upgrade --no-warn-script-location
+    rm -rf "$site/playwright/driver" "$site/playwright/drivers" 2>/dev/null || true
+  else
+    log "pip install media2text (full) -> $site (using $py)"
+    "$py" -m pip install "$ROOT" --target "$site" --upgrade --no-warn-script-location
+  fi
 
   cat >"$bin/media2text" <<WRAP
 #!/usr/bin/env bash
@@ -142,15 +224,77 @@ exec "\$PY" -c "from media2text.cli.main import app; app()" "\$@"
 WRAP
   chmod +x "$bin/media2text"
   "$bin/media2text" version
+
+  local size
+  size="$(du -sh "$dest" 2>/dev/null | awk '{print $1}')"
+  log "media2text bundle size: ${size:-unknown}"
+}
+
+write_stage_manifest() {
+  local stage="$1"
+  cat >"$stage/manifest.json" <<EOF
+{
+  "generated_at": "$GENERATED_AT",
+  "layout": "archive",
+  "pins": {
+    "node": "$NODE_VERSION",
+    "openclaw": "$OPENCLAW_VERSION",
+    "media2text_slim": $([[ "$M2T_SLIM" == "1" ]] && echo "true" || echo "false")
+  }
+}
+EOF
+}
+
+archive_runtime_bundle() {
+  local stage="$1"
+  write_stage_manifest "$stage"
+
+  local tar_path="$RES/runtime-bundle.tar.gz"
+  local version_path="$RES/runtime-bundle.version"
+
+  log "create runtime-bundle.tar.gz"
+  rm -f "$tar_path"
+  tar -czf "$tar_path" -C "$stage" .
+
+  local hash
+  hash="$(shasum -a 256 "$tar_path" | awk '{print substr($1,1,12)}')"
+  echo "$hash" >"$version_path"
+
+  local tar_size
+  tar_size="$(du -sh "$tar_path" 2>/dev/null | awk '{print $1}')"
+  log "runtime-bundle.tar.gz size: ${tar_size:-unknown} (hash=$hash)"
 }
 
 write_manifest() {
   local bundled="false"
   local node_ok="false" openclaw_ok="false" m2t_ok="false"
+  local layout="expanded"
+  local hash=""
 
-  [[ -x "$RES/node/bin/node" ]] && node_ok="true"
-  [[ -x "$RES/openclaw/node_modules/.bin/openclaw" ]] && openclaw_ok="true"
-  [[ -x "$RES/media2text/bin/media2text" ]] && m2t_ok="true"
+  if [[ -f "$RES/runtime-bundle.tar.gz" && -f "$RES/runtime-bundle.version" ]]; then
+    layout="archive"
+    hash="$(tr -d '[:space:]' <"$RES/runtime-bundle.version")"
+    bundled="true"
+  fi
+
+  if [[ -d "$RES/node/bin" && -x "$RES/node/bin/node" ]]; then
+    node_ok="true"
+  elif [[ -f "$RES/runtime-bundle.tar.gz" ]]; then
+    node_ok="true"
+  fi
+
+  if [[ -x "$RES/openclaw/node_modules/.bin/openclaw" ]]; then
+    openclaw_ok="true"
+  elif [[ -f "$RES/runtime-bundle.tar.gz" ]]; then
+    openclaw_ok="true"
+  fi
+
+  if [[ -x "$RES/media2text/bin/media2text" ]]; then
+    m2t_ok="true"
+  elif [[ -f "$RES/runtime-bundle.tar.gz" ]]; then
+    m2t_ok="true"
+  fi
+
   if [[ "$node_ok" == "true" && "$openclaw_ok" == "true" && "$m2t_ok" == "true" ]]; then
     bundled="true"
   fi
@@ -158,15 +302,18 @@ write_manifest() {
   cat >"$RES/bundle-manifest.json" <<EOF
 {
   "generated_at": "$GENERATED_AT",
-  "note": "Portable Node + openclaw npm + media2text site-packages (P7). media2text wrapper uses system python3.",
+  "note": "P9 archive: runtime-bundle.tar.gz extracted on first launch to userData/runtime/{hash}/.",
+  "layout": "$layout",
+  "archive_hash": "$hash",
   "pins": {
     "node": "$NODE_VERSION",
-    "openclaw": "$OPENCLAW_VERSION"
+    "openclaw": "$OPENCLAW_VERSION",
+    "media2text_slim": $([[ "$M2T_SLIM" == "1" ]] && echo "true" || echo "false")
   },
   "paths": {
-    "node": "resources/node",
-    "openclaw": "resources/openclaw",
-    "media2text": "resources/media2text"
+    "archive": "resources/runtime-bundle.tar.gz",
+    "runtime_version": "resources/runtime-bundle.version",
+    "extracted": "userData/runtime/$hash"
   },
   "components": {
     "node": $node_ok,
@@ -176,11 +323,41 @@ write_manifest() {
   "bundled": $bundled
 }
 EOF
-  log "wrote $RES/bundle-manifest.json (bundled=$bundled)"
+  log "wrote $RES/bundle-manifest.json (layout=$layout bundled=$bundled)"
 }
 
 mkdir -p "$RES"
-download_node
-install_openclaw
-bundle_media2text
+STAGE="$(mktemp -d)"
+trap 'rm -rf "$STAGE"' EXIT
+
+download_node_to "$STAGE/node"
+prune_node_bundle "$STAGE/node"
+
+if [[ "${ZHUANZHU_SKIP_OPENCLAW_INSTALL:-0}" == "1" && -d "$RES/openclaw/node_modules" ]]; then
+  log "copy openclaw from existing resources/openclaw (ZHUANZHU_SKIP_OPENCLAW_INSTALL=1)"
+  rm -rf "$STAGE/openclaw"
+  cp -R "$RES/openclaw" "$STAGE/openclaw"
+else
+  install_openclaw_to "$STAGE/openclaw" "$STAGE/node"
+fi
+prune_openclaw_bundle "$STAGE/openclaw" "$STAGE/node"
+bundle_media2text_to "$STAGE/media2text"
+
+if [[ "$RUNTIME_MODE" == "archive" ]]; then
+  archive_runtime_bundle "$STAGE"
+  rm -rf "$RES/node" "$RES/openclaw" "$RES/media2text"
+  if [[ "${ZHUANZHU_KEEP_EXPANDED:-0}" == "1" ]]; then
+    log "ZHUANZHU_KEEP_EXPANDED=1: also copy expanded dirs to resources/"
+    cp -R "$STAGE/node" "$RES/node"
+    cp -R "$STAGE/openclaw" "$RES/openclaw"
+    cp -R "$STAGE/media2text" "$RES/media2text"
+  fi
+else
+  log "ZHUANZHU_RUNTIME_MODE=expanded: copy staged dirs to resources/ (no tar.gz)"
+  rm -rf "$RES/node" "$RES/openclaw" "$RES/media2text" "$RES/runtime-bundle.tar.gz" "$RES/runtime-bundle.version"
+  cp -R "$STAGE/node" "$RES/node"
+  cp -R "$STAGE/openclaw" "$RES/openclaw"
+  cp -R "$STAGE/media2text" "$RES/media2text"
+fi
+
 write_manifest

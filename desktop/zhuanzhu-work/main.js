@@ -3,6 +3,7 @@ const path = require("path");
 
 const { assessOpenClawSetup } = require("./lib/config");
 const { ensureGateway, killSpawnedGateway } = require("./lib/gateway");
+const { ensureExtracted } = require("./lib/runtime-bundle");
 const { ensureAppConfig } = require("./lib/media2text-config");
 const {
   archiveSearch,
@@ -24,12 +25,6 @@ const {
 
 const APP_ROOT = __dirname;
 
-function bundledResourcesRoot() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, "resources");
-  }
-  return path.join(APP_ROOT, "resources");
-}
 let mainWindow = null;
 /** @type {ReturnType<typeof createAutoUpdater> | null} */
 let autoUpdaterCtl = null;
@@ -78,11 +73,29 @@ function bootstrapState() {
 
 async function runBootstrap() {
   sendBootstrap("bootstrap:status", {
+    phase: "runtime",
+    message: "正在准备运行环境…",
+  });
+
+  let runtimeRoot;
+  try {
+    runtimeRoot = await ensureExtracted(app, (progress) => {
+      sendBootstrap("bootstrap:status", progress);
+    });
+  } catch (err) {
+    sendBootstrap("bootstrap:status", {
+      phase: "error",
+      message: err?.message || String(err),
+    });
+    return;
+  }
+
+  sendBootstrap("bootstrap:status", {
     phase: "gateway",
     message: "正在启动 OpenClaw Gateway…",
   });
 
-  const gateway = await ensureGateway(bundledResourcesRoot());
+  const gateway = await ensureGateway(runtimeRoot);
   if (!gateway.ok) {
     sendBootstrap("bootstrap:status", {
       phase: "error",

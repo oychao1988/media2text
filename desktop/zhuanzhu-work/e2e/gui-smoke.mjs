@@ -67,10 +67,11 @@ async function main() {
 
     await page.waitForFunction(
       ({ before }) => {
+        if (document.querySelector(".msg.assistant.streaming")) return false;
         const msgs = document.querySelectorAll(".msg.assistant:not(.pending) .bubble");
         if (msgs.length <= before) return false;
         const last = msgs[msgs.length - 1]?.textContent?.trim() || "";
-        return last.length > 0 && !last.includes("思考中") && !last.includes("已就绪");
+        return last.length > 0 && !last.includes("思考") && !last.includes("已就绪");
       },
       { before: assistantCountBefore },
       { timeout: timeoutMs },

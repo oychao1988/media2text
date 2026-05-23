@@ -130,10 +130,20 @@ flowchart LR
 │   └── preload：openclaw.chat / openclaw.health
 ├── Renderer：finalized.html IA
 └── Contents/Resources/resources/
-    ├── node/               # portable Node (pin 见 bundle-manifest.json)
-    ├── openclaw/           # npm install openclaw@pin
-    └── media2text/         # site-packages + bin wrapper (system python3)
+    ├── runtime-bundle.tar.gz   # 压缩运行时（node + openclaw + media2text slim）
+    ├── runtime-bundle.version  # tar 内容 hash（前 12 位）
+    └── bundle-manifest.json
+
+首次启动解压到：
+
 ```
+~/Library/Application Support/转注Work/runtime/{hash}/
+├── node/
+├── openclaw/
+└── media2text/
+```
+
+开发态 `ZHUANZHU_RUNTIME_MODE=expanded` 仍可使用展开的 `resources/node/` 等目录。
 
 与 YonClaw / Accio 同族：你本机已有 **YonClaw.app**、**Accio.app**，可对照其 Gateway LaunchAgent 与 `OPENCLAW_STATE_DIR` 布局。
 
@@ -226,7 +236,7 @@ open http://127.0.0.1:18789/
 
 ## 9. media2text sidecar（P3）
 
-桌面壳通过 main 进程 spawn `media2text` CLI（开发态：仓库 `.venv`；发布态：`resources/media2text/bin/media2text`，wrapper 调用系统 `python3` + bundled site-packages）。
+桌面壳通过 main 进程 spawn `media2text` CLI（开发态：仓库 `.venv`；发布态：解压后的 `runtime/{hash}/media2text/bin/media2text`，wrapper 调用系统 `python3` + bundled site-packages）。
 
 | IPC | CLI |
 |-----|-----|

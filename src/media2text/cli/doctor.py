@@ -19,12 +19,25 @@ def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
     return usage.free >= min_gb * (1024**3)
 
 
-def _playwright_ok() -> bool:
+def _playwright_import_ok() -> bool:
     try:
         import playwright  # noqa: F401
 
         return True
     except ImportError:
+        return False
+
+
+def _playwright_browser_ok() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as p:
+            exe = p.chromium.executable_path
+            return bool(exe and Path(exe).exists())
+    except Exception:
         return False
 
 
@@ -40,7 +53,16 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
 
     checks = [
         {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path))},
-        {"name": "playwright", "ok": _playwright_ok()},
+        {
+            "name": "playwright",
+            "ok": _playwright_import_ok(),
+            "hint": "pip install playwright（bundled slim 版需自行安装）",
+        },
+        {
+            "name": "playwright_browser",
+            "ok": _playwright_browser_ok(),
+            "hint": "playwright install chromium",
+        },
         {"name": "disk", "ok": _disk_ok(ws)},
     ]
     if has_douyin or not has_bilibili:
@@ -62,7 +84,7 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
             }
         )
 
-    ok = all(c["ok"] for c in checks)
+    ok = all(c["ok"] for c in checks if c["name"] not in ("playwright", "playwright_browser"))
     if has_douyin or not has_bilibili:
         ok = ok and douyin_session_ok
     if has_bilibili:

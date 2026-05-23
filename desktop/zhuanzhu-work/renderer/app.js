@@ -9,6 +9,10 @@ let currentAgent = loadStoredLens() || "default";
 let attachedRefs = [];
 let transcriptRefsCache = null;
 let lastArchiveHits = [];
+/** @type {Record<string, Array<{ role: string, text: string, extraClass?: string }>>} */
+const chatHistoryByAgent = {};
+/** @type {Set<string>} sessionKeys that already received lens prefix this app run */
+const prefixSentForSession = new Set();
 
 const messagesEl = document.getElementById("messages");
 const inputEl = document.getElementById("composer-input");
@@ -91,18 +95,59 @@ function lensWelcome(agentId) {
   );
 }
 
+function captureChatHistory(agentId) {
+  if (!messagesEl) return;
+  const rows = [];
+  messagesEl.querySelectorAll(".msg").forEach((row) => {
+    const bubble = row.querySelector(".bubble");
+    if (!bubble) return;
+    let role = "assistant";
+    if (row.classList.contains("user")) role = "user";
+    else if (row.classList.contains("error")) role = "error";
+    rows.push({
+      role,
+      text: bubble.textContent || "",
+      extraClass: row.classList.contains("error") ? "error" : "",
+    });
+  });
+  chatHistoryByAgent[agentId] = rows;
+}
+
+function restoreChatHistory(agentId) {
+  clearChatMessages();
+  const rows = chatHistoryByAgent[agentId] || [];
+  if (!rows.length) {
+    lensWelcome(agentId);
+    return;
+  }
+  rows.forEach(({ role, text, extraClass }) => appendMessage(role, text, extraClass));
+}
+
 function applyLens(agentId, opts = {}) {
   const { resetChat } = opts;
   if (!LENSES[agentId]) agentId = "default";
-  const changed = currentAgent !== agentId;
+  const targetChanged = currentAgent !== agentId;
+  const shouldReset = resetChat === true;
+
+  if (targetChanged && !shouldReset) {
+    captureChatHistory(currentAgent);
+  }
+
   currentAgent = agentId;
   persistLens(agentId);
   updateSessionPill();
   highlightNav("chat");
-  const shouldReset = resetChat === true || (resetChat !== false && changed);
+
   if (shouldReset) {
+    chatHistoryByAgent[agentId] = [];
+    const lens = getLens(agentId);
+    if (lens?.sessionKey) {
+      prefixSentForSession.delete(lens.sessionKey);
+    }
     clearChatMessages();
     lensWelcome(agentId);
+  } else if (targetChanged) {
+    restoreChatHistory(agentId);
   }
 }
 
@@ -149,7 +194,7 @@ function appendStreamingAssistant() {
 
   const bubble = document.createElement("div");
   bubble.className = "bubble";
-  bubble.textContent = "";
+  bubble.textContent = "正在思考…";
 
   row.append(avatar, bubble);
   messagesEl.appendChild(row);
@@ -263,8 +308,11 @@ function buildArchiveContextBlock(keyword, hits) {
 
 function formatOutboundMessage(rawText) {
   const parts = [];
-  const prefix = getLens().messagePrefix;
-  if (prefix) parts.push(prefix);
+  const lens = getLens();
+  if (lens.messagePrefix && !prefixSentForSession.has(lens.sessionKey)) {
+    parts.push(lens.messagePrefix);
+    prefixSentForSession.add(lens.sessionKey);
+  }
   if (attachedRefs.length) {
     parts.push(attachedRefs.map((r) => `@file:${r.path}`).join("\n"));
   }
@@ -441,6 +489,7 @@ async function sendMessage() {
       if (!streamed && result.content) {
         bubble.textContent = result.content;
       }
+      captureChatHistory(currentAgent);
     } else {
       const result = await window.zhuanzhu.openclaw.chat({
         message: outbound,

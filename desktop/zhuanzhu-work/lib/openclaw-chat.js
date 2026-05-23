@@ -16,12 +16,17 @@ function gatewayAuthError(err) {
 }
 
 function buildChatBody({ message, sessionKey, stream }) {
-  return {
+  const body = {
     model: "openclaw",
     stream: Boolean(stream),
     session_key: sessionKey || DEFAULT_SESSION_KEY,
     messages: [{ role: "user", content: message }],
   };
+  if (process.env.ZHUANZHU_CHAT_FAST === "1") {
+    body.thinking = "off";
+    body.fast = true;
+  }
+  return body;
 }
 
 function extractAssistantContent(data) {
