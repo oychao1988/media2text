@@ -65,12 +65,18 @@
             </div>
             <div class="nav-group" id="conv-groups">
               <div class="nav-label">会话</div>
-              <div data-agent-group="default">
-                <button type="button" class="nav-item sub active" data-view="chat" data-agent="default">
-                  默认协调
-                </button>
-                <div class="conv-title active" data-view="chat">当前对话</div>
-              </div>
+              <button type="button" class="nav-item sub active" data-view="chat" data-agent="default">
+                ⚙ 默认协调
+              </button>
+              <button type="button" class="nav-item sub" data-view="chat" data-agent="archive">
+                📁 档案助手
+              </button>
+              <button type="button" class="nav-item sub" data-view="chat" data-agent="wanzhan">
+                📈 万战寻道
+              </button>
+              <button type="button" class="nav-item sub" data-view="chat" data-agent="nuwa">
+                🧬 女娲蒸馏
+              </button>
             </div>
           </div>
           <div class="sidebar-foot">
@@ -126,7 +132,6 @@
                   <h3>万战寻道</h3>
                   <p>短线交易 lens：节奏、背离、兑现。引用转写时带时间戳出处。</p>
                   <span class="cli">skill: wanzhanxundao-perspective</span>
-                  <p class="placeholder-note">P6 接入独立 session</p>
                   <div class="card-actions">
                     <button type="button" class="primary" data-view="chat" data-agent="wanzhan">
                       + 对话
@@ -481,6 +486,7 @@
         </main>
       </div>
     </div>
+    <script src="lenses.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
