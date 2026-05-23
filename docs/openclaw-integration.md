@@ -125,12 +125,14 @@ flowchart LR
 ```
 转注 Work.app
 ├── Electron main
-│   ├── 启动/escription subprocess（bundled Node ≥22.16）
+│   ├── 启动 subprocess（bundled Node ≥22.14）
 │   ├── 健康检查 ws://127.0.0.1:18789
 │   └── preload：openclaw.chat / openclaw.health
-├── Renderer：finalized.html（或 Vite 化）
-├── Resources/openclaw/     # pin 版本，同 openclaw-desktop
-└── Resources/node/         # portable Node
+├── Renderer：finalized.html IA
+└── Contents/Resources/resources/
+    ├── node/               # portable Node (pin 见 bundle-manifest.json)
+    ├── openclaw/           # npm install openclaw@pin
+    └── media2text/         # site-packages + bin wrapper (system python3)
 ```
 
 与 YonClaw / Accio 同族：你本机已有 **YonClaw.app**、**Accio.app**，可对照其 Gateway LaunchAgent 与 `OPENCLAW_STATE_DIR` 布局。
@@ -200,7 +202,7 @@ open http://127.0.0.1:18789/
 | `~/Library/Application Support/转注 Work/` | Electron `userData`（合规确认、未来 media2text workspace） |
 | `~/Library/Logs/转注Work/gateway.log` | 本应用 spawn 的 Gateway 日志（macOS） |
 
-**升级策略（当前）**：下载新版 dmg 覆盖安装即可；OpenClaw 配置沿用 `~/.openclaw`。应用内自动更新与内置 OpenClaw npm  bundle 尚未实现（见 `resources/bundle-manifest.json`）。
+**升级策略（当前）**：下载新版 dmg 覆盖安装即可；OpenClaw 配置沿用 `~/.openclaw`。`npm run prepare-bundle` 会 pin Node/openclaw 到 `resources/`（见 `bundle-manifest.json`）；应用内自动更新尚未实现。
 
 **未签名应用**：无 Apple 公证时，首次启动需在 Finder 中右键 → 打开，或在「隐私与安全性」中允许。
 
@@ -219,7 +221,7 @@ open http://127.0.0.1:18789/
 
 ## 9. media2text sidecar（P3）
 
-桌面壳通过 main 进程 spawn `media2text` CLI（开发态：仓库 `.venv/bin/media2text`；发布态：`resources/media2text` 占位）。
+桌面壳通过 main 进程 spawn `media2text` CLI（开发态：仓库 `.venv`；发布态：`resources/media2text/bin/media2text`，wrapper 调用系统 `python3` + bundled site-packages）。
 
 | IPC | CLI |
 |-----|-----|

@@ -12,6 +12,13 @@ function repoRoot() {
   return path.resolve(APP_ROOT, "../..");
 }
 
+function defaultCwd(app) {
+  if (app?.isPackaged) {
+    return ensureAppConfig(app).workspace;
+  }
+  return repoRoot();
+}
+
 function resolveMedia2textBin(app) {
   if (process.env.MEDIA2TEXT_BIN) {
     return process.env.MEDIA2TEXT_BIN;
@@ -71,7 +78,7 @@ function runMedia2text(app, argv, options = {}) {
   const { appConfigPath } = require("./media2text-config");
   const configPath = appConfigPath(app);
   const timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const cwd = options.cwd ?? repoRoot();
+  const cwd = options.cwd ?? defaultCwd(app);
 
   return new Promise((resolve) => {
     const child = spawn(bin, argv, {
