@@ -5,6 +5,7 @@ const { assessOpenClawSetup } = require("./lib/config");
 const { ensureGateway, killSpawnedGateway } = require("./lib/gateway");
 const { ensureExtracted } = require("./lib/runtime-bundle");
 const { ensureAppConfig } = require("./lib/media2text-config");
+const { loadAppSettings, setChatFastMode } = require("./lib/app-settings");
 const {
   archiveSearch,
   complianceAccept,
@@ -55,10 +56,15 @@ function sendBootstrap(channel, payload) {
   }
 }
 
+function chatFastModeEnabled() {
+  return loadAppSettings(app).chat.fastMode;
+}
+
 function bootstrapState() {
   const { configPath: media2textConfigPath, workspace } = ensureAppConfig(app);
   const complianceAccepted = isComplianceAccepted(app);
   const setup = assessOpenClawSetup();
+  const chatSettings = loadAppSettings(app).chat;
   return {
     complianceAccepted,
     setup,
@@ -67,6 +73,7 @@ function bootstrapState() {
     workspace,
     media2textConfigPath,
     media2textBin: resolveMedia2textBin(app),
+    chatFastMode: chatSettings.fastMode,
     needsWizard: !complianceAccepted || !setup.complete,
   };
 }
@@ -119,7 +126,9 @@ async function runBootstrap() {
 }
 
 function registerIpc() {
-  ipcMain.handle("openclaw:chat", (_event, payload) => openclawChat(payload));
+  ipcMain.handle("openclaw:chat", (_event, payload) =>
+    openclawChat({ ...payload, fastMode: chatFastModeEnabled() }),
+  );
 
   ipcMain.handle("openclaw:chat-stream", async (event, payload) => {
     const streamId =
@@ -129,8 +138,16 @@ function registerIpc() {
       ...payload,
       streamId,
       sender: event.sender,
+      fastMode: chatFastModeEnabled(),
     });
   });
+
+  ipcMain.handle("app:get-chat-settings", () => loadAppSettings(app).chat);
+
+  ipcMain.handle("app:set-chat-fast-mode", (_event, enabled) => ({
+    ok: true,
+    chat: setChatFastMode(app, enabled),
+  }));
 
   ipcMain.handle("app:get-bootstrap", () => bootstrapState());
 

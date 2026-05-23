@@ -15,14 +15,16 @@ function gatewayAuthError(err) {
   return { ok: false, error: hint, configIncomplete: !setup.complete };
 }
 
-function buildChatBody({ message, sessionKey, stream }) {
+function buildChatBody({ message, sessionKey, stream, fastMode }) {
   const body = {
     model: "openclaw",
     stream: Boolean(stream),
     session_key: sessionKey || DEFAULT_SESSION_KEY,
     messages: [{ role: "user", content: message }],
   };
-  if (process.env.ZHUANZHU_CHAT_FAST === "1") {
+  const useFast =
+    process.env.ZHUANZHU_CHAT_FAST === "1" || Boolean(fastMode);
+  if (useFast) {
     body.thinking = "off";
     body.fast = true;
   }
@@ -38,7 +40,7 @@ function extractAssistantContent(data) {
   return null;
 }
 
-async function openclawChat({ message, sessionKey }) {
+async function openclawChat({ message, sessionKey, fastMode }) {
   const trimmed = String(message || "").trim();
   if (!trimmed) {
     return { ok: false, error: "消息不能为空" };
@@ -51,7 +53,12 @@ async function openclawChat({ message, sessionKey }) {
     return gatewayAuthError(err);
   }
 
-  const body = buildChatBody({ message: trimmed, sessionKey, stream: false });
+  const body = buildChatBody({
+    message: trimmed,
+    sessionKey,
+    stream: false,
+    fastMode,
+  });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
@@ -128,7 +135,13 @@ function parseSseLines(buffer, onDelta) {
   return rest;
 }
 
-async function openclawChatStream({ message, sessionKey, streamId, sender }) {
+async function openclawChatStream({
+  message,
+  sessionKey,
+  streamId,
+  sender,
+  fastMode,
+}) {
   const trimmed = String(message || "").trim();
   if (!trimmed) {
     sender.send("openclaw:chat-chunk", {
@@ -154,7 +167,12 @@ async function openclawChatStream({ message, sessionKey, streamId, sender }) {
     return authErr;
   }
 
-  const body = buildChatBody({ message: trimmed, sessionKey, stream: true });
+  const body = buildChatBody({
+    message: trimmed,
+    sessionKey,
+    stream: true,
+    fastMode,
+  });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 120_000);
 
@@ -221,7 +239,11 @@ async function openclawChatStream({ message, sessionKey, streamId, sender }) {
     emit({ done: true, ok: true, content, streamed: true });
     return { ok: true, content, sessionKey: body.session_key, streamed: true };
   } catch (err) {
-    const fallback = await openclawChat({ message: trimmed, sessionKey });
+    const fallback = await openclawChat({
+      message: trimmed,
+      sessionKey,
+      fastMode,
+    });
     if (fallback.ok && fallback.content) {
       emit({
         delta: fallback.content,
@@ -245,5 +267,6 @@ async function openclawChatStream({ message, sessionKey, streamId, sender }) {
 module.exports = {
   openclawChat,
   openclawChatStream,
+  buildChatBody,
   DEFAULT_SESSION_KEY,
 };

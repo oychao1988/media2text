@@ -19,6 +19,7 @@ const inputEl = document.getElementById("composer-input");
 const sendBtn = document.getElementById("btn-send");
 const statusBanner = document.getElementById("status-banner");
 const sessionPill = document.getElementById("session-pill");
+const chatFastToggle = document.getElementById("chat-fast-toggle");
 const refChipsEl = document.getElementById("ref-chips");
 const atPickerEl = document.getElementById("at-picker");
 
@@ -778,11 +779,25 @@ async function bindAutoUpdater() {
 
 bindNavigation();
 
+if (chatFastToggle && window.zhuanzhu?.app?.setChatFastMode) {
+  chatFastToggle.addEventListener("change", async () => {
+    try {
+      await window.zhuanzhu.app.setChatFastMode(chatFastToggle.checked);
+    } catch (err) {
+      showBanner(err?.message || String(err), "warn");
+      chatFastToggle.checked = !chatFastToggle.checked;
+    }
+  });
+}
+
 async function initMain() {
   showView("chat", { agent: currentAgent, resetChat: true, focusInput: false });
 
   if (window.zhuanzhu?.app?.getBootstrap) {
     const state = await window.zhuanzhu.app.getBootstrap();
+    if (chatFastToggle) {
+      chatFastToggle.checked = Boolean(state.chatFastMode);
+    }
     if (!state.setup?.complete) {
       showBanner(
         `OpenClaw 配置未完成，请在 ${state.configPath} 中设置 gateway.auth.token 与模型 API Key。`,

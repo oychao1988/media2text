@@ -729,6 +729,19 @@ body {
   cursor: default;
 }
 
+.pill-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.pill-toggle input {
+  margin: 0;
+  cursor: pointer;
+}
+
 .btn-send {
   width: 36px;
   height: 36px;

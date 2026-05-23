@@ -54,6 +54,12 @@ contextBridge.exposeInMainWorld("zhuanzhu", {
     enterMain() {
       return ipcRenderer.invoke("app:enter-main");
     },
+    getChatSettings() {
+      return ipcRenderer.invoke("app:get-chat-settings");
+    },
+    setChatFastMode(enabled) {
+      return ipcRenderer.invoke("app:set-chat-fast-mode", Boolean(enabled));
+    },
     onBootstrapStatus(callback) {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on("bootstrap:status", listener);

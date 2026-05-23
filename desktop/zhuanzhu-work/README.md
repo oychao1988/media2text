@@ -51,7 +51,8 @@ npm run dev
 | 变量 | 说明 |
 |------|------|
 | `ZHUANZHU_SKIP_SPAWN=1` | 不自动 spawn Gateway（Gateway 已手动运行时使用，E2E 默认） |
-| `ZHUANZHU_CHAT_FAST=1` | 聊天请求尝试 `thinking=off` / `fast=true`（需 Gateway 支持） |
+| `ZHUANZHU_CHAT_FAST=1` | 聊天请求强制 `thinking=off` / `fast=true`（覆盖 UI 与 config.json） |
+| `chat.fastMode` | 应用配置 `~/Library/Application Support/zhuanzhu-work/config.json`；UI「快速回复」开关持久化 |
 | `OPENCLAW_CONFIG_PATH` | 覆盖 openclaw.json 路径 |
 | `OPENCLAW_BIN` | 覆盖 openclaw 可执行文件路径 |
 | `ZHUANZU_WORKSPACE` | 覆盖 media2text workspace（默认 `userData/data`） |
