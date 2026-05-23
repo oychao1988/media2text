@@ -74,6 +74,48 @@ ZHUANZHU_SKIP_SPAWN=1 node e2e/gui-smoke.mjs
 
 截图参考：`docs/zhuanzhu-e2e-screenshots/`。
 
+## 发布构建（P2 / Issue #38）
+
+将应用打成 macOS `.dmg` 安装包（Windows `.exe` 可选）。**本阶段不内置**完整 OpenClaw npm / portable Node，安装后仍依赖系统 `openclaw` CLI 与 Node ≥22.14；`resources/bundle-manifest.json` 记录未来 pin 版本。
+
+### 前提
+
+| 项 | 要求 |
+|----|------|
+| Node.js | **≥ 22.14**（与 OpenClaw 一致） |
+| macOS | 用于 `package:mac`（本机或 CI macOS runner） |
+| 签名 | 未做 Apple 公证；首次打开可能需右键 → 打开 |
+
+### 命令
+
+```bash
+source ~/.nvm/nvm.sh
+cd desktop/zhuanzhu-work
+npm install
+npm run prepare-bundle   # 生成 resources/bundle-manifest.json + build/icon.png
+npm run package:mac        # 产出 dist/转注 Work-<version>.dmg
+# Windows（可选）：npm run package:win
+```
+
+若 `npm install` 或 Electron 下载很慢，可开本地代理并配国内镜像：
+
+```bash
+export HTTP_PROXY=http://127.0.0.1:7890 HTTPS_PROXY=http://127.0.0.1:7890
+export ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/
+export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-builder-binaries/
+```
+
+产物：`desktop/zhuanzhu-work/dist/转注 Work-0.1.0.dmg`（版本号随 `package.json`）。
+
+### 安装后冒烟
+
+1. 打开 dmg，将「转注 Work」拖入「应用程序」。
+2. 确保 `openclaw` 在 PATH 且 `~/.openclaw/openclaw.json` 已配置。
+3. 启动应用 → 完成向导 → 发送 `回复两个字：收到`。
+4. Gateway 日志：`~/Library/Logs/转注Work/gateway.log`。
+
+打包后 bundled 资源路径：`Contents/Resources/resources/`（见 `lib/gateway.js` 的 `bundledResourcesRoot()`）。
+
 ## Preload API
 
 ```javascript
@@ -99,6 +141,8 @@ desktop/zhuanzhu-work/
 │   └── paths.js         # 配置路径、合规文件、日志
 ├── preload.js
 ├── e2e/gui-smoke.mjs
+├── build/               # 打包图标（generate-icon.js）
+├── resources/           # bundle-manifest + 未来 bundled node/openclaw
 └── renderer/
     ├── splash.html      # 启动页
     ├── wizard.html      # 首次向导
@@ -106,9 +150,11 @@ desktop/zhuanzhu-work/
     └── ...
 ```
 
-## 非目标（P1 不做）
+## 非目标（本仓库当前阶段）
 
-- electron-builder `.dmg` / 内置完整 OpenClaw npm 包（见 P2 Issue #38）
+- Apple 公证 / 开发者 ID 签名（见上方「发布构建」）
+- 应用内自动更新（GitHub Releases）
+- 内置完整 OpenClaw npm 包（`prepare-bundle` 仅占位 manifest）
 - WebSocket 流式、media2text CLI 集成（P3 Issue #39）
 
 详见 [docs/openclaw-integration.md](../../docs/openclaw-integration.md) 与 [docs/issues/zhuanzhu-p1-bundled-gateway.md](../../docs/issues/zhuanzhu-p1-bundled-gateway.md)。

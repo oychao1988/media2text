@@ -1,0 +1,13 @@
+{
+  "generated_at": "2026-05-23T07:34:30Z",
+  "note": "Placeholder manifest. A future release will download portable Node and openclaw npm into resources/.",
+  "pins": {
+    "node": "22.14.0",
+    "openclaw": "2026.5.5"
+  },
+  "paths": {
+    "node": "resources/node",
+    "openclaw": "resources/openclaw"
+  },
+  "bundled": false
+}

@@ -9,6 +9,8 @@ htmlcov/
 data/
 *.egg-info/
 dist/
+desktop/zhuanzhu-work/dist/
+desktop/zhuanzhu-work/build/icon.png
 .DS_Store
 
 # Local config and auth (use config.example.yaml)

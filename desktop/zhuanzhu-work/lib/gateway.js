@@ -33,10 +33,10 @@ function nodeVersionFromBinary(nodeBin) {
   return parseNodeVersion(result.stdout || result.stderr);
 }
 
-function bundledNodeBin(appRoot) {
+function bundledNodeBin(resourcesRoot) {
   const candidates = [
-    path.join(appRoot, "resources", "node", "bin", "node"),
-    path.join(appRoot, "resources", "node"),
+    path.join(resourcesRoot, "node", "bin", "node"),
+    path.join(resourcesRoot, "node"),
   ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
@@ -44,8 +44,26 @@ function bundledNodeBin(appRoot) {
   return null;
 }
 
-function resolveNodeBin(appRoot) {
-  const bundled = bundledNodeBin(appRoot);
+function bundledOpenClawBin(resourcesRoot) {
+  const candidates = [
+    path.join(resourcesRoot, "openclaw", "bin", "openclaw"),
+    path.join(
+      resourcesRoot,
+      "openclaw",
+      "node_modules",
+      ".bin",
+      "openclaw",
+    ),
+    path.join(resourcesRoot, "openclaw", "openclaw"),
+  ];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function resolveNodeBin(resourcesRoot) {
+  const bundled = bundledNodeBin(resourcesRoot);
   if (bundled && nodeMeetsMinimum(nodeVersionFromBinary(bundled))) {
     return bundled;
   }
@@ -79,10 +97,12 @@ function buildGatewayEnv(nodeBin) {
   };
 }
 
-function resolveOpenClawBin() {
+function resolveOpenClawBin(resourcesRoot) {
   if (process.env.OPENCLAW_BIN) {
     return process.env.OPENCLAW_BIN;
   }
+  const bundled = bundledOpenClawBin(resourcesRoot);
+  if (bundled) return bundled;
   const which = spawnSync("which", ["openclaw"], { encoding: "utf8" });
   if (which.status === 0 && which.stdout.trim()) {
     return which.stdout.trim();
@@ -115,7 +135,7 @@ function appendGatewayLog(line) {
   }
 }
 
-function spawnGateway(appRoot) {
+function spawnGateway(resourcesRoot) {
   if (process.env.ZHUANZHU_SKIP_SPAWN === "1") {
     return { skipped: true };
   }
@@ -123,14 +143,14 @@ function spawnGateway(appRoot) {
     return { pid: spawnedGatewayPid, alreadyRunning: true };
   }
 
-  const openclawBin = resolveOpenClawBin();
+  const openclawBin = resolveOpenClawBin(resourcesRoot);
   if (!openclawBin) {
     throw new Error(
-      "未找到 openclaw 命令。请安装 YonClaw 或执行：npm i -g openclaw",
+      "未找到 openclaw 命令。请安装 YonClaw 或执行：npm i -g openclaw；打包版将在 resources/openclaw 内置（见 bundle-manifest.json）。",
     );
   }
 
-  const nodeBin = resolveNodeBin(appRoot);
+  const nodeBin = resolveNodeBin(resourcesRoot);
   const env = buildGatewayEnv(nodeBin);
   const logPath = gatewayLogPath();
   appendGatewayLog(
@@ -183,7 +203,7 @@ async function waitForGatewayReady(timeoutMs = GATEWAY_START_TIMEOUT_MS) {
   };
 }
 
-async function ensureGateway(appRoot) {
+async function ensureGateway(resourcesRoot) {
   if (await probeGatewayHealth()) {
     return { ok: true, spawned: false };
   }
@@ -195,7 +215,7 @@ async function ensureGateway(appRoot) {
   }
 
   try {
-    spawnGateway(appRoot);
+    spawnGateway(resourcesRoot);
   } catch (err) {
     return { ok: false, error: err.message };
   }

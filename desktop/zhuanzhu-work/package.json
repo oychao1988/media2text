@@ -4,16 +4,67 @@
   "private": true,
   "description": "转注 Work — Electron 开发壳（OpenClaw 聊天联调）",
   "main": "main.js",
+  "author": "oychao1988",
   "scripts": {
     "dev": "electron .",
     "start": "electron .",
-    "e2e:gui": "node e2e/gui-smoke.mjs"
+    "e2e:gui": "node e2e/gui-smoke.mjs",
+    "prepare-bundle": "bash ../../scripts/prepare-zhuanzhu-bundle.sh && node build/generate-icon.js",
+    "predist": "npm run prepare-bundle",
+    "package:mac": "npm run prepare-bundle && electron-builder --mac dmg",
+    "package:win": "npm run prepare-bundle && electron-builder --win nsis",
+    "package": "npm run package:mac"
   },
   "engines": {
     "node": ">=22.14.0"
   },
   "devDependencies": {
     "electron": "^34.2.0",
+    "electron-builder": "^25.1.8",
     "playwright": "^1.52.0"
+  },
+  "build": {
+    "appId": "com.zhuanzhu.work",
+    "productName": "转注 Work",
+    "copyright": "Copyright © 2026",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**/*",
+      "renderer/**/*",
+      "package.json",
+      "!resources/**",
+      "!e2e/**",
+      "!**/*.md",
+      "!build/**"
+    ],
+    "extraResources": [
+      {
+        "from": "resources",
+        "to": "resources",
+        "filter": ["**/*"]
+      }
+    ],
+    "asar": true,
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": ["dmg"],
+      "icon": "build/icon.png"
+    },
+    "dmg": {
+      "title": "转注 Work ${version}",
+      "artifactName": "转注 Work-${version}.${ext}"
+    },
+    "win": {
+      "target": ["nsis"],
+      "icon": "build/icon.png"
+    },
+    "nsis": {
+      "artifactName": "转注 Work-Setup-${version}.${ext}"
+    }
   }
 }
