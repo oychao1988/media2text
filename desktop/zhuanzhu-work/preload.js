@@ -28,4 +28,21 @@ contextBridge.exposeInMainWorld("zhuanzhu", {
       return () => ipcRenderer.removeListener("bootstrap:status", listener);
     },
   },
+  media2text: {
+    run(argv, options) {
+      return ipcRenderer.invoke("media2text:run", { argv, ...options });
+    },
+    archiveSearch(query, options) {
+      return ipcRenderer.invoke("media2text:archive-search", {
+        query,
+        ...options,
+      });
+    },
+    doctor() {
+      return ipcRenderer.invoke("media2text:doctor");
+    },
+    complianceStatus() {
+      return ipcRenderer.invoke("media2text:compliance-status");
+    },
+  },
 });

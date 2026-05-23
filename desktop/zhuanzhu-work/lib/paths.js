@@ -16,7 +16,7 @@ function openClawConfigDir() {
   return path.dirname(openClawConfigPath());
 }
 
-/** Future media2text workspace: userData/data (override with ZHUANZU_WORKSPACE). */
+/** media2text workspace: ~/Library/Application Support/转注Work/data (override ZHUANZU_WORKSPACE). */
 function workspacePath(app) {
   if (process.env.ZHUANZU_WORKSPACE) {
     return path.resolve(process.env.ZHUANZU_WORKSPACE);

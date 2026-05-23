@@ -1,6 +1,6 @@
 # 转注 Work — Electron 桌面壳
 
-Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](https://github.com/oychao1988/media2text/issues/37)（P1）：聊天 UI + **自动拉起 OpenClaw Gateway** + 首次向导。
+Issue [#35](https://github.com/oychao1988/media2text/issues/35)（P0）+ [#37](https://github.com/oychao1988/media2text/issues/37)（P1）+ [#38](https://github.com/oychao1988/media2text/issues/38)（P2）+ [#39](https://github.com/oychao1988/media2text/issues/39)（P3）：聊天 UI、Gateway 自动拉起、安装包、**media2text 档案检索 / 环境检查**。
 
 ## 普通用户
 
@@ -51,7 +51,9 @@ npm run dev
 | `ZHUANZHU_SKIP_SPAWN=1` | 不自动 spawn Gateway（Gateway 已手动运行时使用，E2E 默认） |
 | `OPENCLAW_CONFIG_PATH` | 覆盖 openclaw.json 路径 |
 | `OPENCLAW_BIN` | 覆盖 openclaw 可执行文件路径 |
-| `ZHUANZU_WORKSPACE` | 覆盖合规文件 workspace（默认 `userData/data`） |
+| `ZHUANZU_WORKSPACE` | 覆盖 media2text workspace（默认 `userData/data`） |
+| `MEDIA2TEXT_BIN` | 覆盖 media2text 可执行文件 |
+| `MEDIA2TEXT_CONFIG` | 覆盖 `config.yaml`（默认 `userData/config.yaml`） |
 
 若在 Cursor / CI 等环境中设置了 `ELECTRON_RUN_AS_NODE=1`，请先 `unset ELECTRON_RUN_AS_NODE` 再运行 `npm run dev` 或 E2E。
 
@@ -116,6 +118,35 @@ export ELECTRON_BUILDER_BINARIES_MIRROR=https://npmmirror.com/mirrors/electron-b
 
 打包后 bundled 资源路径：`Contents/Resources/resources/`（见 `lib/gateway.js` 的 `bundledResourcesRoot()`）。
 
+## media2text 集成（P3 / Issue #39）
+
+侧栏 **档案检索**、**环境检查** 通过 main 进程调用 `media2text` CLI（JSON 透传）。
+
+### 开箱清单
+
+| 项 | 要求 |
+|----|------|
+| Python 环境 | 仓库根 `pip install -e ".[dev]"`，或 PATH 中有 `media2text` |
+| ffmpeg | `doctor` 检查；转写/录制依赖 |
+| Playwright | `playwright install chromium`（抖音 sync / 登录） |
+| 合规 | 首次向导勾选 → 同步 `compliance accept` |
+| 抖音登录 | 仍用 CLI：`media2text auth login --platform douyin`（或终端执行） |
+| 索引 | 有转写文件后：`media2text archive index --json` |
+
+工作区：`~/Library/Application Support/转注 Work/data`（与 `config.yaml` 中 `workspace` 一致）。
+
+### 验证
+
+```bash
+source .venv/bin/activate
+media2text compliance accept --json
+media2text archive index --json
+media2text archive search "半导体" --json
+
+cd desktop/zhuanzhu-work && npm run dev
+# 侧栏 → 档案检索 / 环境检查
+```
+
 ## Preload API
 
 ```javascript
@@ -128,6 +159,10 @@ await window.zhuanzhu.app.getBootstrap();
 await window.zhuanzhu.app.acceptCompliance();
 await window.zhuanzhu.app.openConfigDir();
 await window.zhuanzhu.app.enterMain();
+
+await window.zhuanzhu.media2text.archiveSearch("半导体");
+await window.zhuanzhu.media2text.doctor();
+await window.zhuanzhu.media2text.run(["archive", "index", "--json"]);
 ```
 
 ## 目录
@@ -138,7 +173,9 @@ desktop/zhuanzhu-work/
 ├── lib/
 │   ├── gateway.js       # Gateway 健康检查 / spawn / 退出清理
 │   ├── config.js        # openclaw.json 读取与向导判定
-│   └── paths.js         # 配置路径、合规文件、日志
+│   ├── paths.js         # 配置路径、合规文件、日志
+│   ├── media2text-config.js
+│   └── media2text-sidecar.js
 ├── preload.js
 ├── e2e/gui-smoke.mjs
 ├── build/               # 打包图标（generate-icon.js）
@@ -155,6 +192,9 @@ desktop/zhuanzhu-work/
 - Apple 公证 / 开发者 ID 签名（见上方「发布构建」）
 - 应用内自动更新（GitHub Releases）
 - 内置完整 OpenClaw npm 包（`prepare-bundle` 仅占位 manifest）
-- WebSocket 流式、media2text CLI 集成（P3 Issue #39）
+- WebSocket 流式
+- 完整迁移 gstack `finalized.html` 所有页面
+- 打包内置 Python / PyInstaller media2text（`resources/media2text` 仅占位）
+- 应用内自动启动 `monitor watch` 守护进程
 
 详见 [docs/openclaw-integration.md](../../docs/openclaw-integration.md) 与 [docs/issues/zhuanzhu-p1-bundled-gateway.md](../../docs/issues/zhuanzhu-p1-bundled-gateway.md)。
