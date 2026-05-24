@@ -9,8 +9,6 @@ htmlcov/
 data/
 *.egg-info/
 dist/
-desktop/zhuanzhu-work/dist/
-desktop/zhuanzhu-work/build/icon.png
 .DS_Store
 
 # Local config and auth (use config.example.yaml)
@@ -24,12 +22,3 @@ config.yaml
 midscene_run/
 *.log
 node_modules/
-desktop/zhuanzhu-work/node_modules/
-desktop/zhuanzhu-work/resources/node/
-desktop/zhuanzhu-work/resources/openclaw/node_modules/
-desktop/zhuanzhu-work/resources/openclaw/package.json
-desktop/zhuanzhu-work/resources/openclaw/package-lock.json
-desktop/zhuanzhu-work/resources/media2text/site-packages/
-desktop/zhuanzhu-work/resources/media2text/bin/media2text
-desktop/zhuanzhu-work/resources/runtime-bundle.tar.gz
-desktop/zhuanzhu-work/resources/runtime-bundle.version
