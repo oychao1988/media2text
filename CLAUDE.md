@@ -92,6 +92,20 @@ media2text transcribe run data/creators/<sec_uid>/live/xxx.mp4 --json
 
 直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra。
 
+### 4b. 个人阿里云盘（实验，非 CLI 子命令）
+
+个人版 Web API（与 [foyoux/aligo](https://github.com/foyoux/aligo) 同路径）。Token：`data/sessions/aliyundrive.token.json`。
+
+```bash
+# 登录（推荐 QR；或 .env 的 ALIYUN_DRIVE_REFRESH_TOKEN + --mode token）
+python scripts/aliyundrive_login.py --mode qr
+
+# API 冒烟（列表/容量/上传/下载/删除）
+python scripts/aliyundrive_api_test.py
+```
+
+账户剩余空间用 `getUserCapacityInfo`，勿用 `drive/get` 单盘 `used_size`。自动上传进直播流水线见 Issue 阶段 B。
+
 监控提醒（`notify.enabled: true`）：开播 / 新作品 / 录制完成 / 转录完成 → 系统提示音 + 飞书 webhook（`NOTIFY_FEISHU_WEBHOOK_URL`）。
 
 ### 5. 查看已登记博主
