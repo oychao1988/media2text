@@ -82,16 +82,21 @@ def refresh_manifest(
     for row in live_rows:
         data = dict(row)
         local_path = data.get("local_path")
-        live_items.append(
-            {
-                "id": data["id"],
-                "type": "live",
-                "title": None,
-                "media_path": local_path,
-                "transcript_path": _transcript_sidecar_path(local_path),
-                "status": data.get("status"),
-            }
-        )
+        entry: dict = {
+            "id": data["id"],
+            "type": "live",
+            "title": None,
+            "media_path": local_path,
+            "transcript_path": _transcript_sidecar_path(local_path),
+            "status": data.get("status"),
+        }
+        if data.get("cloud_file_id"):
+            entry["cloud_file_id"] = data["cloud_file_id"]
+        if data.get("cloud_relative_path"):
+            entry["cloud_relative_path"] = data["cloud_relative_path"]
+        if data.get("cloud_upload_status"):
+            entry["cloud_upload_status"] = data["cloud_upload_status"]
+        live_items.append(entry)
 
     dynamic_items: list[dict] = []
     if creator.platform == "bilibili":

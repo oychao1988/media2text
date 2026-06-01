@@ -97,6 +97,31 @@ class NotifyEventsConfig(BaseModel):
     new_dynamic: bool = True
     recording_completed: bool = True
     transcribe_completed: bool = True
+    upload_completed: bool = True
+    upload_failed: bool = True
+    upload_skipped: bool = True
+    upload_cleanup: bool = True
+
+
+class AliyunDriveRollingCleanupConfig(BaseModel):
+    max_delete_per_round: int = 20
+
+
+class AliyunDriveConfig(BaseModel):
+    enabled: bool = False
+    token_path: str = "sessions/aliyundrive.token.json"
+    parent_file_id: str = "root"
+    root_folder: str = "media2text"
+    creator_key: str = "nickname"
+    min_free_bytes: int = 5 * 1024 * 1024 * 1024
+    upload_on_live_complete: bool = True
+    upload_transcripts: bool = True
+    delete_local_after_upload: bool = True
+    on_insufficient_space: str = "rolling_cleanup"
+    rolling_cleanup: AliyunDriveRollingCleanupConfig = Field(
+        default_factory=AliyunDriveRollingCleanupConfig
+    )
+    upload_retries: int = 2
 
 
 class NotifyFeishuConfig(BaseModel):
@@ -138,6 +163,10 @@ class AppConfig(BaseSettings):
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
+    aliyundrive: AliyunDriveConfig = Field(default_factory=AliyunDriveConfig)
+
+    def aliyundrive_token_path(self) -> Path:
+        return self.ensure_workspace() / self.aliyundrive.token_path
 
     @classmethod
     def load(cls) -> AppConfig:

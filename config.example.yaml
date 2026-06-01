@@ -28,6 +28,22 @@ live:
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
 
+# 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
+aliyundrive:
+  enabled: false
+  token_path: sessions/aliyundrive.token.json
+  parent_file_id: root
+  root_folder: media2text
+  creator_key: nickname
+  min_free_bytes: 5368709120
+  upload_on_live_complete: true
+  upload_transcripts: true
+  delete_local_after_upload: true
+  on_insufficient_space: rolling_cleanup
+  rolling_cleanup:
+    max_delete_per_round: 20
+  upload_retries: 2
+
 # 监控事件提醒：提示音 + 飞书群机器人 webhook（二选一或同时开启）
 notify:
   enabled: false
@@ -40,6 +56,10 @@ notify:
     new_dynamic: true        # B 站动态新条目
     recording_completed: true
     transcribe_completed: true
+    upload_completed: true
+    upload_failed: true
+    upload_skipped: true
+    upload_cleanup: true
   feishu:
     enabled: true
     # 推荐用环境变量，勿提交真实 URL：export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/...'

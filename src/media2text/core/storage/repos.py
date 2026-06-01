@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from media2text.core.platform.douyin.models import AwemeItem
 import json
 
-from media2text.core.storage.models import AwemeRow, CreatorRow, DynamicRow, LiveSessionRow
+from media2text.core.storage.models import AwemeRow, CloudUploadRow, CreatorRow, DynamicRow, LiveSessionRow
 
 
 class CreatorRepo:
@@ -495,19 +495,40 @@ class LiveSessionRepo:
         self,
         session_id: str,
         *,
-        status: str,
+        status: str | None = None,
         local_path: str | None = None,
         error: str | None = None,
         ended: bool = False,
+        transcribe_status: str | None = None,
+        cloud_upload_status: str | None = None,
+        cloud_file_id: str | None = None,
+        cloud_relative_path: str | None = None,
     ) -> None:
         ended_at = datetime.now(timezone.utc).isoformat() if ended else None
         self._conn.execute(
             """
             UPDATE live_sessions
-            SET status = ?, local_path = COALESCE(?, local_path), error = ?, ended_at = COALESCE(?, ended_at)
+            SET status = COALESCE(?, status),
+                local_path = COALESCE(?, local_path),
+                error = COALESCE(?, error),
+                ended_at = COALESCE(?, ended_at),
+                transcribe_status = COALESCE(?, transcribe_status),
+                cloud_upload_status = COALESCE(?, cloud_upload_status),
+                cloud_file_id = COALESCE(?, cloud_file_id),
+                cloud_relative_path = COALESCE(?, cloud_relative_path)
             WHERE id = ?
             """,
-            (status, local_path, error, ended_at, session_id),
+            (
+                status,
+                local_path,
+                error,
+                ended_at,
+                transcribe_status,
+                cloud_upload_status,
+                cloud_file_id,
+                cloud_relative_path,
+                session_id,
+            ),
         )
         self._conn.commit()
 
@@ -516,4 +537,133 @@ class LiveSessionRepo:
             "UPDATE live_sessions SET ffmpeg_pid = NULL WHERE id = ?",
             (session_id,),
         )
+        self._conn.commit()
+
+
+class CloudUploadRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def create(
+        self,
+        *,
+        session_id: str,
+        creator_id: str,
+        platform: str,
+        file_name: str,
+        file_kind: str,
+        local_path: str | None = None,
+        size: int | None = None,
+        pre_hash: str | None = None,
+    ) -> str:
+        uid = str(uuid.uuid4())
+        self._conn.execute(
+            """
+            INSERT INTO cloud_uploads
+              (id, session_id, creator_id, platform, file_name, file_kind,
+               local_path, size, pre_hash, upload_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+            """,
+            (
+                uid,
+                session_id,
+                creator_id,
+                platform,
+                file_name,
+                file_kind,
+                local_path,
+                size,
+                pre_hash,
+            ),
+        )
+        self._conn.commit()
+        return uid
+
+    def mark_done(
+        self,
+        upload_id: str,
+        *,
+        cloud_file_id: str,
+        cloud_relative_path: str,
+    ) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE cloud_uploads
+            SET upload_status = 'done',
+                cloud_file_id = ?,
+                cloud_relative_path = ?,
+                uploaded_at = ?,
+                error = NULL
+            WHERE id = ?
+            """,
+            (cloud_file_id, cloud_relative_path, now, upload_id),
+        )
+        self._conn.commit()
+
+    def mark_failed(self, upload_id: str, *, error: str) -> None:
+        self._conn.execute(
+            """
+            UPDATE cloud_uploads
+            SET upload_status = 'failed', error = ?
+            WHERE id = ?
+            """,
+            (error, upload_id),
+        )
+        self._conn.commit()
+
+    def list_for_session(self, session_id: str) -> list[CloudUploadRow]:
+        rows = self._conn.execute(
+            "SELECT * FROM cloud_uploads WHERE session_id = ? ORDER BY uploaded_at",
+            (session_id,),
+        ).fetchall()
+        return [CloudUploadRow(**dict(r)) for r in rows]
+
+    def list_cleanup_candidates(
+        self,
+        *,
+        root_prefix: str,
+        require_transcripts: bool,
+    ) -> list[CloudUploadRow]:
+        rows = self._conn.execute(
+            """
+            SELECT cu.*
+            FROM cloud_uploads cu
+            JOIN live_sessions ls ON ls.id = cu.session_id
+            WHERE cu.upload_status = 'done'
+              AND cu.cloud_relative_path LIKE ?
+              AND (
+                ls.transcribe_status IS NULL
+                OR ls.transcribe_status IN ('done', 'skipped', 'none')
+              )
+            ORDER BY cu.uploaded_at ASC
+            """,
+            (f"{root_prefix}%",),
+        ).fetchall()
+        candidates = [CloudUploadRow(**dict(r)) for r in rows]
+        if not require_transcripts:
+            return candidates
+        by_session: dict[str, list[CloudUploadRow]] = {}
+        for row in candidates:
+            by_session.setdefault(row.session_id, []).append(row)
+        eligible: list[CloudUploadRow] = []
+        for session_id, uploads in by_session.items():
+            kinds = {u.file_kind for u in uploads}
+            if "mp4" not in kinds:
+                continue
+            session = self._conn.execute(
+                "SELECT transcribe_status FROM live_sessions WHERE id = ?",
+                (session_id,),
+            ).fetchone()
+            ts = session[0] if session else None
+            if ts == "failed" or ts == "pending":
+                continue
+            if ts == "done" and "transcript_json" not in kinds:
+                continue
+            eligible.extend(uploads)
+        eligible.sort(key=lambda r: r.uploaded_at or "")
+        return eligible
+
+    def delete_record(self, upload_id: str) -> None:
+        self._conn.execute("DELETE FROM cloud_uploads WHERE id = ?", (upload_id,))
         self._conn.commit()
