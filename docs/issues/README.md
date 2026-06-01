@@ -29,7 +29,7 @@
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
 | 1 | [#65](https://github.com/oychao1988/media2text/issues/65) | [#66](https://github.com/oychao1988/media2text/pull/66) | [aliyundrive-cloud-foundation.md](./aliyundrive-cloud-foundation.md) | `issue-65-aliyundrive-cloud-foundation` |
-| 2 | [#67](https://github.com/oychao1988/media2text/issues/67) | — | [aliyundrive-live-upload.md](./aliyundrive-live-upload.md) | `issue-67-aliyundrive-live-upload` |
+| 2 | [#67](https://github.com/oychao1988/media2text/issues/67) | [#68](https://github.com/oychao1988/media2text/pull/68) | [aliyundrive-live-upload.md](./aliyundrive-live-upload.md) | `issue-67-aliyundrive-live-upload` |
 
 **合并顺序**：#66（阶段 A）→ 阶段 B PR。
 

@@ -3,7 +3,7 @@
 GitHub: [#67](https://github.com/oychao1988/media2text/issues/67)  
 依赖: [#65](https://github.com/oychao1988/media2text/issues/65) 阶段 A（[#66](https://github.com/oychao1988/media2text/pull/66)）  
 分支: `issue-67-aliyundrive-live-upload`  
-PR: （创建后填写）
+PR: [#68](https://github.com/oychao1988/media2text/pull/68)
 
 ## 背景
 
