@@ -47,6 +47,29 @@ CREATE TABLE IF NOT EXISTS live_sessions (
   temp_path TEXT,
   status TEXT NOT NULL,
   error TEXT,
+  transcribe_status TEXT,
+  cloud_upload_status TEXT,
+  cloud_file_id TEXT,
+  cloud_relative_path TEXT,
+  FOREIGN KEY (creator_id) REFERENCES creators(id)
+);
+
+CREATE TABLE IF NOT EXISTS cloud_uploads (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  creator_id TEXT NOT NULL,
+  platform TEXT NOT NULL,
+  file_name TEXT NOT NULL,
+  file_kind TEXT NOT NULL,
+  local_path TEXT,
+  cloud_file_id TEXT,
+  cloud_relative_path TEXT,
+  size INTEGER,
+  pre_hash TEXT,
+  upload_status TEXT NOT NULL,
+  uploaded_at TEXT,
+  error TEXT,
+  FOREIGN KEY (session_id) REFERENCES live_sessions(id),
   FOREIGN KEY (creator_id) REFERENCES creators(id)
 );
 
@@ -151,12 +174,29 @@ def _migrate_creators(conn: sqlite3.Connection) -> None:
     _migrate_creators_platform_sec_uid_unique(conn)
 
 
+_LIVE_SESSION_COLUMNS = (
+    ("transcribe_status", "TEXT"),
+    ("cloud_upload_status", "TEXT"),
+    ("cloud_file_id", "TEXT"),
+    ("cloud_relative_path", "TEXT"),
+)
+
+
+def _migrate_live_sessions(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(live_sessions)").fetchall()}
+    for name, col_type in _LIVE_SESSION_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.executescript(SCHEMA)
     _migrate_creators(conn)
+    _migrate_live_sessions(conn)
     from media2text.core.archive.schema import migrate_archive
 
     migrate_archive(conn)
