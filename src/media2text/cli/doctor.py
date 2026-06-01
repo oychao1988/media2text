@@ -11,6 +11,7 @@ from media2text.core.exit_codes import EXIT_GENERAL, EXIT_OK
 from media2text.core.json_out import emit
 from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
 from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
+from media2text.core.cloud.aliyundrive import load_token
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 
@@ -84,11 +85,34 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
             }
         )
 
+    ad = cfg.aliyundrive
+    if ad.enabled:
+        token_path = cfg.aliyundrive_token_path()
+        aliyundrive_ok = False
+        if token_path.is_file():
+            try:
+                aliyundrive_ok = bool(load_token(token_path).get("refresh_token"))
+            except (OSError, ValueError):
+                aliyundrive_ok = False
+        checks.append(
+            {
+                "name": "session_aliyundrive",
+                "ok": aliyundrive_ok,
+                "auth_required": not aliyundrive_ok,
+                "relevant": True,
+                "hint": "media2text auth login --platform aliyundrive",
+            }
+        )
+
     ok = all(c["ok"] for c in checks if c["name"] not in ("playwright", "playwright_browser"))
     if has_douyin or not has_bilibili:
         ok = ok and douyin_session_ok
     if has_bilibili:
         ok = ok and bilibili_session_ok
+    if ad.enabled:
+        ok = ok and any(
+            c["ok"] for c in checks if c["name"] == "session_aliyundrive"
+        )
     emit(
         {
             "ok": ok,

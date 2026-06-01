@@ -8,6 +8,7 @@ from subprocess import Popen
 
 import structlog
 
+from media2text.core.cloud.live_upload import maybe_upload_live_to_aliyundrive
 from media2text.core.config import AppConfig
 from media2text.core.ffmpeg import record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.manifest import refresh_manifest
@@ -277,11 +278,24 @@ class LiveWatcher:
         if transcribe_meta.get("transcribed"):
             refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
 
+        upload_meta = maybe_upload_live_to_aliyundrive(
+            self._cfg,
+            self._conn,
+            session_id=session_id,
+            mp4=mp4,
+            creator=creator,
+            transcribe_meta=transcribe_meta,
+            notify=self._notify,
+        )
+        if upload_meta:
+            refresh_manifest(self._conn, sec_uid=creator.sec_uid, workspace=self._ws)
+
         return {
             "session_id": session_id,
             "path": str(mp4),
             "creator_id": creator.id,
             **transcribe_meta,
+            **upload_meta,
         }
 
     def _maybe_transcribe_completed(self, mp4: Path, *, creator_label: str = "") -> dict:

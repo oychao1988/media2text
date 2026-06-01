@@ -27,11 +27,12 @@ media2text 需要将直播/作品录制文件备份到用户个人阿里云盘�
 - [ ] `pyproject.toml` 可选 extra：`aliyundrive = ["aligo>=6.2.8"]`；`from_aligo()` 桥接可选
 - [ ] `docs/issues/` 本规格与索引更新；`CLAUDE.md` 增加登录/冒烟命令摘录
 
-### 阶段 B — 后续工单（本 PR 不做）
+### 阶段 B — 后续工单（见 [aliyundrive-live-upload.md](./aliyundrive-live-upload.md)）
 
-- [ ] `config.yaml`：`live.upload_on_complete` 或独立 `aliyundrive` 配置块（目标目录 `parent_file_id`、最小剩余空间）
-- [ ] 抖音/B 站 `_finalize_recording` 完成后可选上传 MP4
-- [ ] `media2text auth login --platform aliyundrive` CLI 与 `--json` 输出
+- [ ] `aliyundrive` 配置块；`creator_key=nickname`；默认 `delete_local_after_upload: true`
+- [ ] 转写完成后上传 MP4 + sidecar；空间不足滚动清理（仅已完整备份）
+- [ ] 重名：同内容覆盖、不同内容重命名；大文件整传失败后分块
+- [ ] 抖音/B 站 `_finalize_recording` 挂钩；`auth login --platform aliyundrive`
 
 ## 验证命令
 

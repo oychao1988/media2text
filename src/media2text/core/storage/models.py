@@ -58,3 +58,25 @@ class LiveSessionRow:
     temp_path: str | None
     status: str
     error: str | None
+    transcribe_status: str | None = None
+    cloud_upload_status: str | None = None
+    cloud_file_id: str | None = None
+    cloud_relative_path: str | None = None
+
+
+@dataclass
+class CloudUploadRow:
+    id: str
+    session_id: str
+    creator_id: str
+    platform: str
+    file_name: str
+    file_kind: str
+    local_path: str | None
+    cloud_file_id: str | None
+    cloud_relative_path: str | None
+    size: int | None
+    pre_hash: str | None
+    upload_status: str
+    uploaded_at: str | None
+    error: str | None

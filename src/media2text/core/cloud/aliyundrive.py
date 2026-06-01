@@ -8,15 +8,24 @@ Uses httpx only (no aligo runtime dependency). Optional aligo bridge: ``from_ali
 
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import httpx
+
+from media2text.core.cloud.paths import file_pre_hash, sanitize_path_segment
+
+__all__ = [
+    "AccountCapacity",
+    "AliyunDriveClient",
+    "compute_pre_hash",
+    "decide_duplicate_action",
+    "sanitize_path_segment",
+]
 
 # --- aligo Config.py ---
 API_HOST = "https://api.aliyundrive.com"
@@ -52,6 +61,21 @@ DOWNLOAD_REFERER = "https://www.aliyundrive.com/"
 
 DEFAULT_TOKEN_REL = Path("sessions/aliyundrive.token.json")
 
+RETRY_AS_CHUNKED_MARKERS = (
+    "part",
+    "PartNumber",
+    "multipart",
+    "chunk",
+    "413",
+    "too large",
+    "body size",
+    "EntityTooLarge",
+    "part_info_list",
+    "upload part",
+)
+
+DuplicateAction = Literal["new", "overwrite", "auto_rename"]
+
 log = logging.getLogger(__name__)
 
 
@@ -77,6 +101,28 @@ class AccountCapacity:
         return self.used / self.total * 100
 
 
+def compute_pre_hash(path: Path) -> str:
+    """Alias for :func:`file_pre_hash` (backward compatible)."""
+    return file_pre_hash(path)
+
+
+def decide_duplicate_action(
+    *,
+    local_size: int,
+    local_pre_hash: str,
+    remote_file: dict[str, Any] | None,
+) -> DuplicateAction:
+    if not remote_file:
+        return "new"
+    remote_size = int(remote_file.get("size") or 0)
+    remote_pre = str(remote_file.get("pre_hash") or remote_file.get("content_hash") or "")
+    if remote_size == local_size and remote_pre and remote_pre == local_pre_hash:
+        return "overwrite"
+    if remote_size == local_size and not remote_pre:
+        return "overwrite"
+    return "auto_rename"
+
+
 def default_token_path(workspace: Path) -> Path:
     return workspace / DEFAULT_TOKEN_REL
 
@@ -96,6 +142,11 @@ def save_token(token: dict[str, Any], path: Path) -> None:
 def _part_info_list(file_size: int, *, chunk_size: int = UPLOAD_CHUNK_SIZE) -> list[dict[str, int]]:
     count = max(1, math.ceil(file_size / chunk_size))
     return [{"part_number": i + 1} for i in range(count)]
+
+
+def _is_chunked_retry_error(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(marker.lower() in msg for marker in RETRY_AS_CHUNKED_MARKERS)
 
 
 class AliyunDriveClient:
@@ -183,6 +234,38 @@ class AliyunDriveClient:
         )
         return listing.get("items") or []
 
+    def find_child_in_parent(
+        self,
+        name: str,
+        *,
+        parent_file_id: str,
+        drive_id: str | None = None,
+        child_type: str = "file",
+    ) -> dict[str, Any] | None:
+        for item in self.list_files(parent_file_id=parent_file_id, limit=200, drive_id=drive_id):
+            if item.get("name") == name and item.get("type") == child_type:
+                return item
+        matches = self.search_by_name(name, limit=20, drive_id=drive_id)
+        for item in matches:
+            if (
+                item.get("name") == name
+                and item.get("parent_file_id") == parent_file_id
+                and item.get("type") == child_type
+            ):
+                return item
+        return None
+
+    def find_exact_name_in_parent(
+        self,
+        name: str,
+        *,
+        parent_file_id: str,
+        drive_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        return self.find_child_in_parent(
+            name, parent_file_id=parent_file_id, drive_id=drive_id, child_type="file"
+        )
+
     def search_by_name(
         self,
         name_match: str,
@@ -242,6 +325,49 @@ class AliyunDriveClient:
     def trash(self, file_id: str, *, drive_id: str | None = None) -> dict[str, Any]:
         return self.post(V2_RECYCLEBIN_TRASH, {"drive_id": drive_id or self.drive_id, "file_id": file_id})
 
+    def create_folder(
+        self,
+        name: str,
+        *,
+        parent_file_id: str = "root",
+        drive_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.post(
+            ADRIVE_V2_FILE_CREATEWITHFOLDERS,
+            {
+                "drive_id": drive_id or self.drive_id,
+                "parent_file_id": parent_file_id,
+                "name": name,
+                "type": "folder",
+                "check_name_mode": "refuse",
+            },
+        )
+
+    def ensure_folder_path(
+        self,
+        segments: list[str],
+        *,
+        parent_file_id: str = "root",
+        drive_id: str | None = None,
+    ) -> str:
+        """Create missing folders; return file_id of deepest folder."""
+        current = parent_file_id
+        did = drive_id or self.drive_id
+        for segment in segments:
+            if not segment:
+                continue
+            items = self.list_files(parent_file_id=current, limit=200, drive_id=did)
+            match = next(
+                (i for i in items if i.get("type") == "folder" and i.get("name") == segment),
+                None,
+            )
+            if match:
+                current = str(match["file_id"])
+                continue
+            created = self.create_folder(segment, parent_file_id=current, drive_id=did)
+            current = str(created["file_id"])
+        return current
+
     def upload_file(
         self,
         local_path: Path,
@@ -251,12 +377,78 @@ class AliyunDriveClient:
         drive_id: str | None = None,
         check_name_mode: str = "auto_rename",
     ) -> dict[str, Any]:
-        """Upload local file (aligo-style createWithFolders + multipart PUT)."""
-        data = local_path.read_bytes()
-        size = len(data)
+        """Upload local file (streaming; single-part first, chunked retry on limit errors)."""
+        return self.upload_file_streaming(
+            local_path,
+            parent_file_id=parent_file_id,
+            remote_name=remote_name,
+            drive_id=drive_id,
+            check_name_mode=check_name_mode,
+        )
+
+    def upload_file_streaming(
+        self,
+        local_path: Path,
+        *,
+        parent_file_id: str = "root",
+        remote_name: str | None = None,
+        drive_id: str | None = None,
+        check_name_mode: str = "auto_rename",
+        chunk_size: int = UPLOAD_CHUNK_SIZE,
+        replace_file_id: str | None = None,
+    ) -> dict[str, Any]:
+        size = local_path.stat().st_size
         name = remote_name or local_path.name
+        pre_hash = compute_pre_hash(local_path) if size > 1024 else None
+
+        if replace_file_id:
+            self.trash(replace_file_id, drive_id=drive_id)
+            check_name_mode = "refuse"
+
+        try:
+            return self._upload_streaming_once(
+                local_path,
+                size=size,
+                name=name,
+                pre_hash=pre_hash,
+                parent_file_id=parent_file_id,
+                drive_id=drive_id,
+                check_name_mode=check_name_mode,
+                chunk_size=size if size <= chunk_size else chunk_size,
+                single_part=(size <= chunk_size),
+            )
+        except RuntimeError as exc:
+            if size <= chunk_size or not _is_chunked_retry_error(exc):
+                raise
+            log.info("aliyundrive_upload_retry_chunked", name=name, size=size, error=str(exc)[:200])
+            return self._upload_streaming_once(
+                local_path,
+                size=size,
+                name=name,
+                pre_hash=pre_hash,
+                parent_file_id=parent_file_id,
+                drive_id=drive_id,
+                check_name_mode=check_name_mode,
+                chunk_size=chunk_size,
+                single_part=False,
+            )
+
+    def _upload_streaming_once(
+        self,
+        local_path: Path,
+        *,
+        size: int,
+        name: str,
+        pre_hash: str | None,
+        parent_file_id: str,
+        drive_id: str | None,
+        check_name_mode: str,
+        chunk_size: int,
+        single_part: bool,
+    ) -> dict[str, Any]:
         did = drive_id or self.drive_id
-        parts = _part_info_list(size)
+        effective_chunk = size if single_part else chunk_size
+        parts = _part_info_list(size, chunk_size=effective_chunk)
 
         create_body: dict[str, Any] = {
             "drive_id": did,
@@ -267,8 +459,8 @@ class AliyunDriveClient:
             "check_name_mode": check_name_mode,
             "part_info_list": parts,
         }
-        if size > 1024:
-            create_body["pre_hash"] = hashlib.sha1(data[:1024]).hexdigest()
+        if pre_hash:
+            create_body["pre_hash"] = pre_hash
 
         created = self.post(ADRIVE_V2_FILE_CREATEWITHFOLDERS, create_body)
         if created.get("rapid_upload"):
@@ -289,13 +481,15 @@ class AliyunDriveClient:
             )
             upload_parts = parts_resp.get("part_info_list") or []
 
-        for part in upload_parts:
-            num = int(part["part_number"])
-            start = (num - 1) * UPLOAD_CHUNK_SIZE
-            chunk = data[start : start + UPLOAD_CHUNK_SIZE]
-            self._put_part(str(part["upload_url"]), chunk)
+        with local_path.open("rb") as fh:
+            for part in upload_parts:
+                num = int(part["part_number"])
+                start = (num - 1) * effective_chunk
+                fh.seek(start)
+                chunk = fh.read(effective_chunk)
+                self._put_part(str(part["upload_url"]), chunk)
 
-        return self.post(
+        completed = self.post(
             V2_FILE_COMPLETE,
             {
                 "drive_id": did,
@@ -304,10 +498,14 @@ class AliyunDriveClient:
                 "part_info_list": upload_parts,
             },
         )
+        remote = self.get_file(file_id, drive_id=did)
+        remote_size = int(remote.get("size") or 0)
+        if remote_size != size:
+            raise RuntimeError(f"upload size mismatch: local={size} remote={remote_size}")
+        return completed
 
     @staticmethod
     def _put_part(upload_url: str, chunk: bytes) -> None:
-        # OSS presigned URL: no API Authorization / x-canary (see aligo issue patterns).
         with httpx.Client(timeout=120.0) as put_client:
             resp = put_client.put(upload_url, content=chunk)
         if resp.status_code not in (200, 201, 409):

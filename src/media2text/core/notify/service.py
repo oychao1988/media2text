@@ -17,6 +17,10 @@ _KIND_LABELS: dict[EventKind, str] = {
     EventKind.NEW_AWEME: "新作品",
     EventKind.RECORDING_COMPLETED: "录制完成",
     EventKind.TRANSCRIBE_COMPLETED: "转录完成",
+    EventKind.UPLOAD_COMPLETED: "云备份完成",
+    EventKind.UPLOAD_FAILED: "云备份失败",
+    EventKind.UPLOAD_SKIPPED: "云备份跳过",
+    EventKind.UPLOAD_CLEANUP: "云盘清理",
 }
 
 
