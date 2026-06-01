@@ -2,7 +2,7 @@
 
 GitHub: [#65](https://github.com/oychao1988/media2text/issues/65)  
 分支: `issue-65-aliyundrive-cloud-foundation`  
-PR: （创建后填写）
+PR: [#66](https://github.com/oychao1988/media2text/pull/66)
 
 ## 背景
 
