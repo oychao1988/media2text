@@ -104,9 +104,17 @@ python scripts/aliyundrive_login.py --mode qr
 python scripts/aliyundrive_api_test.py
 ```
 
-账户剩余空间用 `getUserCapacityInfo`，勿用 `drive/get` 单盘 `used_size`。自动上传进直播流水线见 Issue 阶段 B。
+账户剩余空间用 `getUserCapacityInfo`，勿用 `drive/get` 单盘 `used_size`。
 
-监控提醒（`notify.enabled: true`）：开播 / 新作品 / 录制完成 / 转录完成 → 系统提示音 + 飞书 webhook（`NOTIFY_FEISHU_WEBHOOK_URL`）。
+**直播云备份（阶段 B，`aliyundrive.enabled: true`）**
+
+- 登录：`media2text auth login --platform aliyundrive`（或 `python scripts/aliyundrive_login.py --mode qr`）
+- 收尾顺序：remux → 录制完成通知 →（可选）转写 → 云备份 MP4 + sidecar → 默认删本地
+- 云路径：`{root_folder}/{platform}/{nickname}/live/{timestamp}.mp4`（nickname 来自 profile `display_name`，上传前强制 sync）
+- 空间不足：`on_insufficient_space: rolling_cleanup` 按 `cloud_uploads.uploaded_at` 删最旧已完整备份；飞书 `upload_cleanup` 列举文件名
+- 关键配置：`upload_transcripts`、`delete_local_after_upload`（默认 true）、`min_free_bytes`、`notify.events.upload_*`
+
+监控提醒（`notify.enabled: true`）：开播 / 新作品 / 录制完成 / 转录完成 / 云备份 → 系统提示音 + 飞书 webhook（`NOTIFY_FEISHU_WEBHOOK_URL`）。
 
 ### 5. 查看已登记博主
 

@@ -1,5 +1,8 @@
+from pathlib import Path
+
 import typer
 
+from media2text.core.cloud.aliyundrive import load_token
 from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.platform.bilibili.auth import (
@@ -18,9 +21,33 @@ app = typer.Typer(help="Authentication")
 
 def _normalize_platform(platform: str) -> str:
     key = platform.strip().lower()
-    if key not in ("douyin", "bilibili"):
-        raise typer.BadParameter("platform must be douyin or bilibili")
+    if key not in ("douyin", "bilibili", "aliyundrive"):
+        raise typer.BadParameter("platform must be douyin, bilibili, or aliyundrive")
     return key
+
+
+def _aliyundrive_login(cfg: AppConfig) -> Path:
+    import sys
+    from pathlib import Path as P
+
+    root = P(__file__).resolve().parents[3]
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    from scripts.aliyundrive_login import login_with_profile
+
+    ws = cfg.ensure_workspace()
+    return login_with_profile(workspace=ws, headless=False, mode="auto", use_chrome=False)
+
+
+def _aliyundrive_token_exists(cfg: AppConfig) -> bool:
+    path = cfg.aliyundrive_token_path()
+    if not path.is_file():
+        return False
+    try:
+        token = load_token(path)
+    except (OSError, ValueError):
+        return False
+    return bool(token.get("refresh_token"))
 
 
 @app.command("login")
@@ -31,7 +58,9 @@ def login(
     key = _normalize_platform(platform)
     cfg = AppConfig.load()
     ws = cfg.ensure_workspace()
-    if key == "bilibili":
+    if key == "aliyundrive":
+        path = _aliyundrive_login(cfg)
+    elif key == "bilibili":
         path = bilibili_login(ws, headless=False)
     else:
         path = douyin_login(ws, headless=False)
@@ -54,7 +83,10 @@ def status(
     key = _normalize_platform(platform)
     cfg = AppConfig.load()
     ws = cfg.ensure_workspace()
-    if key == "bilibili":
+    if key == "aliyundrive":
+        exists = _aliyundrive_token_exists(cfg)
+        session = cfg.aliyundrive_token_path()
+    elif key == "bilibili":
         exists = bilibili_session_exists(ws)
         session = bilibili_session_path(ws)
     else:
