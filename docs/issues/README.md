@@ -24,4 +24,10 @@
 
 **已交付（勿重复开单）**：[`creator-monitor-and-profile.md`](./creator-monitor-and-profile.md) 中 P1–P3 已在代码实现并勾选完成。
 
+### 阿里云盘备份（进行中）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#65](https://github.com/oychao1988/media2text/issues/65) | [#66](https://github.com/oychao1988/media2text/pull/66) | [aliyundrive-cloud-foundation.md](./aliyundrive-cloud-foundation.md) | `issue-65-aliyundrive-cloud-foundation` |
+
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
