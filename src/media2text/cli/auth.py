@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import typer
@@ -26,7 +27,19 @@ def _normalize_platform(platform: str) -> str:
     return key
 
 
-def _aliyundrive_login(cfg: AppConfig) -> Path:
+def _aliyundrive_clear_session(cfg: AppConfig) -> None:
+    ws = cfg.ensure_workspace()
+    for name in ("aliyundrive.token.json", "aliyundrive.json"):
+        path = ws / "sessions" / name
+        path.unlink(missing_ok=True)
+    profile = ws / ".playwright" / "aliyundrive-profile"
+    if profile.is_dir():
+        import shutil
+
+        shutil.rmtree(profile)
+
+
+def _aliyundrive_login(cfg: AppConfig, *, force: bool = False) -> Path:
     import sys
     from pathlib import Path as P
 
@@ -36,7 +49,24 @@ def _aliyundrive_login(cfg: AppConfig) -> Path:
     from scripts.aliyundrive_login import login_with_profile
 
     ws = cfg.ensure_workspace()
-    return login_with_profile(workspace=ws, headless=False, mode="auto", use_chrome=False)
+    if force:
+        _aliyundrive_clear_session(cfg)
+    mode = os.environ.get("ALIYUN_DRIVE_LOGIN_MODE", "auto").strip().lower() or "auto"
+    phone = os.environ.get("ALIYUN_DRIVE_PHONE", "").strip()
+    password = os.environ.get("ALIYUN_DRIVE_PASSWORD", "").strip()
+    if mode == "auto" and phone and password:
+        mode = "password"
+    use_chrome = mode == "password" or os.environ.get(
+        "ALIYUN_DRIVE_USE_CHROME", ""
+    ).strip().lower() in ("1", "true", "yes")
+    return login_with_profile(
+        workspace=ws,
+        headless=False,
+        mode=mode,
+        use_chrome=use_chrome,
+        phone=phone or None,
+        password=password or None,
+    )
 
 
 def _aliyundrive_token_exists(cfg: AppConfig) -> bool:
@@ -53,13 +83,18 @@ def _aliyundrive_token_exists(cfg: AppConfig) -> bool:
 @app.command("login")
 def login(
     platform: str = typer.Option("douyin", "--platform"),
+    force: bool = typer.Option(
+        False,
+        "--force",
+        help="Aliyun Drive: clear saved browser profile and token before login",
+    ),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     key = _normalize_platform(platform)
     cfg = AppConfig.load()
     ws = cfg.ensure_workspace()
     if key == "aliyundrive":
-        path = _aliyundrive_login(cfg)
+        path = _aliyundrive_login(cfg, force=force)
     elif key == "bilibili":
         path = bilibili_login(ws, headless=False)
     else:

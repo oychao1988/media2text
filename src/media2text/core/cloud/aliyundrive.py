@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
@@ -205,12 +206,23 @@ class AliyunDriveClient:
         return self._token
 
     def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
-        resp = self._http.post(f"{API_HOST}{path}", json=body or {})
-        if resp.status_code >= 400:
-            raise RuntimeError(f"{path} failed {resp.status_code}: {resp.text[:500]}")
-        if not resp.content.strip():
-            return {"ok": True, "status_code": resp.status_code}
-        return resp.json()
+        last_error: RuntimeError | None = None
+        for attempt in range(4):
+            resp = self._http.post(f"{API_HOST}{path}", json=body or {})
+            if resp.status_code == 429:
+                time.sleep(min(2 ** attempt * 3, 30))
+                last_error = RuntimeError(
+                    f"{path} failed {resp.status_code}: {resp.text[:500]}"
+                )
+                continue
+            if resp.status_code >= 400:
+                raise RuntimeError(f"{path} failed {resp.status_code}: {resp.text[:500]}")
+            if not resp.content.strip():
+                return {"ok": True, "status_code": resp.status_code}
+            return resp.json()
+        if last_error:
+            raise last_error
+        raise RuntimeError(f"{path} failed after retries")
 
     def get_user(self) -> dict[str, Any]:
         return self.post(V2_USER_GET, {})
@@ -420,7 +432,7 @@ class AliyunDriveClient:
         except RuntimeError as exc:
             if size <= chunk_size or not _is_chunked_retry_error(exc):
                 raise
-            log.info("aliyundrive_upload_retry_chunked", name=name, size=size, error=str(exc)[:200])
+            log.info("aliyundrive_upload_retry_chunked", file_name=name, size=size, error=str(exc)[:200])
             return self._upload_streaming_once(
                 local_path,
                 size=size,
@@ -462,7 +474,64 @@ class AliyunDriveClient:
         if pre_hash:
             create_body["pre_hash"] = pre_hash
 
-        created = self.post(ADRIVE_V2_FILE_CREATEWITHFOLDERS, create_body)
+        try:
+            created = self.post(ADRIVE_V2_FILE_CREATEWITHFOLDERS, create_body)
+        except RuntimeError as exc:
+            if "PreHashMatched" not in str(exc):
+                raise
+            time.sleep(1)
+            for item in self.search_by_name(name, limit=20, drive_id=did):
+                if item.get("name") != name or item.get("type") != "file":
+                    continue
+                if int(item.get("size") or 0) not in (0, size):
+                    continue
+                if item.get("parent_file_id") == parent_file_id:
+                    log.info(
+                        "aliyundrive_rapid_upload_prehash file_name=%s file_id=%s",
+                        name,
+                        item["file_id"],
+                    )
+                    return {"file_id": item["file_id"], "rapid_upload": True}
+            for item in self.search_by_name(name, limit=20, drive_id=did):
+                if (
+                    item.get("name") == name
+                    and item.get("type") == "file"
+                    and int(item.get("size") or 0) in (0, size)
+                ):
+                    log.info(
+                        "aliyundrive_rapid_upload_prehash_elsewhere file_name=%s file_id=%s parent_file_id=%s",
+                        name,
+                        item["file_id"],
+                        item.get("parent_file_id"),
+                    )
+                    return {"file_id": item["file_id"], "rapid_upload": True}
+            existing = self.find_exact_name_in_parent(
+                name, parent_file_id=parent_file_id, drive_id=did
+            )
+            if existing and int(existing.get("size") or 0) in (0, size):
+                log.info(
+                    "aliyundrive_rapid_upload_prehash_listed file_name=%s file_id=%s",
+                    name,
+                    existing["file_id"],
+                )
+                return {"file_id": existing["file_id"], "rapid_upload": True}
+            # PreHashMatched without resolvable file_id: skip pre_hash and upload bytes.
+            log.warning(
+                "aliyundrive_prehash_retry_without_prehash file_name=%s parent_file_id=%s",
+                name,
+                parent_file_id,
+            )
+            return self._upload_streaming_once(
+                local_path,
+                size=size,
+                name=name,
+                pre_hash=None,
+                parent_file_id=parent_file_id,
+                drive_id=did,
+                check_name_mode=check_name_mode,
+                chunk_size=chunk_size,
+                single_part=single_part,
+            )
         if created.get("rapid_upload"):
             return created
 

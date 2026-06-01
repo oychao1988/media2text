@@ -255,9 +255,14 @@ def login_with_profile(
         page.goto(SIGN_IN_URL, wait_until="domcontentloaded", timeout=60_000)
         page.wait_for_timeout(4000)
 
-        if page.url.startswith(DRIVE_URL_PREFIX):
+        if page.url.startswith(DRIVE_URL_PREFIX) and mode == "password":
+            print("[aliyundrive] clearing existing session for password re-login...")
+            context.clear_cookies()
+            page.goto(SIGN_IN_URL, wait_until="domcontentloaded", timeout=60_000)
+            page.wait_for_timeout(4000)
+        if page.url.startswith(DRIVE_URL_PREFIX) and mode != "password":
             print("[aliyundrive] profile already logged in")
-        else:
+        elif not page.url.startswith(DRIVE_URL_PREFIX):
             if mode == "auto":
                 mode = "desktop" if _has_desktop_quick_login(page) else "qr"
 
@@ -296,6 +301,8 @@ def login_with_profile(
                     _wait_for_drive(page)
             else:
                 raise ValueError(f"unknown mode {mode!r}")
+        else:
+            print("[aliyundrive] profile already logged in")
 
         page.wait_for_timeout(1500)
         path = _save_session(context, page, workspace)
