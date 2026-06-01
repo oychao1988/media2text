@@ -17,13 +17,14 @@ from typing import Any, Literal
 
 import httpx
 
-from media2text.core.cloud.paths import file_pre_hash
+from media2text.core.cloud.paths import file_pre_hash, sanitize_path_segment
 
 __all__ = [
     "AccountCapacity",
     "AliyunDriveClient",
     "compute_pre_hash",
     "decide_duplicate_action",
+    "sanitize_path_segment",
 ]
 
 # --- aligo Config.py ---
