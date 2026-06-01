@@ -3,6 +3,7 @@ import typer
 from media2text import __version__
 from media2text.cli import archive as archive_cli
 from media2text.cli import auth as auth_cli
+from media2text.cli import cloud as cloud_cli
 from media2text.cli import compliance as compliance_cli
 from media2text.cli import creator as creator_cli
 from media2text.cli import download as download_cli
@@ -16,6 +17,7 @@ from media2text.core.logging import configure_logging
 app = typer.Typer(no_args_is_help=True, help="Douyin media capture and transcribe CLI")
 app.add_typer(archive_cli.app, name="archive")
 app.add_typer(auth_cli.app, name="auth")
+app.add_typer(cloud_cli.app, name="cloud")
 app.add_typer(compliance_cli.app, name="compliance")
 app.add_typer(creator_cli.app, name="creator")
 app.add_typer(download_cli.app, name="download")
