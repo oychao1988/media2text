@@ -1,0 +1,465 @@
+from __future__ import annotations
+
+import os
+import time
+from datetime import datetime, timezone
+from pathlib import Path
+from subprocess import Popen
+
+import structlog
+
+from media2text.core.config import AppConfig
+from media2text.core.errors import AuthRequired, PlatformChanged
+from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
+from media2text.core.live.protocol import LivePlatformAdapter
+from media2text.core.manifest import refresh_manifest
+from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.labels import creator_label
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+
+log = structlog.get_logger()
+FFMPEG_STARTUP_GRACE_SEC = 2
+
+
+class LiveRecordingCore:
+    def __init__(
+        self,
+        cfg: AppConfig,
+        *,
+        conn,
+        adapter: LivePlatformAdapter,
+        platform: str,
+        processes: dict[str, Popen],
+        notify: NotifyService,
+    ) -> None:
+        self._cfg = cfg
+        self._ws = cfg.ensure_workspace()
+        self._conn = conn
+        self._creators = CreatorRepo(conn)
+        self._sessions = LiveSessionRepo(conn)
+        self._jobs = PostProcessJobRepo(conn)
+        self._adapter = adapter
+        self._platform = platform
+        self._processes = processes
+        self._notify = notify
+
+    def scan_and_start(
+        self, *, creator_id: str | None = None
+    ) -> tuple[list[dict], set[str], list[dict], bool, bool]:
+        targets = [
+            c for c in self._creators.list_monitored() if c.platform == self._platform
+        ]
+        if creator_id:
+            row = self._creators.get(creator_id)
+            targets = [row] if row and row.platform == self._platform else []
+
+        started: list[dict] = []
+        started_session_ids: set[str] = set()
+        errors: list[dict] = []
+        auth_required = False
+        platform_changed = False
+
+        for creator in targets:
+            if self._sessions.get_active_for_creator(creator.id):
+                continue
+            try:
+                live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            except AuthRequired as exc:
+                auth_required = True
+                errors.append(
+                    {"creator_id": creator.id, "error": str(exc), "auth_required": True}
+                )
+                continue
+            except PlatformChanged as exc:
+                platform_changed = True
+                errors.append(
+                    {
+                        "creator_id": creator.id,
+                        "error": str(exc),
+                        "platform_changed": True,
+                    }
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "live_status_check_failed",
+                    creator_id=creator.id,
+                    error=str(exc),
+                )
+                errors.append({"creator_id": creator.id, "error": str(exc)})
+                continue
+
+            if not live_info.is_live or not live_info.room_id:
+                continue
+            room_id = live_info.room_id
+            stream_url = live_info.stream_flv_url
+            if not stream_url:
+                try:
+                    stream_url = self._adapter.resolve_stream_url(
+                        room_id=room_id,
+                        sec_uid=creator.sec_uid,
+                    )
+                except AuthRequired as exc:
+                    auth_required = True
+                    errors.append(
+                        {"creator_id": creator.id, "error": str(exc), "auth_required": True}
+                    )
+                    continue
+                except PlatformChanged as exc:
+                    platform_changed = True
+                    errors.append(
+                        {
+                            "creator_id": creator.id,
+                            "error": str(exc),
+                            "platform_changed": True,
+                        }
+                    )
+                    continue
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "live_stream_url_resolve_failed",
+                        creator_id=creator.id,
+                        room_id=room_id,
+                        error=str(exc),
+                    )
+                    errors.append({"creator_id": creator.id, "error": str(exc)})
+                    continue
+
+            meta = self._start_recording(
+                creator.id, creator.sec_uid, room_id, stream_url
+            )
+            started.append(meta)
+            started_session_ids.add(meta["session_id"])
+
+        return started, started_session_ids, errors, auth_required, platform_changed
+
+    def poll_active_recordings(
+        self, *, skip_session_ids: set[str] | None = None
+    ) -> list[dict]:
+        skip = skip_session_ids or set()
+        finalized: list[dict] = []
+        min_offline = self._cfg.live.min_recording_sec_before_offline_end
+        confirm_polls = self._cfg.live.offline_confirm_polls
+
+        for row in self._sessions.list_active():
+            if row.id in skip:
+                continue
+            if row.status != "recording" or row.ffmpeg_pid is None:
+                continue
+            creator = self._creators.get(row.creator_id)
+            if not creator or creator.platform != self._platform:
+                continue
+
+            pid = row.ffmpeg_pid
+            if not self._process_alive(pid):
+                meta = self._handle_ffmpeg_exit(row, creator)
+                if meta:
+                    finalized.append(meta)
+                continue
+
+            try:
+                still_live = self._adapter.get_live_room(
+                    sec_uid=creator.sec_uid
+                ).is_live
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "live_status_check_failed",
+                    creator_id=creator.id,
+                    error=str(exc),
+                )
+                continue
+
+            if still_live:
+                self._sessions.reset_offline_streak(row.id)
+                continue
+
+            if self._recording_age_sec(row.started_at) < min_offline:
+                continue
+
+            streak = self._sessions.increment_offline_streak(row.id)
+            if streak < confirm_polls:
+                continue
+
+            meta = self._finalize_recording(row.id, row.temp_path, pid)
+            if meta:
+                finalized.append(meta)
+
+        return finalized
+
+    def _handle_ffmpeg_exit(self, row, creator) -> dict | None:
+        session_id = row.id
+        temp_path = row.temp_path
+        pid = row.ffmpeg_pid
+        if pid is None:
+            return self._finalize_recording(session_id, temp_path, 0)
+
+        if self._cfg.live.ffmpeg_exit_recheck:
+            try:
+                still_live = self._adapter.get_live_room(
+                    sec_uid=creator.sec_uid
+                ).is_live
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "live_ffmpeg_exit_recheck_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+                still_live = False
+        else:
+            still_live = False
+
+        attempts = row.reconnect_attempts or 0
+        if (
+            still_live
+            and attempts < self._cfg.live.max_reconnect_attempts
+            and temp_path
+        ):
+            return self._reconnect_segment(session_id, creator, temp_path, pid)
+
+        return self._finalize_recording(session_id, temp_path, pid)
+
+    def _reconnect_segment(
+        self,
+        session_id: str,
+        creator,
+        temp_path: str,
+        old_pid: int,
+    ) -> None:
+        proc_old = self._processes.pop(session_id, None)
+        if proc_old is not None:
+            stop_process(proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+        elif self._process_alive(old_pid):
+            os.kill(old_pid, 15)
+
+        self._sessions.append_segment_path(session_id, temp_path)
+        attempt = self._sessions.increment_reconnect_attempts(session_id)
+
+        try:
+            live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            room_id = live_info.room_id
+            stream_url = live_info.stream_flv_url
+            if not stream_url and room_id:
+                stream_url = self._adapter.resolve_stream_url(
+                    room_id=room_id,
+                    sec_uid=creator.sec_uid,
+                )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "live_reconnect_stream_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+            self._finalize_recording(session_id, temp_path, old_pid)
+            return None
+
+        if not stream_url:
+            self._finalize_recording(session_id, temp_path, old_pid)
+            return None
+
+        live_dir = self._ws / "creators" / creator.sec_uid / "live"
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        new_temp = live_dir / f"{stamp}_r{attempt}.flv"
+        new_proc = record_stream_copy(
+            ffmpeg=self._cfg.live.ffmpeg_path,
+            stream_url=stream_url,
+            output_path=new_temp,
+        )
+        self._sessions.update_recording_state(
+            session_id,
+            ffmpeg_pid=new_proc.pid,
+            temp_path=str(new_temp),
+        )
+        self._processes[session_id] = new_proc
+        time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+        log.info(
+            "live_recording_reconnected",
+            session_id=session_id,
+            attempt=attempt,
+            temp_path=str(new_temp),
+        )
+        return None
+
+    def _start_recording(
+        self,
+        creator_id: str,
+        sec_uid: str,
+        room_id: str | None,
+        stream_url: str,
+    ) -> dict:
+        live_dir = self._ws / "creators" / sec_uid / "live"
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        temp_path = live_dir / f"{stamp}.flv"
+        proc = record_stream_copy(
+            ffmpeg=self._cfg.live.ffmpeg_path,
+            stream_url=stream_url,
+            output_path=temp_path,
+        )
+        session_id = self._sessions.create(
+            creator_id=creator_id,
+            room_id=room_id,
+            temp_path=str(temp_path),
+            ffmpeg_pid=proc.pid,
+        )
+        self._processes[session_id] = proc
+        time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+        exit_code = proc.poll()
+        if exit_code is not None:
+            err_tail = ""
+            if proc.stderr is not None:
+                err_tail = proc.stderr.read().decode(errors="replace")[-500:]
+            self._sessions.update_status(
+                session_id,
+                status="failed",
+                error=f"ffmpeg_exited_early:{exit_code}:{err_tail}",
+                ended=True,
+            )
+            self._processes.pop(session_id, None)
+            log.error(
+                "live_recording_ffmpeg_died",
+                session_id=session_id,
+                exit_code=exit_code,
+            )
+            return {
+                "session_id": session_id,
+                "temp_path": str(temp_path),
+                "pid": proc.pid,
+            }
+
+        log.info(
+            "live_recording_started", session_id=session_id, temp_path=str(temp_path)
+        )
+        creator = self._creators.get(creator_id)
+        if creator:
+            label = creator_label(creator)
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.LIVE_STARTED,
+                    title=label,
+                    body=(
+                        f"检测到开播，已开始录制\n"
+                        f"room_id: {room_id or '—'}\n"
+                        f"文件: {temp_path.name}"
+                    ),
+                )
+            )
+        return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
+
+    def _recording_age_sec(self, started_at: str) -> float:
+        try:
+            started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        except ValueError:
+            return self._cfg.live.min_recording_sec_before_offline_end
+        return (datetime.now(timezone.utc) - started).total_seconds()
+
+    def _process_alive(self, pid: int) -> bool:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+    def _finalize_recording(
+        self, session_id: str, temp_path: str | None, pid: int
+    ) -> dict | None:
+        proc = self._processes.pop(session_id, None)
+        if proc is not None:
+            stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+        elif pid and self._process_alive(pid):
+            os.kill(pid, 15)
+
+        if not temp_path:
+            self._sessions.update_status(
+                session_id, status="failed", error="missing temp_path", ended=True
+            )
+            return None
+
+        segments = [
+            Path(p) for p in self._sessions.list_segment_paths(session_id)
+        ]
+        current = Path(temp_path)
+        sources = segments + [current]
+        valid_sources = [p for p in sources if p.is_file() and p.stat().st_size > 0]
+        if not valid_sources:
+            self._sessions.update_status(
+                session_id,
+                status="failed",
+                error="empty_recording",
+                ended=True,
+            )
+            log.warning("live_recording_empty", session_id=session_id)
+            return None
+
+        mp4 = current.with_suffix(".mp4")
+        if len(valid_sources) == 1 and valid_sources[0] == current:
+            mp4 = current.with_suffix(".mp4")
+
+        self._sessions.update_status(session_id, status="remuxing")
+        try:
+            if len(valid_sources) == 1:
+                remux_to_mp4(
+                    ffmpeg=self._cfg.live.ffmpeg_path,
+                    src=valid_sources[0],
+                    dst=mp4,
+                )
+                if valid_sources[0] != mp4:
+                    valid_sources[0].unlink(missing_ok=True)
+            else:
+                concat_to_mp4(
+                    ffmpeg=self._cfg.live.ffmpeg_path,
+                    sources=valid_sources,
+                    dst=mp4,
+                )
+                for seg in valid_sources:
+                    if seg.suffix.lower() in (".flv", ".ts", ".mkv"):
+                        seg.unlink(missing_ok=True)
+            self._sessions.update_status(
+                session_id,
+                status="completed",
+                local_path=str(mp4),
+                ended=True,
+            )
+            self._sessions.clear_pid(session_id)
+            log.info("live_recording_completed", session_id=session_id, path=str(mp4))
+        except Exception as exc:  # noqa: BLE001
+            seg_list = ", ".join(str(p) for p in valid_sources)
+            self._sessions.update_status(
+                session_id,
+                status="failed",
+                error=f"{exc}; segments={seg_list}",
+                ended=True,
+            )
+            log.exception("live_recording_failed", session_id=session_id)
+            return None
+
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        creator = self._creators.get(session.creator_id)
+        if not creator:
+            return {"session_id": session_id, "path": str(mp4)}
+
+        job_id = self._jobs.enqueue(
+            session_id=session_id,
+            creator_id=creator.id,
+            mp4_path=str(mp4),
+        )
+        refresh_manifest(
+            self._conn,
+            sec_uid=creator.sec_uid,
+            workspace=self._ws,
+            platform=creator.platform,
+        )
+        label = creator_label(creator)
+        self._notify.emit(
+            NotifyEvent(
+                kind=EventKind.RECORDING_COMPLETED,
+                title=label,
+                body=f"直播录制已完成\n{mp4.name}\n{mp4.parent}",
+            )
+        )
+        return {
+            "session_id": session_id,
+            "path": str(mp4),
+            "creator_id": creator.id,
+            "job_id": job_id,
+        }
