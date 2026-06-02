@@ -5,7 +5,14 @@ from datetime import datetime, timezone
 from media2text.core.platform.douyin.models import AwemeItem
 import json
 
-from media2text.core.storage.models import AwemeRow, CloudUploadRow, CreatorRow, DynamicRow, LiveSessionRow
+from media2text.core.storage.models import (
+    AwemeRow,
+    CloudUploadRow,
+    CreatorRow,
+    DynamicRow,
+    LiveSessionRow,
+    PostProcessJobRow,
+)
 
 
 class CreatorRepo:
@@ -448,6 +455,8 @@ class LiveSessionRepo:
         session = LiveSessionRow(**dict(row))
         if session.status != "recording" or session.ffmpeg_pid is None:
             return session
+        if (session.reconnect_attempts or 0) > 0:
+            return session
         try:
             os.kill(session.ffmpeg_pid, 0)
         except OSError:
@@ -465,6 +474,8 @@ class LiveSessionRepo:
         count = 0
         for row in rows:
             if row.status != "recording" or row.ffmpeg_pid is None:
+                continue
+            if (row.reconnect_attempts or 0) > 0:
                 continue
             try:
                 os.kill(row.ffmpeg_pid, 0)
@@ -549,6 +560,225 @@ class LiveSessionRepo:
             (session_id,),
         )
         self._conn.commit()
+
+    def increment_offline_streak(self, session_id: str) -> int:
+        self._conn.execute(
+            """
+            UPDATE live_sessions
+            SET offline_streak = offline_streak + 1
+            WHERE id = ?
+            """,
+            (session_id,),
+        )
+        self._conn.commit()
+        row = self.get(session_id)
+        return row.offline_streak if row else 0
+
+    def reset_offline_streak(self, session_id: str) -> None:
+        self._conn.execute(
+            "UPDATE live_sessions SET offline_streak = 0 WHERE id = ?",
+            (session_id,),
+        )
+        self._conn.commit()
+
+    def increment_reconnect_attempts(self, session_id: str) -> int:
+        self._conn.execute(
+            """
+            UPDATE live_sessions
+            SET reconnect_attempts = reconnect_attempts + 1
+            WHERE id = ?
+            """,
+            (session_id,),
+        )
+        self._conn.commit()
+        row = self.get(session_id)
+        return row.reconnect_attempts if row else 0
+
+    def append_segment_path(self, session_id: str, path: str) -> None:
+        paths = self.list_segment_paths(session_id)
+        paths.append(path)
+        self._conn.execute(
+            "UPDATE live_sessions SET segment_paths_json = ? WHERE id = ?",
+            (json.dumps(paths), session_id),
+        )
+        self._conn.commit()
+
+    def list_segment_paths(self, session_id: str) -> list[str]:
+        row = self.get(session_id)
+        if not row or not row.segment_paths_json:
+            return []
+        try:
+            data = json.loads(row.segment_paths_json)
+        except json.JSONDecodeError:
+            return []
+        return data if isinstance(data, list) else []
+
+    def update_recording_state(
+        self,
+        session_id: str,
+        *,
+        ffmpeg_pid: int,
+        temp_path: str,
+    ) -> None:
+        self._conn.execute(
+            """
+            UPDATE live_sessions
+            SET ffmpeg_pid = ?, temp_path = ?
+            WHERE id = ?
+            """,
+            (ffmpeg_pid, temp_path, session_id),
+        )
+        self._conn.commit()
+
+
+class PostProcessJobRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def enqueue(
+        self,
+        *,
+        session_id: str,
+        creator_id: str,
+        mp4_path: str,
+    ) -> str:
+        job_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT INTO post_process_jobs
+              (id, session_id, creator_id, mp4_path, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, 'pending', ?, ?)
+            """,
+            (job_id, session_id, creator_id, mp4_path, now, now),
+        )
+        self._conn.commit()
+        return job_id
+
+    def get(self, job_id: str) -> PostProcessJobRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM post_process_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        return PostProcessJobRow(**dict(row)) if row else None
+
+    def list_pending(self, *, limit: int = 10) -> list[PostProcessJobRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM post_process_jobs
+            WHERE status = 'pending'
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [PostProcessJobRow(**dict(r)) for r in rows]
+
+    def claim_pending(self, *, limit: int = 1) -> list[PostProcessJobRow]:
+        claimed: list[PostProcessJobRow] = []
+        now = datetime.now(timezone.utc).isoformat()
+        for _ in range(limit):
+            row = self._conn.execute(
+                """
+                SELECT id FROM post_process_jobs
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if not row:
+                break
+            cur = self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET status = 'running', updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now, row["id"]),
+            )
+            if cur.rowcount != 1:
+                continue
+            job = self.get(row["id"])
+            if job:
+                claimed.append(job)
+        self._conn.commit()
+        return claimed
+
+    def mark_running(self, job_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE post_process_jobs
+            SET status = 'running', updated_at = ?
+            WHERE id = ?
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+
+    def update_stage(self, job_id: str, *, stage: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE post_process_jobs
+            SET stage = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (stage, now, job_id),
+        )
+        self._conn.commit()
+
+    def mark_done(self, job_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE post_process_jobs
+            SET status = 'done', updated_at = ?
+            WHERE id = ?
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+
+    def mark_failed(self, job_id: str, *, error: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE post_process_jobs
+            SET status = 'failed', error = ?, updated_at = ?
+            WHERE id = ?
+            """,
+            (error, now, job_id),
+        )
+        self._conn.commit()
+
+    def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
+        cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
+        rows = self._conn.execute(
+            "SELECT id, updated_at FROM post_process_jobs WHERE status = 'running'"
+        ).fetchall()
+        count = 0
+        now = datetime.now(timezone.utc).isoformat()
+        for row in rows:
+            try:
+                updated = datetime.fromisoformat(
+                    str(row["updated_at"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                updated = datetime.now(timezone.utc)
+            if updated.timestamp() > cutoff:
+                continue
+            self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET status = 'pending', stage = NULL, updated_at = ?
+                WHERE id = ?
+                """,
+                (now, row["id"]),
+            )
+            count += 1
+        self._conn.commit()
+        return count
 
 
 class CloudUploadRepo:

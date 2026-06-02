@@ -1,0 +1,89 @@
+from media2text.core.config import AppConfig
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+
+
+def test_enqueue_and_claim_job(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAjob",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "x.flv"),
+        ffmpeg_pid=1,
+    )
+    repo = PostProcessJobRepo(conn)
+    job_id = repo.enqueue(
+        session_id=sid,
+        creator_id=cid,
+        mp4_path=str(tmp_path / "out.mp4"),
+    )
+    pending = repo.list_pending(limit=10)
+    assert len(pending) == 1
+    assert pending[0].id == job_id
+    assert pending[0].status == "pending"
+
+
+def test_claim_pending_atomic(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAclaim",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "x.flv"),
+        ffmpeg_pid=1,
+    )
+    repo = PostProcessJobRepo(conn)
+    job_id = repo.enqueue(
+        session_id=sid,
+        creator_id=cid,
+        mp4_path=str(tmp_path / "out.mp4"),
+    )
+    claimed = repo.claim_pending(limit=1)
+    assert len(claimed) == 1
+    assert claimed[0].id == job_id
+    assert claimed[0].status == "running"
+    again = repo.claim_pending(limit=1)
+    assert again == []
+
+
+def test_stale_reconnect_skips_get_active(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAreconnstale",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "x.flv"),
+        ffmpeg_pid=999999,
+    )
+    conn.execute(
+        "UPDATE live_sessions SET reconnect_attempts = 1 WHERE id = ?",
+        (sid,),
+    )
+    conn.commit()
+    active = LiveSessionRepo(conn).get_active_for_creator(cid)
+    assert active is not None
+    assert active.reconnect_attempts == 1

@@ -67,9 +67,11 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | 循环：直播 ~60s；抖音 VOD ~300s；B 站 archive/dynamic 见 `platforms.bilibili` |
+| `--daemon` | 循环：直播 tick 默认 `live.live_poll_interval_sec`（20s，回退 `monitor.live_poll_interval_sec`）；守护进程内按 `live.post_process_poll_interval_sec` **同步 drain** 转写队列（非独立线程）；抖音 VOD ~300s；B 站 archive/dynamic 见 `platforms.bilibili` |
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
+
+直播收尾：`finalize` 仅 remux + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行。手动清队列：`media2text post-process run [--limit N] --json`。通知时序：`recording_completed` 在 remux 后；`transcribe_completed` 在 worker 完成后。`live.offline_confirm_polls`（默认 3）避免 API 短暂 offline 误停录；ffmpeg 异常退出可分段重连（`max_reconnect_attempts`）。
 
 ### 3. 手动作品流水线（单博主）
 
@@ -90,7 +92,7 @@ media2text transcribe run data/creators/<sec_uid>/live/xxx.mp4 --json
 # 引擎在 config.yaml：transcribe.engine = whisper | openai | deepgram
 ```
 
-直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra。
+直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra；由 `monitor watch --daemon` 或 `post-process run` drain 执行，不在 finalize 内阻塞。
 
 ### 4a. LLM 摘要（`summarize`，与转写引擎独立）
 
@@ -149,6 +151,7 @@ media2text creator show <creator_id> --json
 | `creator sync-dynamics <id> --json` | B 站：仅动态一轮 |
 | `creator remove <id> [--delete-media] --json` | 移除博主 |
 | `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD/archive + 动态 |
+| `post-process run [--limit N] --json` | 消化积压的直播后处理任务 |
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |

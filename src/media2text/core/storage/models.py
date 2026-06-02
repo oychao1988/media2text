@@ -62,6 +62,22 @@ class LiveSessionRow:
     cloud_upload_status: str | None = None
     cloud_file_id: str | None = None
     cloud_relative_path: str | None = None
+    offline_streak: int = 0
+    reconnect_attempts: int = 0
+    segment_paths_json: str | None = None
+
+
+@dataclass
+class PostProcessJobRow:
+    id: str
+    session_id: str
+    creator_id: str
+    mp4_path: str
+    status: str
+    stage: str | None
+    error: str | None
+    created_at: str
+    updated_at: str
 
 
 @dataclass
