@@ -15,6 +15,7 @@ from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatche
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.transcribe.factory import transcribe_engine_available
+from media2text.core.live.post_process import drain_pending_jobs
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -97,22 +98,36 @@ class MonitorWatcher:
         bcfg = self._cfg.platforms.bilibili
         archive_poll = _bilibili_archive_poll_sec(self._cfg)
         dynamic_poll = bcfg.dynamic_poll_interval_sec
+        live_poll = (
+            self._cfg.live.live_poll_interval_sec
+            or self._cfg.monitor.live_poll_interval_sec
+        )
         try:
             with workspace_lock(lock):
                 last_vod = 0.0
                 last_archive = 0.0
                 last_dynamic = 0.0
+                last_post = 0.0
                 log.info(
                     "monitor_watch_daemon_started",
-                    live_poll=self._cfg.monitor.live_poll_interval_sec,
+                    live_poll=live_poll,
                     vod_poll=self._cfg.monitor.vod_poll_interval_sec,
                     archive_poll=archive_poll,
                     dynamic_poll=dynamic_poll,
+                    post_process_poll=self._cfg.live.post_process_poll_interval_sec,
                 )
                 while True:
                     self._douyin_live.run_once(creator_id=creator_id)
                     self._bilibili_live.run_once(creator_id=creator_id)
                     now = time.time()
+                    if now - last_post >= self._cfg.live.post_process_poll_interval_sec:
+                        drain_pending_jobs(
+                            self._cfg,
+                            self._conn,
+                            notify=self._notify,
+                            limit=self._cfg.live.post_process_max_parallel,
+                        )
+                        last_post = now
                     if now - last_vod >= self._cfg.monitor.vod_poll_interval_sec:
                         self._run_vod_tick(creator_id=creator_id)
                         last_vod = now
@@ -124,7 +139,7 @@ class MonitorWatcher:
                             self._cfg, creator_id=creator_id, notify=self._notify
                         )
                         last_dynamic = now
-                    time.sleep(self._cfg.monitor.live_poll_interval_sec)
+                    time.sleep(live_poll)
         except LockError:
             log.error("monitor_watch_lock_held")
             raise
