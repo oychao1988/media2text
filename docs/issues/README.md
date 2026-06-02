@@ -33,4 +33,20 @@
 
 **合并顺序**：#66（阶段 A）→ 阶段 B PR。
 
+### LLM 转写摘要（summarize）
+
+| 阶段 | GitHub | PR | 说明 |
+|------|--------|-----|------|
+| P1–P3 | [#72](https://github.com/oychao1988/media2text/issues/72)（已关闭） | [#74](https://github.com/oychao1988/media2text/pull/74) | `summarize run` / `merge`、`suggested_groups`；规格见 [summarize-design](../superpowers/specs/2026-06-01-summarize-design.md) |
+| P4 | [#71](https://github.com/oychao1988/media2text/issues/71)（已关闭） | [#75](https://github.com/oychao1988/media2text/pull/75) | `on_transcribe_complete` 钩子 + 云盘 summary sidecar |
+| P5 | — | — | 通知、archive FTS（待开单） |
+
+### 直播录制管道（2026-06-02）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#73](https://github.com/oychao1988/media2text/issues/73) | — | [live-recording-pipeline.md](./live-recording-pipeline.md) | `issue-73-live-recording-pipeline` |
+
+工程评审 D1–D4：1A / 2A / 3A / 4A。实现计划含 Task 4b `scan_and_start`。
+
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
