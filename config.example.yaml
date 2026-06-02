@@ -20,10 +20,16 @@ monitor:
 
 live:
   # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
-  # When true and transcribe.engine is configured (whisper / openai / deepgram), also write
-  # {basename}.transcript.json / .transcript.md beside the mp4 and refresh manifest again.
-  # Skipped gracefully (logged, transcribe_skipped in run_once finalized[]) if extra missing.
+  # When true and transcribe.engine is configured (whisper / openai / deepgram), transcribe
+  # runs in the post-process drain (monitor daemon or `media2text post-process run`), not inline.
   transcribe_on_complete: false
+  live_poll_interval_sec: 20
+  offline_confirm_polls: 3
+  ffmpeg_exit_recheck: true
+  max_reconnect_attempts: 2
+  min_recording_sec_before_offline_end: 45
+  post_process_poll_interval_sec: 10
+  post_process_max_parallel: 1
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv

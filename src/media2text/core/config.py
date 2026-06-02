@@ -55,6 +55,14 @@ class LiveConfig(BaseModel):
     ffmpeg_path: str = "ffmpeg"
     ffmpeg_stop_timeout_sec: int = 30
     temp_format: str = "flv"
+    live_poll_interval_sec: int = 20
+    offline_confirm_polls: int = 3
+    ffmpeg_exit_recheck: bool = True
+    max_reconnect_attempts: int = 2
+    min_recording_sec_before_offline_end: int = 45
+    post_process_poll_interval_sec: int = 10
+    post_process_max_parallel: int = 1
+    post_process_stale_running_sec: int = 3600
 
 
 class WhisperConfig(BaseModel):
