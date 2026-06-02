@@ -113,7 +113,7 @@ media2text archive index --json                       # 含 dynamics/*/content.m
 | 命令 | 行为 |
 |------|------|
 | `monitor watch --json` | **单次**：检查直播 + 对已监控博主跑一轮 VOD，然后退出 |
-| `monitor watch --daemon` | **持续**：直播约 60s；抖音作品约 300s；B 站投稿/动态见 `platforms.bilibili` |
+| `monitor watch --daemon` | **持续**：直播 tick 默认 `live.live_poll_interval_sec`（20s）；守护进程内同步 drain 后处理队列；抖音作品约 300s；B 站投稿/动态见 `platforms.bilibili` |
 
 `--daemon` 会占用终端直至 `Ctrl+C`；若要放到系统后台：
 
@@ -142,11 +142,14 @@ pgrep -fl "monitor watch"    # 确认在跑
 |------|------|
 | `workspace` | 数据根目录，默认 `./data` |
 | `platforms.douyin` | 下载并发、同步页数上限等 |
-| `monitor.live_poll_interval_sec` | 直播状态轮询间隔（秒） |
+| `monitor.live_poll_interval_sec` | 直播轮询回退间隔（秒）；优先用 `live.live_poll_interval_sec` |
+| `live.live_poll_interval_sec` | 守护进程直播检测间隔（默认 20） |
+| `live.offline_confirm_polls` | API 连续 offline 次数后才停录（默认 3） |
+| `live.post_process_poll_interval_sec` | 守护进程内 drain 后处理队列间隔 |
 | `monitor.vod_poll_interval_sec` | 作品 sync/download/transcribe 间隔（秒） |
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
-| `live` | ffmpeg 路径、临时流格式（`flv`）、`transcribe_on_complete` 直播 MP4 结束后自动转写 |
+| `live` | ffmpeg、重连/离线确认、`transcribe_on_complete`（经 `post-process` drain，非 finalize 内阻塞） |
 | `notify` | 监控事件提醒：系统提示音 + 飞书群机器人 webhook（见下方） |
 | `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
 | `transcribe.engine` | `whisper` \| `openai` \| `deepgram` |
@@ -258,6 +261,7 @@ data/
 | `media2text creator sync <creator_id> [--json]` | 同步作品 catalog |
 | `media2text creator remove <creator_id> [--delete-media] [--json]` | 移除创作者；可选删除 `data/creators/{sec_uid}/` |
 | `media2text monitor watch [--daemon] [--creator <id>] [--json]` | 统一监控（直播 + VOD） |
+| `media2text post-process run [--limit N] [--json]` | 手动消化直播后处理队列 |
 | `media2text download run [--creator <id>] [--limit N] [--json]` | 下载待处理作品（可限制条数） |
 | `media2text transcribe run <path> [--creator <id>] [--json]` | 转写文件或目录 |
 | `media2text summarize run <path> [--creator <id>] [--json]` | LLM 摘要（需 `summarize.enabled` + `NVIDIA_API_KEY`） |
