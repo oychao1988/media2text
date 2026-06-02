@@ -90,6 +90,59 @@ class TranscribeConfig(BaseModel):
     deepgram: DeepgramConfig = Field(default_factory=DeepgramConfig)
 
 
+class SummarizeLlmProviderConfig(BaseModel):
+    """One OpenAI-compatible endpoint with its own base_url, keys, and models."""
+
+    name: str = ""
+    base_url: str = "https://integrate.api.nvidia.com/v1"
+    api_key_envs: list[str] = Field(default_factory=list)
+    models: list[str] = Field(default_factory=list)
+
+
+def _default_summarize_providers() -> list[SummarizeLlmProviderConfig]:
+    return [
+        SummarizeLlmProviderConfig(
+            name="nvidia",
+            base_url="https://integrate.api.nvidia.com/v1",
+            api_key_envs=["NVIDIA_API_KEY"],
+            models=["deepseek-ai/deepseek-v4-pro"],
+        )
+    ]
+
+
+class SummarizeLlmConfig(BaseModel):
+    providers: list[SummarizeLlmProviderConfig] = Field(
+        default_factory=_default_summarize_providers
+    )
+    temperature: float = 0.2
+    top_p: float = 0.95
+    max_output_tokens: int = 4096
+    thinking: bool = False
+    log_token_usage: bool = True
+
+
+class SummarizeChunkConfig(BaseModel):
+    max_chars: int = 24000
+    minutes: float = 30.0
+
+
+class SummarizeMergeConfig(BaseModel):
+    auto_merge_after_parts: bool = False
+
+
+class SummarizeConfig(BaseModel):
+    enabled: bool = False
+    engine: str = "openai"
+    on_transcribe_complete: bool = False
+    default_profile: str = "auto"
+    merge_gap_minutes: int = 60
+    merge_date_tz: str = "UTC"
+    max_files_per_run: int = 0
+    llm: SummarizeLlmConfig = Field(default_factory=SummarizeLlmConfig)
+    chunk: SummarizeChunkConfig = Field(default_factory=SummarizeChunkConfig)
+    merge: SummarizeMergeConfig = Field(default_factory=SummarizeMergeConfig)
+
+
 class NotifyEventsConfig(BaseModel):
     live_started: bool = True
     new_aweme: bool = True
@@ -162,6 +215,7 @@ class AppConfig(BaseSettings):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
+    summarize: SummarizeConfig = Field(default_factory=SummarizeConfig)
     notify: NotifyConfig = Field(default_factory=NotifyConfig)
     aliyundrive: AliyunDriveConfig = Field(default_factory=AliyunDriveConfig)
 

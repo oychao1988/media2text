@@ -491,6 +491,17 @@ class LiveSessionRepo:
         ).fetchone()
         return LiveSessionRow(**dict(row)) if row else None
 
+    def list_completed_for_creator(self, creator_id: str) -> list[LiveSessionRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM live_sessions
+            WHERE creator_id = ? AND status = 'completed' AND local_path IS NOT NULL
+            ORDER BY started_at ASC
+            """,
+            (creator_id,),
+        ).fetchall()
+        return [LiveSessionRow(**dict(r)) for r in rows]
+
     def update_status(
         self,
         session_id: str,

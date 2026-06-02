@@ -12,6 +12,8 @@ from media2text.core.json_out import emit
 from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
 from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
 from media2text.core.cloud.aliyundrive import load_token
+from media2text.core.summarize.factory import summarize_engine_available
+from media2text.core.summarize.openai_backend import resolve_api_key_envs
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 
@@ -86,6 +88,18 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
         )
 
     ad = cfg.aliyundrive
+    if cfg.summarize.enabled:
+        sum_ok, sum_hint = summarize_engine_available(cfg)
+        checks.append(
+            {
+                "name": "summarize_llm",
+                "ok": sum_ok,
+                "relevant": True,
+                "hint": sum_hint
+                or f"export one of: {', '.join(resolve_api_key_envs(cfg.summarize.llm))}",
+            }
+        )
+
     if ad.enabled:
         token_path = cfg.aliyundrive_token_path()
         aliyundrive_ok = False
@@ -113,6 +127,8 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
         ok = ok and any(
             c["ok"] for c in checks if c["name"] == "session_aliyundrive"
         )
+    if cfg.summarize.enabled:
+        ok = ok and any(c["ok"] for c in checks if c["name"] == "summarize_llm")
     emit(
         {
             "ok": ok,

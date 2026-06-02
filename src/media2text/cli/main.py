@@ -10,6 +10,7 @@ from media2text.cli import download as download_cli
 from media2text.cli import monitor as monitor_cli
 from media2text.cli import notify as notify_cli
 from media2text.cli import pipeline as pipeline_cli
+from media2text.cli import summarize as summarize_cli
 from media2text.cli import transcribe as transcribe_cli
 from media2text.cli.doctor import doctor
 from media2text.core.logging import configure_logging
@@ -23,6 +24,7 @@ app.add_typer(creator_cli.app, name="creator")
 app.add_typer(download_cli.app, name="download")
 app.add_typer(monitor_cli.app, name="monitor")
 app.add_typer(transcribe_cli.app, name="transcribe")
+app.add_typer(summarize_cli.app, name="summarize")
 app.add_typer(pipeline_cli.app, name="pipeline")
 app.add_typer(notify_cli.app, name="notify")
 app.command("doctor")(doctor)
