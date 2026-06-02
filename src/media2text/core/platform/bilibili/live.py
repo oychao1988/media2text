@@ -45,10 +45,6 @@ class LiveWatcher:
         return BilibiliAdapterV1(None, fixture_root=FIXTURE_ROOT)
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
-        stale = self._sessions.mark_stale_recordings_failed()
-        if stale:
-            log.warning("bilibili_live_stale_sessions_cleared", count=stale)
-
         targets = [
             c for c in self._creators.list_monitored() if c.platform == PLATFORM
         ]
@@ -56,12 +52,17 @@ class LiveWatcher:
             row = self._creators.get(creator_id)
             targets = [row] if row and row.platform == PLATFORM else []
 
+        finalized = self._core.poll_active_recordings()
         started, started_ids, errors, auth_required, platform_changed = (
             self._core.scan_and_start(creator_id=creator_id)
         )
-        finalized = self._core.poll_active_recordings(
-            skip_session_ids=started_ids
-        )
+        if started_ids:
+            finalized.extend(
+                self._core.poll_active_recordings(skip_session_ids=started_ids)
+            )
+        stale = self._sessions.mark_stale_recordings_failed()
+        if stale:
+            log.warning("bilibili_live_stale_sessions_cleared", count=stale)
         result: dict = {
             "platform": PLATFORM,
             "checked": len(targets),
@@ -85,9 +86,6 @@ class LiveWatcher:
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):
-                stale = self._sessions.mark_stale_recordings_failed()
-                if stale:
-                    log.warning("bilibili_live_stale_sessions_cleared", count=stale)
                 log.info("bilibili_live_watch_daemon_started", poll=poll)
                 while True:
                     self.run_once(creator_id=creator_id)
