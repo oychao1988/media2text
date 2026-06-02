@@ -355,6 +355,21 @@ class LiveWatcher:
                 platform=creator.platform,
             )
 
+        from media2text.core.summarize.hook import maybe_summarize_after_transcribe
+
+        summarize_meta = maybe_summarize_after_transcribe(
+            self._cfg,
+            mp4,
+            transcribe_meta=transcribe_meta,
+        )
+        if summarize_meta.get("summarized") or summarize_meta.get("summary_path"):
+            refresh_manifest(
+                self._conn,
+                sec_uid=creator.sec_uid,
+                workspace=self._ws,
+                platform=creator.platform,
+            )
+
         upload_meta = maybe_upload_live_to_aliyundrive(
             self._cfg,
             self._conn,
@@ -377,6 +392,7 @@ class LiveWatcher:
             "path": str(mp4),
             "creator_id": creator.id,
             **transcribe_meta,
+            **summarize_meta,
             **upload_meta,
         }
 

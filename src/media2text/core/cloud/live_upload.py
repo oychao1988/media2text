@@ -19,6 +19,7 @@ from media2text.core.notify.labels import creator_label
 from media2text.core.platform.profile import is_profile_stale, sync_creator_profile
 from media2text.core.storage.models import CreatorRow
 from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
+from media2text.core.summarize.writer import summary_paths_for_media
 
 log = structlog.get_logger()
 
@@ -91,6 +92,11 @@ def _upload_paths(cfg: AppConfig, mp4: Path) -> list[tuple[Path, str]]:
         items.append((json_path, "transcript_json"))
     if md_path.is_file():
         items.append((md_path, "transcript_md"))
+    summary_md, summary_json = summary_paths_for_media(mp4)
+    if summary_md.is_file():
+        items.append((summary_md, "summary_md"))
+    if summary_json.is_file():
+        items.append((summary_json, "summary_json"))
     return items
 
 
