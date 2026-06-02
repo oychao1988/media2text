@@ -15,6 +15,46 @@ def _transcript_sidecar_path(media_path: str | None) -> str | None:
     return str(json_path) if json_path.is_file() else None
 
 
+def _summary_sidecar_path(media_path: str | None) -> str | None:
+    if not media_path:
+        return None
+    p = Path(media_path)
+    if p.name == "content.md":
+        summary = p.with_name("content.summary.md")
+    else:
+        summary = p.with_suffix(".summary.md")
+    return str(summary) if summary.is_file() else None
+
+
+def _discover_live_groups(live_dir: Path) -> list[dict]:
+    groups: list[dict] = []
+    if not live_dir.is_dir():
+        return groups
+    for md in sorted(live_dir.glob("*_merged.summary.md")):
+        stem = md.name.replace("_merged.summary.md", "")
+        if len(stem) != 8 or not stem.isdigit():
+            continue
+        iso_date = f"{stem[0:4]}-{stem[4:6]}-{stem[6:8]}"
+        entry: dict = {
+            "date": iso_date,
+            "summary_path": str(md),
+            "session_ids": [],
+        }
+        json_path = md.with_name(md.name.replace(".summary.md", ".summary.json"))
+        if json_path.is_file():
+            try:
+                data = json.loads(json_path.read_text(encoding="utf-8"))
+                entry["session_ids"] = [
+                    s.get("session_id")
+                    for s in data.get("sources") or []
+                    if s.get("session_id")
+                ]
+            except (OSError, json.JSONDecodeError):
+                pass
+        groups.append(entry)
+    return groups
+
+
 def _dynamic_manifest_entry(workspace: Path, sec_uid: str, row) -> dict:
     rel_dir = row.local_dir or f"dynamics/{row.dynamic_id}"
     rel_path = Path(rel_dir)
@@ -70,6 +110,7 @@ def refresh_manifest(
                 "title": row.title,
                 "media_path": row.local_path,
                 "transcript_path": row.transcript_path,
+                "summary_path": _summary_sidecar_path(row.local_path),
                 "status": row.sync_status if row.transcribe_status != "done" else "transcribed",
             }
         )
@@ -88,6 +129,7 @@ def refresh_manifest(
             "title": None,
             "media_path": local_path,
             "transcript_path": _transcript_sidecar_path(local_path),
+            "summary_path": _summary_sidecar_path(local_path),
             "status": data.get("status"),
         }
         if data.get("cloud_file_id"):
@@ -117,6 +159,9 @@ def refresh_manifest(
     if creator.platform == "bilibili":
         payload["mid"] = sec_uid
         payload["dynamics"] = dynamic_items
+
+    live_dir = workspace / "creators" / sec_uid / "live"
+    payload["live_groups"] = _discover_live_groups(live_dir)
 
     out_dir = workspace / "creators" / sec_uid
     out_dir.mkdir(parents=True, exist_ok=True)

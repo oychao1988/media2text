@@ -92,3 +92,32 @@ transcribe:
     utterances: true
     diarize: false
     timeout_sec: 600
+
+summarize:
+  enabled: false
+  engine: openai
+  on_transcribe_complete: false
+  default_profile: auto
+  merge_gap_minutes: 60
+  merge_date_tz: UTC
+  max_files_per_run: 0
+  llm:
+    temperature: 0.2
+    top_p: 0.95
+    max_output_tokens: 4096
+    thinking: false
+    log_token_usage: true
+    providers:
+      - name: nvidia
+        base_url: https://integrate.api.nvidia.com/v1
+        api_key_envs: [NVIDIA_API_KEY]
+        models: [deepseek-ai/deepseek-v4-pro]
+      # - name: openai
+      #   base_url: https://api.openai.com/v1
+      #   api_key_envs: [OPENAI_API_KEY]
+      #   models: [gpt-4o-mini]
+  chunk:
+    max_chars: 24000
+    minutes: 30
+  merge:
+    auto_merge_after_parts: false

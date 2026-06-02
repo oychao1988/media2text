@@ -92,6 +92,19 @@ media2text transcribe run data/creators/<sec_uid>/live/xxx.mp4 --json
 
 直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra。
 
+### 4a. LLM 摘要（`summarize`，与转写引擎独立）
+
+依赖 `pip install -e ".[transcribe-cloud]"` 与 `.env` 的 `NVIDIA_API_KEY`（或改 `summarize.llm` 指向其它 OpenAI 兼容端点）。
+
+```bash
+# config.yaml: summarize.enabled: true
+media2text summarize run data/creators/<sec_uid>/live/xxx.mp4 --json
+media2text summarize run --creator <creator_id> --json   # 含 suggested_groups（分段直播合并建议）
+media2text summarize merge --sessions <id1>,<id2> --json
+```
+
+Sidecar：`{basename}.summary.md` + 元数据 `{basename}.summary.json`；合并直播：`live/YYYYMMDD_merged.summary.md`。`agent-manifest.json` 含 `summary_path`、`live_groups`。
+
 ### 4b. 个人阿里云盘（实验，非 CLI 子命令）
 
 个人版 Web API（与 [foyoux/aligo](https://github.com/foyoux/aligo) 同路径）。Token：`data/sessions/aliyundrive.token.json`。
@@ -137,6 +150,8 @@ media2text creator show <creator_id> --json
 | `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD/archive + 动态 |
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
+| `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |
+| `summarize merge --sessions <ids> --json` | 多段直播合并摘要 |
 | `pipeline run --creator <id> --json` | 作品一条龙 |
 
 ## 工作区与 Agent 索引
