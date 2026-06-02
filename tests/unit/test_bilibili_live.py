@@ -79,13 +79,13 @@ def test_bilibili_live_run_once_starts_recording(tmp_path, monkeypatch) -> None:
 
     with (
         patch(
-            "media2text.core.platform.bilibili.live.record_stream_copy",
+            "media2text.core.live.recording.record_stream_copy",
             return_value=mock_proc,
         ),
-        patch("media2text.core.platform.bilibili.live.time.sleep"),
+        patch("media2text.core.live.recording.time.sleep"),
         patch.object(watcher, "_process_alive", return_value=True),
-        patch("media2text.core.platform.bilibili.live.stop_process"),
-        patch("media2text.core.platform.bilibili.live.remux_to_mp4"),
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4"),
     ):
         result = watcher.run_once(creator_id=cid)
 
