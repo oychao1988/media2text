@@ -122,6 +122,53 @@ def summarize_one(
     }
 
 
+def _media_for_transcript(tpath: Path) -> Path:
+    stem = tpath.name.removesuffix(".transcript.json")
+    mp4 = tpath.parent / f"{stem}.mp4"
+    if mp4.is_file():
+        return mp4
+    return tpath.parent / stem
+
+
+def _summary_missing(media: Path) -> bool:
+    md, _ = summary_paths_for_media(media)
+    return not md.is_file()
+
+
+def discover_backfill_targets(
+    workspace: Path,
+    *,
+    creator_sec_uid: str | None = None,
+    force: bool = False,
+) -> list[Path]:
+    """Transcript sidecars under workspace that still need a summary."""
+    if creator_sec_uid:
+        root = workspace / "creators" / creator_sec_uid
+        pattern = "**/*.transcript.json"
+        glob_root = root
+    else:
+        glob_root = workspace / "creators"
+        pattern = "**/*.transcript.json"
+
+    if not glob_root.is_dir():
+        return []
+
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for tpath in sorted(glob_root.glob(pattern)):
+        media = _media_for_transcript(tpath)
+        if not force and not _summary_missing(media):
+            continue
+        if not tpath.is_file():
+            continue
+        key = str(media.resolve())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(media)
+    return deduped
+
+
 def _discover_from_path(path: Path) -> list[Path]:
     if path.is_file():
         return [path]
@@ -253,6 +300,89 @@ def run_batch(
         "llm_usage": batch_usage if batch_usage["requests"] else None,
         "results": results,
         "suggested_groups": suggested,
+        "errors": errors,
+    }
+
+
+def backfill_batch(
+    cfg: AppConfig,
+    conn,
+    backend: SummarizeBackend,
+    *,
+    creator_id: str | None = None,
+    profile: str | None = None,
+    force: bool = False,
+    limit: int | None = None,
+) -> dict:
+    workspace = cfg.ensure_workspace()
+    creator_sec_uid: str | None = None
+    if creator_id:
+        creator = CreatorRepo(conn).get(creator_id)
+        if not creator:
+            raise SummarizeError(f"creator not found: {creator_id}")
+        creator_sec_uid = creator.sec_uid
+
+    deduped = discover_backfill_targets(
+        workspace,
+        creator_sec_uid=creator_sec_uid,
+        force=force,
+    )
+    pending = len(deduped)
+
+    max_run = cfg.summarize.max_files_per_run
+    if max_run and max_run > 0:
+        deduped = deduped[:max_run]
+    if limit is not None and limit > 0:
+        deduped = deduped[:limit]
+
+    results: list[dict] = []
+    errors: list[dict] = []
+    summarized = 0
+    skipped = 0
+    batch_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "requests": 0}
+
+    for media in deduped:
+        try:
+            item = summarize_one(
+                media, cfg, backend, profile=profile, force=force
+            )
+            if item.get("skipped"):
+                skipped += 1
+            else:
+                summarized += 1
+                u = item.get("llm_usage")
+                if u:
+                    batch_usage["prompt_tokens"] += u.get("prompt_tokens", 0)
+                    batch_usage["completion_tokens"] += u.get("completion_tokens", 0)
+                    batch_usage["total_tokens"] += u.get("total_tokens", 0)
+                    batch_usage["requests"] += u.get("requests", 0)
+            results.append(item)
+        except Exception as exc:  # noqa: BLE001
+            errors.append({"path": str(media), "error": str(exc)})
+
+    sec_uids: set[str] = set()
+    for item in results:
+        mp = item.get("media_path")
+        if not mp:
+            continue
+        parts = Path(mp).parts
+        if "creators" in parts:
+            idx = parts.index("creators")
+            if idx + 1 < len(parts):
+                sec_uids.add(parts[idx + 1])
+    if creator_sec_uid:
+        sec_uids.add(creator_sec_uid)
+    for sec_uid in sorted(sec_uids):
+        refresh_manifest(conn, sec_uid=sec_uid, workspace=workspace)
+
+    return {
+        "ok": not errors,
+        "command": "summarize backfill",
+        "pending": pending,
+        "summarized": summarized,
+        "skipped": skipped,
+        "llm_usage": batch_usage if batch_usage["requests"] else None,
+        "results": results,
         "errors": errors,
     }
 

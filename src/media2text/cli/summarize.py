@@ -6,7 +6,7 @@ from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.summarize.errors import SummarizeConfigError, SummarizeError
 from media2text.core.summarize.factory import create_summarize_backend, summarize_engine_available
-from media2text.core.summarize.runner import merge_batch, run_batch
+from media2text.core.summarize.runner import backfill_batch, merge_batch, run_batch
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="LLM transcript summarize")
@@ -78,6 +78,68 @@ def run_cmd(
         payload = {
             "ok": False,
             "command": "summarize run",
+            "summarized": 0,
+            "errors": [{"error": str(exc)}],
+        }
+        emit(payload, as_json=json_out)
+        raise typer.Exit(1) from exc
+
+    emit(payload, as_json=json_out)
+    if payload.get("errors"):
+        raise typer.Exit(4)
+
+
+@app.command("backfill")
+def backfill_cmd(
+    creator: str | None = typer.Option(None, "--creator", help="Limit to one creator"),
+    profile: str | None = typer.Option(None, "--profile"),
+    force: bool = typer.Option(False, "--force", help="Re-summarize even if .summary.md exists"),
+    limit: int | None = typer.Option(None, "--limit"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Summarize all workspace transcripts that lack a .summary.md sidecar."""
+    cfg = AppConfig.load()
+    ok, reason = summarize_engine_available(cfg)
+    if not ok:
+        payload = {
+            "ok": False,
+            "command": "summarize backfill",
+            "pending": 0,
+            "summarized": 0,
+            "errors": [{"error": reason}],
+        }
+        emit(payload, as_json=json_out)
+        raise typer.Exit(1)
+
+    try:
+        backend = create_summarize_backend(cfg)
+    except SummarizeConfigError as exc:
+        payload = {
+            "ok": False,
+            "command": "summarize backfill",
+            "pending": 0,
+            "summarized": 0,
+            "errors": [{"error": str(exc)}],
+        }
+        emit(payload, as_json=json_out)
+        raise typer.Exit(1) from exc
+
+    conn = open_db(cfg)
+    try:
+        payload = backfill_batch(
+            cfg,
+            conn,
+            backend,
+            creator_id=creator,
+            profile=profile,
+            force=force,
+            limit=limit,
+        )
+    except SummarizeError as exc:
+        payload = {
+            "ok": False,
+            "command": "summarize backfill",
+            "pending": 0,
             "summarized": 0,
             "errors": [{"error": str(exc)}],
         }

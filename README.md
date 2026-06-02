@@ -261,6 +261,7 @@ data/
 | `media2text download run [--creator <id>] [--limit N] [--json]` | 下载待处理作品（可限制条数） |
 | `media2text transcribe run <path> [--creator <id>] [--json]` | 转写文件或目录 |
 | `media2text summarize run <path> [--creator <id>] [--json]` | LLM 摘要（需 `summarize.enabled` + `NVIDIA_API_KEY`） |
+| `media2text summarize backfill [--creator <id>] [--limit N] [--json]` | 缺 summary 的历史转写批量补跑 |
 | `media2text summarize merge --sessions <id1>,<id2> [--json]` | 多段直播合并摘要 |
 | `media2text pipeline run --creator <id> [--json]` | sync + download + transcribe |
 | `media2text version` | 打印版本号 |
