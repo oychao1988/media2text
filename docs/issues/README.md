@@ -38,8 +38,8 @@
 | 阶段 | GitHub | PR | 说明 |
 |------|--------|-----|------|
 | P1–P3 | [#72](https://github.com/oychao1988/media2text/issues/72)（已关闭） | [#74](https://github.com/oychao1988/media2text/pull/74) | `summarize run` / `merge`、`suggested_groups`；规格见 [summarize-design](../superpowers/specs/2026-06-01-summarize-design.md) |
-| P4 | [#71](https://github.com/oychao1988/media2text/issues/71) | （进行中） | `on_transcribe_complete` 钩子 + 云盘 summary sidecar |
-| P5 | [#71](https://github.com/oychao1988/media2text/issues/71) | — | 通知、archive FTS（待开单） |
+| P4 | [#71](https://github.com/oychao1988/media2text/issues/71)（已关闭） | [#75](https://github.com/oychao1988/media2text/pull/75) | `on_transcribe_complete` 钩子 + 云盘 summary sidecar |
+| P5 | — | — | 通知、archive FTS（待开单） |
 
 ### 直播录制管道（2026-06-02）
 
