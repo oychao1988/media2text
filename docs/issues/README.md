@@ -45,7 +45,8 @@
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
-| 1 | [#73](https://github.com/oychao1988/media2text/issues/73) | — | [live-recording-pipeline.md](./live-recording-pipeline.md) | `issue-73-live-recording-pipeline` |
+| 1 | [#73](https://github.com/oychao1988/media2text/issues/73) | [#77](https://github.com/oychao1988/media2text/pull/77) | [live-recording-pipeline.md](./live-recording-pipeline.md) | `issue-73-live-recording-pipeline` |
+| 2 | [#78](https://github.com/oychao1988/media2text/issues/78) | — | [live-stale-poll-order.md](./live-stale-poll-order.md) | `issue-78-live-stale-poll-order` |
 
 工程评审 D1–D4：1A / 2A / 3A / 4A。实现计划含 Task 4b `scan_and_start`。
 

@@ -460,13 +460,9 @@ class LiveSessionRepo:
         try:
             os.kill(session.ffmpeg_pid, 0)
         except OSError:
-            self.update_status(
-                session.id,
-                status="failed",
-                error="stale_recording",
-                ended=True,
-            )
-            return None
+            # Leave session for poll_active_recordings / mark_stale; do not
+            # preempt finalize with stale_recording (see issue #78).
+            return session
         return session
 
     def mark_stale_recordings_failed(self) -> int:

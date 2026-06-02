@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, TranscribeConfig
 from media2text.core.platform.douyin.live import LiveWatcher
+from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import CreatorRepo
 def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
@@ -41,7 +42,54 @@ def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> No
     assert active.status == "recording"
 
 
-def test_get_active_for_creator_clears_dead_pid(tmp_path, monkeypatch) -> None:
+def test_run_once_finalizes_dead_ffmpeg_before_stale(tmp_path, monkeypatch) -> None:
+    """ffmpeg 正常退出时 poll 应先 remux，而非 mark_stale 误判。"""
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    watcher = LiveWatcher(cfg)
+    conn = watcher._conn
+    repo = CreatorRepo(conn)
+    sec_uid = "MS4wLjABAAAAstalefix"
+    cid = repo.add(
+        sec_uid=sec_uid,
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    live_dir = tmp_path / "data" / "creators" / sec_uid / "live"
+    live_dir.mkdir(parents=True)
+    flv = live_dir / "20260602T120000Z.flv"
+    flv.write_bytes(b"x" * 64)
+    sid = watcher._sessions.create(
+        creator_id=cid,
+        room_id="99",
+        temp_path=str(flv),
+        ffmpeg_pid=999999,
+    )
+
+    offline = LiveRoomInfo(room_id="99", is_live=False, stream_flv_url=None)
+    with (
+        patch.object(watcher._core._adapter, "get_live_room", return_value=offline),
+        patch.object(watcher._core, "_process_alive", return_value=False),
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.recording.refresh_manifest"),
+        patch.object(watcher._notify, "emit"),
+    ):
+        def _fake_remux(**kwargs):
+            kwargs["dst"].write_bytes(b"\x00\x00\x00\x18ftyp")
+
+        mock_remux.side_effect = _fake_remux
+        result = watcher.run_once(creator_id=cid)
+
+    row = conn.execute(
+        "SELECT status, error FROM live_sessions WHERE id = ?", (sid,)
+    ).fetchone()
+    assert row["status"] == "completed"
+    assert row["error"] is None
+    assert result.get("finalized")
+
+
+def test_get_active_for_creator_keeps_dead_pid_for_poll(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
@@ -59,10 +107,11 @@ def test_get_active_for_creator_clears_dead_pid(tmp_path, monkeypatch) -> None:
         ffmpeg_pid=999999,
     )
     active = watcher._sessions.get_active_for_creator(cid)
-    assert active is None
+    assert active is not None
+    assert active.id == sid
     row = conn.execute("SELECT status, error FROM live_sessions WHERE id = ?", (sid,)).fetchone()
-    assert row["status"] == "failed"
-    assert row["error"] == "stale_recording"
+    assert row["status"] == "recording"
+    assert row["error"] is None
 
 
 def test_poll_skips_fresh_sessions(tmp_path, monkeypatch) -> None:

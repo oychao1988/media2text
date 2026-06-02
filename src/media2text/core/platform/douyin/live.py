@@ -46,16 +46,17 @@ class LiveWatcher:
         return DouyinAdapterV1(None, fixture_root=FIXTURE_ROOT)
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
-        stale = self._sessions.mark_stale_recordings_failed()
-        if stale:
-            log.warning("live_stale_sessions_cleared", count=stale)
-
+        finalized = self._core.poll_active_recordings()
         started, started_ids, errors, auth_required, platform_changed = (
             self._core.scan_and_start(creator_id=creator_id)
         )
-        finalized = self._core.poll_active_recordings(
-            skip_session_ids=started_ids
-        )
+        if started_ids:
+            finalized.extend(
+                self._core.poll_active_recordings(skip_session_ids=started_ids)
+            )
+        stale = self._sessions.mark_stale_recordings_failed()
+        if stale:
+            log.warning("live_stale_sessions_cleared", count=stale)
         result: dict = {
             "started": started,
             "active": len(self._sessions.list_active()),
@@ -75,9 +76,6 @@ class LiveWatcher:
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):
-                stale = self._sessions.mark_stale_recordings_failed()
-                if stale:
-                    log.warning("live_stale_sessions_cleared", count=stale)
                 log.info("live_watch_daemon_started", poll=poll)
                 while True:
                     self.run_once(creator_id=creator_id)
