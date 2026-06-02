@@ -100,6 +100,7 @@ media2text transcribe run data/creators/<sec_uid>/live/xxx.mp4 --json
 # config.yaml: summarize.enabled: true
 media2text summarize run data/creators/<sec_uid>/live/xxx.mp4 --json
 media2text summarize run --creator <creator_id> --json   # 含 suggested_groups（分段直播合并建议）
+media2text summarize backfill [--creator <id>] [--limit N] --json  # 缺 summary 的历史转写批量补跑
 media2text summarize merge --sessions <id1>,<id2> --json
 ```
 
@@ -151,6 +152,7 @@ media2text creator show <creator_id> --json
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |
+| `summarize backfill [--creator <id>] [--limit N] --json` | 工作区内缺 `.summary.md` 的转写批量补摘要 |
 | `summarize merge --sessions <ids> --json` | 多段直播合并摘要 |
 | `pipeline run --creator <id> --json` | 作品一条龙 |
 
