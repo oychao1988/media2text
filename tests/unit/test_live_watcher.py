@@ -5,9 +5,6 @@ from unittest.mock import MagicMock, patch
 from media2text.core.config import AppConfig, LiveConfig, TranscribeConfig
 from media2text.core.platform.douyin.live import LiveWatcher
 from media2text.core.storage.repos import CreatorRepo
-from media2text.core.transcribe.base import TranscriptResult
-
-
 def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
@@ -27,13 +24,13 @@ def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> No
 
     with (
         patch(
-            "media2text.core.platform.douyin.live.record_stream_copy",
+            "media2text.core.live.recording.record_stream_copy",
             return_value=mock_proc,
         ),
-        patch("media2text.core.platform.douyin.live.time.sleep"),
+        patch("media2text.core.live.recording.time.sleep"),
         patch.object(watcher, "_process_alive", return_value=True),
-        patch("media2text.core.platform.douyin.live.stop_process"),
-        patch("media2text.core.platform.douyin.live.remux_to_mp4"),
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4"),
     ):
         result = watcher.run_once(creator_id=cid)
 
@@ -119,9 +116,9 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
     )
 
     with (
-        patch("media2text.core.platform.douyin.live.stop_process"),
-        patch("media2text.core.platform.douyin.live.remux_to_mp4") as mock_remux,
-        patch("media2text.core.platform.douyin.live.refresh_manifest") as mock_refresh,
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.recording.refresh_manifest") as mock_refresh,
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):
@@ -140,10 +137,13 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
         watcher._conn,
         sec_uid=sec_uid,
         workspace=cfg.ensure_workspace(),
+        platform="douyin",
     )
 
 
 def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
+    from media2text.core.storage.repos import PostProcessJobRepo
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -152,6 +152,7 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
     )
     watcher = LiveWatcher(cfg)
     repo = CreatorRepo(watcher._conn)
+    jobs = PostProcessJobRepo(watcher._conn)
     sec_uid = "MS4wLjABAAAAtx"
     cid = repo.add(
         sec_uid=sec_uid,
@@ -168,29 +169,11 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
         temp_path=str(flv),
         ffmpeg_pid=4242,
     )
-    fake_whisper = MagicMock()
-    monkeypatch.setitem(sys.modules, "faster_whisper", fake_whisper)
-
-    mock_backend = MagicMock()
-    mock_backend.transcribe.return_value = TranscriptResult(
-        text="hello",
-        segments=[],
-        engine="whisper",
-        model="tiny",
-    )
 
     with (
-        patch("media2text.core.platform.douyin.live.stop_process"),
-        patch("media2text.core.platform.douyin.live.remux_to_mp4") as mock_remux,
-        patch("media2text.core.platform.douyin.live.refresh_manifest") as mock_refresh,
-        patch(
-            "media2text.core.transcribe.factory.create_transcribe_backend",
-            return_value=mock_backend,
-        ),
-        patch(
-            "media2text.core.platform.douyin.live.write_transcript_outputs",
-            return_value=(flv.with_suffix(".transcript.json"), flv.with_suffix(".transcript.md")),
-        ),
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.recording.refresh_manifest"),
         patch.object(watcher._notify, "emit"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
@@ -201,9 +184,9 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
         meta = watcher._finalize_recording(sid, str(flv), 4242)
 
     assert meta is not None
-    assert meta.get("transcribed") is True
-    mock_backend.transcribe.assert_called_once()
-    assert mock_refresh.call_count == 2
+    pending = jobs.list_pending(limit=5)
+    assert len(pending) == 1
+    assert pending[0].session_id == sid
 
 
 def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> None:
@@ -233,9 +216,9 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
     monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
 
     with (
-        patch("media2text.core.platform.douyin.live.stop_process"),
-        patch("media2text.core.platform.douyin.live.remux_to_mp4") as mock_remux,
-        patch("media2text.core.platform.douyin.live.refresh_manifest"),
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.recording.refresh_manifest"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):
@@ -253,4 +236,4 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
         meta = watcher._finalize_recording(sid, str(flv), 1)
 
     assert meta is not None
-    assert meta.get("transcribe_skipped") is True
+    assert "job_id" in meta
