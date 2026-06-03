@@ -85,6 +85,19 @@ class PostProcessJobRow:
 
 
 @dataclass
+class PipelineEventRow:
+    id: str
+    session_id: str
+    job_id: str | None
+    stage: str
+    status: str
+    detail_json: str | None
+    started_at: str
+    ended_at: str | None
+    duration_ms: int | None
+
+
+@dataclass
 class CloudUploadRow:
     id: str
     session_id: str

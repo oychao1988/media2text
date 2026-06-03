@@ -7,6 +7,7 @@ from media2text.cli import cloud as cloud_cli
 from media2text.cli import compliance as compliance_cli
 from media2text.cli import creator as creator_cli
 from media2text.cli import download as download_cli
+from media2text.cli import live as live_cli
 from media2text.cli import monitor as monitor_cli
 from media2text.cli import notify as notify_cli
 from media2text.cli import pipeline as pipeline_cli
@@ -23,6 +24,7 @@ app.add_typer(cloud_cli.app, name="cloud")
 app.add_typer(compliance_cli.app, name="compliance")
 app.add_typer(creator_cli.app, name="creator")
 app.add_typer(download_cli.app, name="download")
+app.add_typer(live_cli.app, name="live")
 app.add_typer(monitor_cli.app, name="monitor")
 app.add_typer(transcribe_cli.app, name="transcribe")
 app.add_typer(summarize_cli.app, name="summarize")

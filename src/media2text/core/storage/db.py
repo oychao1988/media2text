@@ -101,6 +101,21 @@ CREATE TABLE IF NOT EXISTS post_process_jobs (
   FOREIGN KEY (creator_id) REFERENCES creators(id)
 );
 CREATE INDEX IF NOT EXISTS idx_post_process_jobs_status ON post_process_jobs(status);
+
+CREATE TABLE IF NOT EXISTS live_pipeline_events (
+  id TEXT PRIMARY KEY,
+  session_id TEXT NOT NULL,
+  job_id TEXT,
+  stage TEXT NOT NULL,
+  status TEXT NOT NULL,
+  detail_json TEXT,
+  started_at TEXT NOT NULL,
+  ended_at TEXT,
+  duration_ms INTEGER,
+  FOREIGN KEY (session_id) REFERENCES live_sessions(id)
+);
+CREATE INDEX IF NOT EXISTS idx_lpe_session ON live_pipeline_events(session_id, started_at);
+CREATE INDEX IF NOT EXISTS idx_lpe_stage ON live_pipeline_events(stage, started_at);
 """
 
 _CREATOR_COLUMNS = (

@@ -7,6 +7,7 @@ import structlog
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.cloud.live_upload import maybe_upload_live_to_aliyundrive
 from media2text.core.config import AppConfig
+from media2text.core.live.pipeline_events import stage_event
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
@@ -44,7 +45,12 @@ def run_post_process_job(
     try:
         if cfg.live.transcribe_on_complete and mp4.is_file():
             jobs.update_stage(job_id, stage="transcribe")
-            transcribe_meta = _transcribe_mp4(cfg, mp4, creator=creator, notify=notify)
+            with stage_event(
+                conn, session_id=job.session_id, stage="transcribe", job_id=job_id
+            ):
+                transcribe_meta = _transcribe_mp4(
+                    cfg, mp4, creator=creator, notify=notify
+                )
             result.update(transcribe_meta)
             if transcribe_meta.get("transcribed"):
                 sessions.update_status(
@@ -60,11 +66,14 @@ def run_post_process_job(
             from media2text.core.summarize.hook import maybe_summarize_after_transcribe
 
             jobs.update_stage(job_id, stage="summarize")
-            summarize_meta = maybe_summarize_after_transcribe(
-                cfg,
-                mp4,
-                transcribe_meta=result,
-            )
+            with stage_event(
+                conn, session_id=job.session_id, stage="summarize", job_id=job_id
+            ):
+                summarize_meta = maybe_summarize_after_transcribe(
+                    cfg,
+                    mp4,
+                    transcribe_meta=result,
+                )
             result.update(summarize_meta)
             if summarize_meta.get("summarized") or summarize_meta.get("summary_path"):
                 refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
@@ -79,15 +88,18 @@ def run_post_process_job(
 
         if creator:
             jobs.update_stage(job_id, stage="cloud_upload")
-            upload_meta = maybe_upload_live_to_aliyundrive(
-                cfg,
-                conn,
-                session_id=job.session_id,
-                mp4=mp4,
-                creator=creator,
-                transcribe_meta=result,
-                notify=notify,
-            )
+            with stage_event(
+                conn, session_id=job.session_id, stage="cloud_upload", job_id=job_id
+            ):
+                upload_meta = maybe_upload_live_to_aliyundrive(
+                    cfg,
+                    conn,
+                    session_id=job.session_id,
+                    mp4=mp4,
+                    creator=creator,
+                    transcribe_meta=result,
+                    notify=notify,
+                )
             if upload_meta:
                 result.update(upload_meta)
                 refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)

@@ -12,6 +12,7 @@ from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.live.protocol import LivePlatformAdapter
+from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
@@ -172,6 +173,12 @@ class LiveRecordingCore:
             if still_live:
                 if row.offline_since_at:
                     self._sessions.clear_offline_since(row.id)
+                    record_event(
+                        self._conn,
+                        session_id=row.id,
+                        stage="recording",
+                        status="offline_cancelled",
+                    )
                     log.debug(
                         "live_offline_cancelled",
                         session_id=row.id,
@@ -186,6 +193,12 @@ class LiveRecordingCore:
             if row.offline_since_at is None:
                 iso = now.isoformat()
                 self._sessions.set_offline_since(row.id, iso)
+                record_event(
+                    self._conn,
+                    session_id=row.id,
+                    stage="recording",
+                    status="offline_pending",
+                )
                 self._emit_live_ended(creator, row)
                 continue
 
@@ -357,6 +370,20 @@ class LiveRecordingCore:
         log.info(
             "live_recording_started", session_id=session_id, temp_path=str(temp_path)
         )
+        record_event(
+            self._conn,
+            session_id=session_id,
+            stage="detected_live",
+            status="completed",
+            detail={"room_id": room_id},
+        )
+        record_event(
+            self._conn,
+            session_id=session_id,
+            stage="recording",
+            status="started",
+            detail={"temp_path": str(temp_path), "pid": proc.pid},
+        )
         creator = self._creators.get(creator_id)
         if creator:
             label = creator_label(creator)
@@ -443,23 +470,24 @@ class LiveRecordingCore:
 
         self._sessions.update_status(session_id, status="remuxing")
         try:
-            if len(valid_sources) == 1:
-                remux_to_mp4(
-                    ffmpeg=self._cfg.live.ffmpeg_path,
-                    src=valid_sources[0],
-                    dst=mp4,
-                )
-                if valid_sources[0] != mp4:
-                    valid_sources[0].unlink(missing_ok=True)
-            else:
-                concat_to_mp4(
-                    ffmpeg=self._cfg.live.ffmpeg_path,
-                    sources=valid_sources,
-                    dst=mp4,
-                )
-                for seg in valid_sources:
-                    if seg.suffix.lower() in (".flv", ".ts", ".mkv"):
-                        seg.unlink(missing_ok=True)
+            with stage_event(self._conn, session_id=session_id, stage="remux"):
+                if len(valid_sources) == 1:
+                    remux_to_mp4(
+                        ffmpeg=self._cfg.live.ffmpeg_path,
+                        src=valid_sources[0],
+                        dst=mp4,
+                    )
+                    if valid_sources[0] != mp4:
+                        valid_sources[0].unlink(missing_ok=True)
+                else:
+                    concat_to_mp4(
+                        ffmpeg=self._cfg.live.ffmpeg_path,
+                        sources=valid_sources,
+                        dst=mp4,
+                    )
+                    for seg in valid_sources:
+                        if seg.suffix.lower() in (".flv", ".ts", ".mkv"):
+                            seg.unlink(missing_ok=True)
             self._sessions.update_status(
                 session_id,
                 status="completed",
