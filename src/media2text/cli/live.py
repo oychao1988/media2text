@@ -188,6 +188,8 @@ def stats_cmd(
                 "targets_ms": {
                     "s1_finalize_stt_p95": 10_000,
                     "s2_offline_to_complete_p95": 50_000,
+                    # Placeholder pending dogfood; wired into #113 --check-targets when merged
+                    "s3_offline_to_summarize_p95": 180_000,
                     "first_final_latency_p95": 30_000,
                 },
             },

@@ -52,6 +52,14 @@ def test_streaming_metrics_from_pipeline_events(tmp_path, monkeypatch) -> None:
         ended_at="2026-06-03T12:00:10+00:00",
         duration_ms=8000,
     )
+    events.insert(
+        session_id=sid,
+        stage="summarize",
+        status="completed",
+        started_at="2026-06-03T12:00:40+00:00",
+        ended_at="2026-06-03T12:02:30+00:00",
+        duration_ms=110_000,
+    )
 
     metrics = events.streaming_metrics_since("2026-06-01T00:00:00+00:00")
     assert metrics["s1_finalize_stt_ms"]["count"] == 1
@@ -59,6 +67,8 @@ def test_streaming_metrics_from_pipeline_events(tmp_path, monkeypatch) -> None:
     assert metrics["first_final_latency_ms"]["p50_ms"] == 8000
     assert metrics["s2_offline_to_complete_ms"]["count"] == 1
     assert metrics["s2_offline_to_complete_ms"]["p50_ms"] == 60_000
+    assert metrics["s3_offline_to_summarize_ms"]["count"] == 1
+    assert metrics["s3_offline_to_summarize_ms"]["p50_ms"] == 150_000
 
     summaries = LiveSessionRepo(conn).list_streaming_summary_since(
         "2026-06-01T00:00:00+00:00"
