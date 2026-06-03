@@ -71,7 +71,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
-直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 `streaming`）。**streaming**：并行录制 FLV + Deepgram WS 实时转写，finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe；需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费）。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。手动清队列：`media2text post-process run [--limit N] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下降级 legacy finalize（D1）。
+直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 `streaming`）。**streaming**（抖音 / B 站）：并行录制 FLV + Deepgram WS 实时转写，finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe；需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费），B 站另需 `auth login --platform bilibili`。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。手动清队列：`media2text post-process run [--limit N] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下 checkpoint + offset 续传（#101）；STT 断线可重连或降级 legacy finalize。
 
 ### 3. 手动作品流水线（单博主）
 

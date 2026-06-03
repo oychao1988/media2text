@@ -3,13 +3,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, LiveConfig, StreamingSttConfig
 from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
 from media2text.core.platform.bilibili.live import LiveWatcher
 from media2text.core.platform.bilibili.parse import check_api_code
 from media2text.core.platform.bilibili.resolver import resolve_mid
-from media2text.core.storage.repos import CreatorRepo
+from media2text.core.storage.repos import CreatorRepo, PipelineEventRepo
 
 
 def test_resolve_mid_from_space_url() -> None:
@@ -110,3 +110,54 @@ def test_bilibili_live_skips_douyin_creator(tmp_path, monkeypatch) -> None:
     result = watcher.run_once()
     assert result["checked"] == 0
     assert result["started"] == []
+
+
+def test_bilibili_live_starts_streaming_stt_dual_path(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(
+            pipeline_mode="streaming",
+            remux_on_complete=False,
+            streaming_stt=StreamingSttConfig(enabled=True),
+        ),
+    )
+    watcher = LiveWatcher(cfg)
+    repo = CreatorRepo(watcher._conn)
+    cid = repo.add(
+        sec_uid="12345",
+        profile_url="https://space.bilibili.com/12345",
+        platform="bilibili",
+        monitor_enabled=True,
+    )
+
+    mock_proc = MagicMock()
+    mock_proc.pid = os.getpid()
+    mock_proc.poll.return_value = None
+    mock_proc.stderr = None
+
+    mock_stt = MagicMock()
+
+    with (
+        patch(
+            "media2text.core.live.recording.record_stream_copy",
+            return_value=mock_proc,
+        ),
+        patch("media2text.core.live.recording.time.sleep"),
+        patch.object(watcher, "_process_alive", return_value=True),
+        patch("media2text.core.live.recording.stop_process"),
+        patch(
+            "media2text.core.live.recording.StreamingSttSession",
+            return_value=mock_stt,
+        ),
+    ):
+        result = watcher.run_once(creator_id=cid)
+
+    assert result["platform"] == "bilibili"
+    assert len(result["started"]) == 1
+    mock_stt.start.assert_called_once()
+    session_id = result["started"][0]["session_id"]
+    assert session_id in watcher._core._stt_sessions
+    events = PipelineEventRepo(watcher._conn).list_for_session(session_id)
+    stages = {(e.stage, e.status) for e in events}
+    assert ("streaming_stt", "started") in stages
