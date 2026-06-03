@@ -112,6 +112,7 @@ summarize:
   default_profile: auto
   merge_gap_minutes: 60
   merge_date_tz: UTC
+  parse_sections: true
   max_files_per_run: 0
   llm:
     temperature: 0.2
@@ -128,8 +129,14 @@ summarize:
       #   base_url: https://api.openai.com/v1
       #   api_key_envs: [OPENAI_API_KEY]
       #   models: [gpt-4o-mini]
+      # - name: ollama
+      #   base_url: http://127.0.0.1:11434/v1
+      #   api_key_envs: [OLLAMA_API_KEY]   # 本地可 export OLLAMA_API_KEY=ollama
+      #   models: [qwen2.5:7b]
   chunk:
     max_chars: 24000
     minutes: 30
   merge:
     auto_merge_after_parts: false
+    merge_cross_midnight: false   # true: 23:50 + 00:10 等跨日断流可 suggested_groups
+    per_part: true                # false: run/backfill 跳过分段摘要，仅 merge 产出

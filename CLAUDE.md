@@ -106,7 +106,9 @@ media2text summarize backfill [--creator <id>] [--limit N] --json  # 缺 summary
 media2text summarize merge --sessions <id1>,<id2> --json
 ```
 
-Sidecar：`{basename}.summary.md` + 元数据 `{basename}.summary.json`；合并直播：`live/YYYYMMDD_merged.summary.md`。`agent-manifest.json` 含 `summary_path`、`live_groups`。
+Sidecar：`{basename}.summary.md` + 元数据 `{basename}.summary.json`（v2 默认含 `sections[]` 从 `##` 标题解析）；合并直播：`live/YYYYMMDD_merged.summary.md`。`agent-manifest.json` 含 `summary_path`、`live_groups`。
+
+v2 配置（`config.yaml` → `summarize`）：`merge.merge_cross_midnight: true` 跨日断流进 `suggested_groups`；`merge.per_part: false` 时 `run`/`backfill` 跳过分段 `.summary.md`（需再 `summarize merge`）；本地 Ollama 在 `summarize.llm.providers` 增加 OpenAI 兼容 `base_url`（`engine` 仍为 `openai`）。
 
 ### 4b. 个人阿里云盘（实验，非 CLI 子命令）
 

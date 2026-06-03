@@ -114,4 +114,10 @@ def merge_sessions(
         provider_base_url=getattr(backend, "provider_base_url", None),
         llm_usage=llm_usage,
     )
-    return write_merged_summary(live_dir, date_key, result, sources=sources)
+    return write_merged_summary(
+        live_dir,
+        date_key,
+        result,
+        sources=sources,
+        parse_sections=cfg.summarize.parse_sections,
+    )

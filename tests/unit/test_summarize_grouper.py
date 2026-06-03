@@ -102,3 +102,55 @@ def test_no_group_when_gap_90min(tmp_path: Path) -> None:
         tz="UTC",
     )
     assert groups == []
+
+
+def test_cross_midnight_group_when_enabled(tmp_path: Path) -> None:
+    live_dir = tmp_path / "live"
+    live_dir.mkdir()
+    p1 = live_dir / "part1.mp4"
+    p2 = live_dir / "part2.mp4"
+    p1.write_bytes(b"x")
+    p2.write_bytes(b"x")
+    p1.with_suffix(".transcript.json").write_text(
+        '{"segments":[{"start":0,"end":1,"text":"a"}]}', encoding="utf-8"
+    )
+    p2.with_suffix(".transcript.json").write_text(
+        '{"segments":[{"start":0,"end":1,"text":"b"}]}', encoding="utf-8"
+    )
+
+    rows = [
+        _row(
+            sid="a",
+            started="2026-06-01T23:00:00+00:00",
+            ended="2026-06-01T23:50:00+00:00",
+            path=str(p1),
+        ),
+        _row(
+            sid="b",
+            started="2026-06-02T00:10:00+00:00",
+            ended="2026-06-02T01:00:00+00:00",
+            path=str(p2),
+        ),
+    ]
+    off = build_suggested_groups(
+        creator_id="c1",
+        rows=rows,
+        workspace=tmp_path,
+        merge_gap_minutes=60,
+        tz="UTC",
+        merge_cross_midnight=False,
+    )
+    assert off == []
+
+    on = build_suggested_groups(
+        creator_id="c1",
+        rows=rows,
+        workspace=tmp_path,
+        merge_gap_minutes=60,
+        tz="UTC",
+        merge_cross_midnight=True,
+    )
+    assert len(on) == 1
+    assert len(on[0].session_ids) == 2
+    assert on[0].date == "2026-06-01"
+    assert on[0].gap_minutes == 20

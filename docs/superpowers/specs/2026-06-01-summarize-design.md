@@ -482,9 +482,9 @@ Fixtures: shortened `transcript.json` from real segment structure (no API keys i
 | 2026-06-01 | LLM: **NVIDIA integrate API** + `deepseek-ai/deepseek-v4-pro`; env `NVIDIA_API_KEY`; `thinking: false` |
 | 2026-06-01 | Summarize decoupled from `transcribe.engine` (transcribe stays Deepgram/whisper/etc.) |
 
-## 16. Open Questions (deferred)
+## 16. Open Questions (v2 — shipped)
 
-- Cross-midnight sessions (`merge_cross_midnight`) — v2
-- Per-part summary skip when only merged output wanted — config `per_part: false`
-- Local Ollama backend — v2 if needed
-- JSON-structured LLM output (tool/schema) vs markdown-only v1 — start markdown-first; parse sections optionally in v2
+- Cross-midnight sessions — `summarize.merge.merge_cross_midnight` (default `false`)
+- Per-part summary skip — `summarize.merge.per_part` (default `true`; `false` skips part `.summary.md` in multi-session groups)
+- Local Ollama — add OpenAI-compatible provider under `summarize.llm.providers` (`engine` stays `openai`)
+- Structured sections — `summarize.parse_sections` (default `true`); `##` headings → `sections[]` in `.summary.json`
