@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, StreamingSttConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.transcript_writer import TranscriptWriter
 from media2text.core.storage.repos import (
     CreatorRepo,
     LiveSessionRepo,
@@ -46,11 +47,9 @@ def test_streaming_finalize_skips_remux(tmp_path, monkeypatch) -> None:
     )
 
     mock_stt = MagicMock()
-    mock_stt.stop.return_value = (
-        flv.with_suffix(".transcript.json"),
-        flv.with_suffix(".transcript.md"),
-    )
-    flv.with_suffix(".transcript.json").write_text('{"text":"hi"}', encoding="utf-8")
+    writer = TranscriptWriter(flv)
+    writer.add_final("hi", start=0.0, end=1.0)
+    mock_stt.writer = writer
 
     core = LiveRecordingCore(
         cfg,
@@ -61,6 +60,7 @@ def test_streaming_finalize_skips_remux(tmp_path, monkeypatch) -> None:
         notify=MagicMock(),
     )
     core._stt_sessions[sid] = mock_stt
+    core._streaming_transcript_anchor[sid] = flv
 
     with (
         patch("media2text.core.live.recording.stop_process"),
@@ -125,6 +125,7 @@ def test_streaming_finalize_seals_partial_without_stt(tmp_path, monkeypatch) -> 
         processes={},
         notify=MagicMock(),
     )
+    core._streaming_transcript_anchor[sid] = flv
 
     with (
         patch("media2text.core.live.recording.stop_process"),
