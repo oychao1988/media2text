@@ -62,6 +62,64 @@ def test_claim_pending_atomic(tmp_path, monkeypatch) -> None:
     assert again == []
 
 
+def test_retry_failed_resets_to_pending(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAretry",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "x.flv"),
+        ffmpeg_pid=1,
+    )
+    repo = PostProcessJobRepo(conn)
+    job_id = repo.enqueue(
+        session_id=sid,
+        creator_id=cid,
+        mp4_path=str(tmp_path / "out.mp4"),
+    )
+    repo.mark_failed(job_id, error="transcribe failed")
+    assert repo.retry_failed(job_id) is True
+    row = repo.get(job_id)
+    assert row is not None
+    assert row.status == "pending"
+    assert row.error is None
+    assert repo.retry_failed(job_id) is False
+
+
+def test_retry_failed_rejects_non_failed(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAretrypend",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "x.flv"),
+        ffmpeg_pid=1,
+    )
+    repo = PostProcessJobRepo(conn)
+    job_id = repo.enqueue(
+        session_id=sid,
+        creator_id=cid,
+        mp4_path=str(tmp_path / "out.mp4"),
+    )
+    assert repo.retry_failed(job_id) is False
+
+
 def test_stale_reconnect_skips_get_active(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")

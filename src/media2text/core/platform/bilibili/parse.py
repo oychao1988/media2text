@@ -6,6 +6,7 @@ from typing import Any
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.bilibili.models_dynamic import ParsedDynamic
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
+from media2text.core.platform.douyin.parse import optional_platform_live_started_at
 
 
 def _dig(data: Any, *keys: str) -> Any:
@@ -51,6 +52,7 @@ def parse_room_info(payload: dict) -> LiveRoomInfo:
         room_id=room_id_str,
         is_live=is_live,
         title=data.get("title"),
+        platform_live_started_at=optional_platform_live_started_at(data),
     )
 
 

@@ -55,7 +55,7 @@ class LiveConfig(BaseModel):
     ffmpeg_path: str = "ffmpeg"
     ffmpeg_stop_timeout_sec: int = 30
     temp_format: str = "flv"
-    live_poll_interval_sec: int = 20
+    live_poll_interval_sec: int = 10
     offline_confirm_sec: int = 45
     offline_confirm_polls: int = 3  # deprecated; logic uses offline_confirm_sec
     ffmpeg_exit_recheck: bool = True

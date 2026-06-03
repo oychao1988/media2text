@@ -427,7 +427,8 @@ class LiveSessionRepo:
         creator_id: str,
         room_id: str | None,
         temp_path: str,
-        ffmpeg_pid: int,
+        ffmpeg_pid: int | None = None,
+        platform_live_started_at: str | None = None,
     ) -> str:
         sid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -435,10 +436,20 @@ class LiveSessionRepo:
             """
             INSERT INTO live_sessions
               (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
-               first_seen_live_at, recording_started_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?)
+               first_seen_live_at, recording_started_at, platform_live_started_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?)
             """,
-            (sid, creator_id, room_id, ffmpeg_pid, now, temp_path, now, now),
+            (
+                sid,
+                creator_id,
+                room_id,
+                ffmpeg_pid,
+                now,
+                temp_path,
+                now,
+                now,
+                platform_live_started_at,
+            ),
         )
         self._conn.commit()
         return sid
@@ -458,6 +469,8 @@ class LiveSessionRepo:
         if session.status != "recording" or session.ffmpeg_pid is None:
             return session
         if (session.reconnect_attempts or 0) > 0:
+            return session
+        if session.ffmpeg_pid <= 0:
             return session
         try:
             os.kill(session.ffmpeg_pid, 0)
@@ -763,6 +776,20 @@ class PostProcessJobRepo:
             (error, now, job_id),
         )
         self._conn.commit()
+
+    def retry_failed(self, job_id: str) -> bool:
+        """Reset a failed job to pending. Returns True if updated."""
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.execute(
+            """
+            UPDATE post_process_jobs
+            SET status = 'pending', stage = NULL, error = NULL, updated_at = ?
+            WHERE id = ? AND status = 'failed'
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+        return cur.rowcount == 1
 
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec

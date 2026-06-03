@@ -23,7 +23,7 @@ live:
   # When true and transcribe.engine is configured (whisper / openai / deepgram), transcribe
   # runs in the post-process drain (monitor daemon or `media2text post-process run`), not inline.
   transcribe_on_complete: false
-  live_poll_interval_sec: 20
+  live_poll_interval_sec: 10       # LiveTick only; falls back to monitor.live_poll_interval_sec
   offline_confirm_sec: 45          # wall-clock seconds before finalize after first offline
   offline_confirm_polls: 3         # deprecated; logic uses offline_confirm_sec
   ffmpeg_exit_recheck: true
