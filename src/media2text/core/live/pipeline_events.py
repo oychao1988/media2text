@@ -20,6 +20,7 @@ def record_event(
     status: str,
     job_id: str | None = None,
     detail: dict | None = None,
+    duration_ms: int | None = None,
 ) -> str:
     """Insert a single-point pipeline event (no duration)."""
     repo = PipelineEventRepo(conn)
@@ -31,7 +32,7 @@ def record_event(
         detail=detail,
         started_at=_now_iso(),
         ended_at=_now_iso(),
-        duration_ms=0,
+        duration_ms=0 if duration_ms is None else duration_ms,
     )
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -89,6 +90,28 @@ def merge_transcript_checkpoints(
     return paths
 
 
+def count_transcript_segments(media_path: str | Path | None) -> int | None:
+    """Return segment count from final or partial sidecar, if present."""
+    if not media_path:
+        return None
+    base = Path(media_path)
+    for name in (
+        f"{base.stem}.transcript.json",
+        f"{base.stem}.transcript.partial.json",
+    ):
+        sidecar = base.parent / name
+        if not sidecar.is_file():
+            continue
+        try:
+            payload = json.loads(sidecar.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        segments = payload.get("segments")
+        if isinstance(segments, list):
+            return len(segments)
+    return None
+
+
 @dataclass
 class TranscriptWriter:
     """Accumulate final segments and periodic partial flush."""
@@ -100,6 +123,9 @@ class TranscriptWriter:
     offset_sec: float = 0.0
     _segments: list[TranscriptSegment] = field(default_factory=list, repr=False)
     _last_flush_mono: float = field(default_factory=time.monotonic, repr=False)
+    on_partial_summary: Callable[[str, int], None] | None = field(
+        default=None, repr=False
+    )
 
     @property
     def partial_path(self) -> Path:
@@ -141,6 +167,11 @@ class TranscriptWriter:
             json.dumps(payload, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+        if self.on_partial_summary:
+            tail = self._segments[-3:]
+            summary = "\n".join(s.text for s in tail).strip()
+            if summary:
+                self.on_partial_summary(summary, len(self._segments))
 
     def to_result(self) -> TranscriptResult:
         return TranscriptResult(

@@ -55,6 +55,8 @@ class StreamingSttConfig(BaseModel):
     engine: str = "deepgram"
     flush_interval_sec: float = 30.0
     reconnect: bool = True
+    partial_notify_interval_sec: float = 120.0
+    partial_notify_min_finals: int = 3
 
 
 class LiveConfig(BaseModel):
@@ -202,6 +204,7 @@ class NotifyEventsConfig(BaseModel):
     new_dynamic: bool = True
     recording_completed: bool = True
     transcribe_completed: bool = True
+    transcribe_partial: bool = False
     summarize_completed: bool = True
     upload_completed: bool = True
     upload_failed: bool = True

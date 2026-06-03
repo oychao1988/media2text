@@ -658,6 +658,37 @@ class LiveSessionRepo:
         )
         self._conn.commit()
 
+    def list_streaming_summary_since(self, since_iso: str) -> list[dict]:
+        from media2text.core.live.transcript_writer import count_transcript_segments
+
+        rows = self._conn.execute(
+            """
+            SELECT id, creator_id, pipeline_mode, transcribe_status, local_path,
+                   temp_path, started_at, ended_at, status
+            FROM live_sessions
+            WHERE started_at >= ? AND pipeline_mode = 'streaming'
+            ORDER BY started_at DESC
+            """,
+            (since_iso,),
+        ).fetchall()
+        out: list[dict] = []
+        for row in rows:
+            data = dict(row)
+            media_path = data.get("local_path") or data.get("temp_path")
+            out.append(
+                {
+                    "session_id": data["id"],
+                    "creator_id": data["creator_id"],
+                    "pipeline_mode": data.get("pipeline_mode"),
+                    "transcribe_status": data.get("transcribe_status"),
+                    "status": data.get("status"),
+                    "started_at": data.get("started_at"),
+                    "ended_at": data.get("ended_at"),
+                    "transcript_segment_count": count_transcript_segments(media_path),
+                }
+            )
+        return out
+
 
 class PostProcessJobRepo:
     def __init__(self, conn) -> None:
@@ -960,6 +991,81 @@ class PipelineEventRepo:
                 }
             )
         return out
+
+    def streaming_metrics_since(self, since_iso: str) -> dict:
+        s1 = self._percentile_stats_for_events(
+            since_iso, stage="streaming_stt", status="completed"
+        )
+        first_final = self._percentile_stats_for_events(
+            since_iso, stage="streaming_stt", status="first_final"
+        )
+        s2 = self._offline_to_complete_stats(since_iso)
+        return {
+            "s1_finalize_stt_ms": s1,
+            "s2_offline_to_complete_ms": s2,
+            "first_final_latency_ms": first_final,
+        }
+
+    def _percentile_stats_for_events(
+        self, since_iso: str, *, stage: str, status: str
+    ) -> dict:
+        rows = self._conn.execute(
+            """
+            SELECT duration_ms
+            FROM live_pipeline_events
+            WHERE started_at >= ?
+              AND stage = ?
+              AND status = ?
+              AND duration_ms IS NOT NULL
+            """,
+            (since_iso, stage, status),
+        ).fetchall()
+        values = [int(row["duration_ms"]) for row in rows]
+        return _aggregate_ms(values)
+
+    def _offline_to_complete_stats(self, since_iso: str) -> dict:
+        rows = self._conn.execute(
+            """
+            SELECT ls.ended_at AS completed_at,
+                   (
+                     SELECT started_at FROM live_pipeline_events e
+                     WHERE e.session_id = ls.id
+                       AND e.stage = 'recording'
+                       AND e.status = 'offline_pending'
+                     ORDER BY started_at ASC LIMIT 1
+                   ) AS offline_at
+            FROM live_sessions ls
+            WHERE ls.started_at >= ?
+              AND ls.pipeline_mode = 'streaming'
+              AND ls.status = 'completed'
+              AND ls.ended_at IS NOT NULL
+            """,
+            (since_iso,),
+        ).fetchall()
+        deltas: list[int] = []
+        for row in rows:
+            offline_at = row["offline_at"]
+            completed_at = row["completed_at"]
+            if not offline_at or not completed_at:
+                continue
+            try:
+                t0 = datetime.fromisoformat(str(offline_at).replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(str(completed_at).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            deltas.append(max(0, int((t1 - t0).total_seconds() * 1000)))
+        return _aggregate_ms(deltas)
+
+
+def _aggregate_ms(values: list[int]) -> dict:
+    if not values:
+        return {"count": 0, "p50_ms": 0, "p95_ms": 0}
+    values.sort()
+    return {
+        "count": len(values),
+        "p50_ms": _percentile(values, 50),
+        "p95_ms": _percentile(values, 95),
+    }
 
 
 def _percentile(sorted_values: list[int], pct: float) -> int:
