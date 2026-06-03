@@ -152,6 +152,8 @@ pgrep -fl "monitor watch"    # 确认在跑
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live.pipeline_mode` | `streaming`（并行 FLV + Deepgram WS，抖音/B 站直播；example 推荐）或 `legacy`（代码默认：remux MP4 + 录后转写） |
+| `live.streaming_stt.enabled` | `false` 时仅录 FLV、不启 WS（即使 `pipeline_mode=streaming`）；session 快照为 `legacy` |
+| `live.remux_on_complete` | streaming 默认 `false`（保留 FLV）；设为 `true` 可在 finalize 额外 remux 出 MP4（FLV 仍保留） |
 | `live` | ffmpeg、重连/离线确认；streaming 需 `DEEPGRAM_API_KEY` + `.[transcribe-deepgram]` + 对应平台登录态；`transcribe_on_complete` 仅 legacy |
 | `notify` | 监控事件提醒：系统提示音 + 飞书群机器人 webhook（见下方） |
 | `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
