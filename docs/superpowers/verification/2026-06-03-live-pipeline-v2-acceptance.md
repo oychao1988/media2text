@@ -160,3 +160,16 @@ pytest tests/ -q   # 2026-06-03: 188 passed in ~11s
 |------|-----|------------|---------|--------|
 | 老曹 | `20260603T100954Z.mp4` | yes | yes | completed |
 | 满江宏 | `20260603T105139Z.mp4` | yes | yes | completed |
+
+---
+
+## 收尾工单 #92–#95（代码补全）
+
+| Issue | 交付 | 验证 |
+|-------|------|------|
+| [#94](https://github.com/oychao1988/media2text/issues/94) | `live.live_poll_interval_sec` 默认 **10**；文档同步 | `test_config` |
+| [#93](https://github.com/oychao1988/media2text/issues/93) | `stream_resolve` pipeline event；`platform_live_started_at` 解析写入 | `test_start_recording_stream_resolve_event`、`test_parse_live_started` |
+| [#92](https://github.com/oychao1988/media2text/issues/92) | `media2text post-process retry <job_id>` | `test_post_process_repo` |
+| [#95](https://github.com/oychao1988/media2text/issues/95) | 本记录 + PR 合并后关闭 issue | `pytest tests/ -q`（197 passed @ 收尾分支） |
+
+规格索引：[2026-06-03-live-pipeline-v2-design.md](../specs/2026-06-03-live-pipeline-v2-design.md)（§12 勾选已与收尾实现对齐）。

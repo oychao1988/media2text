@@ -18,6 +18,7 @@ class LiveRoomInfo:
     is_live: bool
     stream_flv_url: str | None = None
     title: str | None = None
+    platform_live_started_at: str | None = None
 
 
 @dataclass

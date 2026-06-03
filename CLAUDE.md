@@ -67,7 +67,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 20s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
+| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 10s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
@@ -152,6 +152,7 @@ media2text creator show <creator_id> --json
 | `creator remove <id> [--delete-media] --json` | 移除博主 |
 | `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD/archive + 动态 |
 | `post-process run [--limit N] --json` | 消化积压的直播后处理任务 |
+| `post-process retry <job_id> --json` | 将 `failed` 后处理任务重置为 `pending` |
 | `live status [--creator <id>] --json` | 当前录制、后处理队列与 daemon 锁 |
 | `live timeline <session_id> --json` | 单场 pipeline events 时间线 |
 | `live stats [--days N] --json` | 各 stage 耗时 P50/P95 聚合 |

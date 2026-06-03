@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from datetime import datetime, timezone
 from typing import Any
 from urllib.parse import unquote
 
@@ -16,6 +17,24 @@ def _dig(data: Any, *keys: str) -> Any:
             return None
         cur = cur.get(key)
     return cur
+
+
+def optional_platform_live_started_at(data: dict) -> str | None:
+    """Parse platform live start time when API exposes unix seconds or ms."""
+    for key in ("live_start_time", "start_time", "create_time", "open_time", "live_time"):
+        raw = data.get(key)
+        if raw is None:
+            continue
+        try:
+            ts = int(raw)
+        except (TypeError, ValueError):
+            continue
+        if ts > 1_000_000_000_000:
+            ts //= 1000
+        if ts <= 0:
+            continue
+        return datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+    return None
 
 
 def _user_sec_uid(user: dict) -> str | None:
@@ -99,6 +118,7 @@ def parse_profile_live(payload: dict) -> LiveRoomInfo:
         room_id=room_id_str,
         is_live=is_live,
         title=user.get("nickname"),
+        platform_live_started_at=optional_platform_live_started_at(user),
     )
 
 
@@ -123,6 +143,7 @@ def parse_reflow_room(payload: dict) -> LiveRoomInfo:
         is_live=is_live,
         stream_flv_url=stream_flv_url,
         title=_dig(room, "owner", "nickname"),
+        platform_live_started_at=optional_platform_live_started_at(room),
     )
 
 

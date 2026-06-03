@@ -3,7 +3,12 @@ from unittest.mock import MagicMock, patch
 from media2text.core.config import AppConfig
 from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.platform.douyin.models import LiveRoomInfo
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import (
+    CreatorRepo,
+    LiveSessionRepo,
+    PipelineEventRepo,
+    PostProcessJobRepo,
+)
 
 
 def test_poll_skips_fresh_sessions(tmp_path, monkeypatch) -> None:
@@ -160,3 +165,54 @@ def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:
     assert len(pending) == 1
     assert pending[0].session_id == sid
     assert pending[0].mp4_path.endswith(".mp4")
+
+
+def test_start_recording_stream_resolve_event(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAresolve",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    adapter = MagicMock()
+    adapter.resolve_stream_url.return_value = "https://example.com/live.flv"
+    live_info = LiveRoomInfo(
+        room_id="731829",
+        is_live=True,
+        stream_flv_url=None,
+        platform_live_started_at="2026-06-03T10:00:00+00:00",
+    )
+    mock_proc = MagicMock()
+    mock_proc.pid = 5555
+    mock_proc.poll.return_value = None
+    mock_proc.stderr = None
+
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=adapter,
+        platform="douyin",
+        processes={},
+        notify=MagicMock(),
+    )
+    with (
+        patch(
+            "media2text.core.live.recording.record_stream_copy",
+            return_value=mock_proc,
+        ),
+        patch("media2text.core.live.recording.time.sleep"),
+    ):
+        meta = core._start_recording(cid, "MS4wLjABAAAAresolve", "731829", live_info)
+
+    row = LiveSessionRepo(conn).get(meta["session_id"])
+    assert row is not None
+    assert row.platform_live_started_at == "2026-06-03T10:00:00+00:00"
+    events = PipelineEventRepo(conn).list_for_session(meta["session_id"])
+    stages = [e.stage for e in events]
+    assert "detected_live" in stages
+    assert "stream_resolve" in stages
+    assert "recording" in stages

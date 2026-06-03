@@ -23,7 +23,7 @@ def test_summarize_config_defaults(tmp_path: Path, monkeypatch) -> None:
 
 def test_live_config_recording_defaults() -> None:
     lc = LiveConfig()
-    assert lc.live_poll_interval_sec == 20
+    assert lc.live_poll_interval_sec == 10
     assert lc.offline_confirm_sec == 45
     assert lc.offline_confirm_polls == 3
     assert lc.ffmpeg_exit_recheck is True

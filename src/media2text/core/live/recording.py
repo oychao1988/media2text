@@ -98,42 +98,36 @@ class LiveRecordingCore:
             if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             room_id = live_info.room_id
-            stream_url = live_info.stream_flv_url
-            if not stream_url:
-                try:
-                    stream_url = self._adapter.resolve_stream_url(
-                        room_id=room_id,
-                        sec_uid=creator.sec_uid,
-                    )
-                except AuthRequired as exc:
-                    auth_required = True
-                    errors.append(
-                        {"creator_id": creator.id, "error": str(exc), "auth_required": True}
-                    )
-                    continue
-                except PlatformChanged as exc:
-                    platform_changed = True
-                    errors.append(
-                        {
-                            "creator_id": creator.id,
-                            "error": str(exc),
-                            "platform_changed": True,
-                        }
-                    )
-                    continue
-                except Exception as exc:  # noqa: BLE001
-                    log.warning(
-                        "live_stream_url_resolve_failed",
-                        creator_id=creator.id,
-                        room_id=room_id,
-                        error=str(exc),
-                    )
-                    errors.append({"creator_id": creator.id, "error": str(exc)})
-                    continue
+            try:
+                meta = self._start_recording(
+                    creator.id, creator.sec_uid, room_id, live_info
+                )
+            except AuthRequired as exc:
+                auth_required = True
+                errors.append(
+                    {"creator_id": creator.id, "error": str(exc), "auth_required": True}
+                )
+                continue
+            except PlatformChanged as exc:
+                platform_changed = True
+                errors.append(
+                    {
+                        "creator_id": creator.id,
+                        "error": str(exc),
+                        "platform_changed": True,
+                    }
+                )
+                continue
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "live_stream_url_resolve_failed",
+                    creator_id=creator.id,
+                    room_id=room_id,
+                    error=str(exc),
+                )
+                errors.append({"creator_id": creator.id, "error": str(exc)})
+                continue
 
-            meta = self._start_recording(
-                creator.id, creator.sec_uid, room_id, stream_url
-            )
             started.append(meta)
             started_session_ids.add(meta["session_id"])
 
@@ -346,21 +340,49 @@ class LiveRecordingCore:
         creator_id: str,
         sec_uid: str,
         room_id: str | None,
-        stream_url: str,
+        live_info: LiveRoomInfo,
     ) -> dict:
         live_dir = self._ws / "creators" / sec_uid / "live"
+        live_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         temp_path = live_dir / f"{stamp}.flv"
+
+        session_id = self._sessions.create(
+            creator_id=creator_id,
+            room_id=room_id,
+            temp_path=str(temp_path),
+            ffmpeg_pid=None,
+            platform_live_started_at=live_info.platform_live_started_at,
+        )
+        record_event(
+            self._conn,
+            session_id=session_id,
+            stage="detected_live",
+            status="completed",
+            detail={"room_id": room_id},
+        )
+
+        with stage_event(self._conn, session_id=session_id, stage="stream_resolve"):
+            stream_url = live_info.stream_flv_url
+            if not stream_url:
+                if not room_id:
+                    raise ValueError("room_id required for stream resolve")
+                stream_url = self._adapter.resolve_stream_url(
+                    room_id=room_id,
+                    sec_uid=sec_uid,
+                )
+            if not stream_url:
+                raise ValueError("empty stream url after resolve")
+
         proc = record_stream_copy(
             ffmpeg=self._cfg.live.ffmpeg_path,
             stream_url=stream_url,
             output_path=temp_path,
         )
-        session_id = self._sessions.create(
-            creator_id=creator_id,
-            room_id=room_id,
-            temp_path=str(temp_path),
+        self._sessions.update_recording_state(
+            session_id,
             ffmpeg_pid=proc.pid,
+            temp_path=str(temp_path),
         )
         self._processes[session_id] = proc
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
@@ -402,13 +424,6 @@ class LiveRecordingCore:
 
         log.info(
             "live_recording_started", session_id=session_id, temp_path=str(temp_path)
-        )
-        record_event(
-            self._conn,
-            session_id=session_id,
-            stage="detected_live",
-            status="completed",
-            detail={"room_id": room_id},
         )
         record_event(
             self._conn,
