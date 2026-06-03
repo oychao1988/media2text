@@ -132,6 +132,10 @@ def refresh_manifest(
             "summary_path": _summary_sidecar_path(local_path),
             "status": data.get("status"),
         }
+        if data.get("pipeline_mode"):
+            entry["pipeline_mode"] = data["pipeline_mode"]
+        if data.get("transcribe_status"):
+            entry["transcribe_status"] = data["transcribe_status"]
         if data.get("cloud_file_id"):
             entry["cloud_file_id"] = data["cloud_file_id"]
         if data.get("cloud_relative_path"):
