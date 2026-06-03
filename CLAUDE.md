@@ -71,7 +71,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
-直播收尾：`finalize` 仅 remux + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行。手动清队列：`media2text post-process run [--limit N] --json`。通知时序：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → remux → `recording_completed`；`transcribe_completed` / `summarize_completed` 在 worker 完成后。`min_recording_sec_before_offline_end`（默认 45s）忽略开播后短暂 offline；ffmpeg 异常退出可分段重连（`max_reconnect_attempts`）。
+直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 `streaming`）。**streaming**：并行录制 FLV + Deepgram WS 实时转写，finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe；需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费）。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。手动清队列：`media2text post-process run [--limit N] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下降级 legacy finalize（D1）。
 
 ### 3. 手动作品流水线（单博主）
 
@@ -237,7 +237,8 @@ monitor:
   live_poll_interval_sec: 60
   vod_poll_interval_sec: 300
 live:
-  transcribe_on_complete: false   # 直播 MP4 完成后自动转写
+  pipeline_mode: legacy           # legacy | streaming（example 推荐 streaming）
+  transcribe_on_complete: false   # legacy 录后转写；streaming 必须 false
 transcribe:
   engine: whisper                 # whisper | openai | deepgram
   whisper:

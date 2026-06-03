@@ -12,8 +12,10 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, PlatformChanged
+from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.live.protocol import LivePlatformAdapter
+from media2text.core.live.streaming_stt import StreamingSttSession
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
@@ -47,6 +49,8 @@ class LiveRecordingCore:
         self._processes = processes
         self._notify = notify
         self._flv_size_snapshots: dict[str, int] = {}
+        self._stt_sessions: dict[str, StreamingSttSession] = {}
+        self._streaming_legacy_finalize: set[str] = set()
 
     def scan_and_start(
         self, *, creator_id: str | None = None
@@ -274,6 +278,9 @@ class LiveRecordingCore:
 
         return self._finalize_recording(session_id, temp_path, pid)
 
+    def _use_streaming_pipeline(self) -> bool:
+        return self._cfg.live.is_streaming_pipeline() and self._platform == "douyin"
+
     def _reconnect_segment(
         self,
         session_id: str,
@@ -286,6 +293,25 @@ class LiveRecordingCore:
             stop_process(proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         elif self._process_alive(old_pid):
             os.kill(old_pid, 15)
+
+        stt = self._stt_sessions.pop(session_id, None)
+        if stt is not None:
+            try:
+                stt.stop(timeout=5)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "streaming_stt_stop_on_reconnect_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+            self._streaming_legacy_finalize.add(session_id)
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="streaming_stt",
+                status="degraded",
+                detail={"reason": "ffmpeg_reconnect"},
+            )
 
         self._sessions.append_segment_path(session_id, temp_path)
         attempt = self._sessions.increment_reconnect_attempts(session_id)
@@ -374,6 +400,15 @@ class LiveRecordingCore:
             if not stream_url:
                 raise ValueError("empty stream url after resolve")
 
+        use_streaming = self._use_streaming_pipeline()
+        stt_session: StreamingSttSession | None = None
+        if use_streaming:
+            stt_session = StreamingSttSession(
+                self._cfg,
+                stream_url=stream_url,
+                media_path=temp_path,
+            )
+
         proc = record_stream_copy(
             ffmpeg=self._cfg.live.ffmpeg_path,
             stream_url=stream_url,
@@ -385,35 +420,80 @@ class LiveRecordingCore:
             temp_path=str(temp_path),
         )
         self._processes[session_id] = proc
+
+        stt_failed = False
+        stt_error = ""
+        if stt_session is not None:
+            try:
+                with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                    stt_session.start()
+                self._stt_sessions[session_id] = stt_session
+                record_event(
+                    self._conn,
+                    session_id=session_id,
+                    stage="streaming_stt",
+                    status="started",
+                )
+            except Exception as exc:  # noqa: BLE001
+                stt_failed = True
+                stt_error = str(exc)
+                log.error(
+                    "streaming_stt_start_failed",
+                    session_id=session_id,
+                    error=stt_error,
+                )
+                record_event(
+                    self._conn,
+                    session_id=session_id,
+                    stage="streaming_stt",
+                    status="failed",
+                    detail={"error": stt_error},
+                )
+
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
         exit_code = proc.poll()
-        if exit_code is not None:
+        if exit_code is not None or stt_failed:
             err_tail = ""
             if proc.stderr is not None:
                 err_tail = proc.stderr.read().decode(errors="replace")[-500:]
+            if stt_session is not None and session_id in self._stt_sessions:
+                self._stt_sessions.pop(session_id, None)
+                try:
+                    stt_session.stop(timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
+            stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+            self._processes.pop(session_id, None)
+            err_parts = []
+            if exit_code is not None:
+                err_parts.append(f"ffmpeg_exited_early:{exit_code}:{err_tail}")
+            if stt_failed:
+                err_parts.append(f"streaming_stt_failed:{stt_error}")
             self._sessions.update_status(
                 session_id,
                 status="failed",
-                error=f"ffmpeg_exited_early:{exit_code}:{err_tail}",
+                error="; ".join(err_parts) or "live_start_failed",
                 ended=True,
             )
-            self._processes.pop(session_id, None)
             log.error(
-                "live_recording_ffmpeg_died",
+                "live_start_failed",
                 session_id=session_id,
                 exit_code=exit_code,
+                stt_failed=stt_failed,
             )
             creator = self._creators.get(creator_id)
             if creator:
                 label = creator_label(creator)
+                body = f"room_id: {room_id or '—'}\n"
+                if exit_code is not None:
+                    body = f"ffmpeg 启动失败（exit {exit_code}）\n" + body
+                if stt_failed:
+                    body = f"流式转写启动失败：{stt_error}\n" + body
                 self._notify.emit(
                     NotifyEvent(
                         kind=EventKind.LIVE_START_FAILED,
                         title=label,
-                        body=(
-                            f"ffmpeg 启动失败（exit {exit_code}）\n"
-                            f"room_id: {room_id or '—'}"
-                        ),
+                        body=body.strip(),
                     )
                 )
             return {
@@ -435,12 +515,13 @@ class LiveRecordingCore:
         creator = self._creators.get(creator_id)
         if creator:
             label = creator_label(creator)
+            mode = "streaming" if use_streaming else "legacy"
             self._notify.emit(
                 NotifyEvent(
                     kind=EventKind.LIVE_STARTED,
                     title=label,
                     body=(
-                        f"检测到开播，已开始录制\n"
+                        f"检测到开播，已开始录制（{mode}）\n"
                         f"room_id: {room_id or '—'}\n"
                         f"文件: {temp_path.name}"
                     ),
@@ -542,11 +623,146 @@ class LiveRecordingCore:
     def _finalize_recording(
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
+        segments = self._sessions.list_segment_paths(session_id)
+        use_streaming_finalize = (
+            self._use_streaming_pipeline()
+            and session_id not in self._streaming_legacy_finalize
+            and not segments
+        )
+        if use_streaming_finalize:
+            return self._finalize_recording_streaming(session_id, temp_path, pid)
+        return self._finalize_recording_legacy(session_id, temp_path, pid)
+
+    def _finalize_recording_streaming(
+        self, session_id: str, temp_path: str | None, pid: int
+    ) -> dict | None:
         proc = self._processes.pop(session_id, None)
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         elif pid and self._process_alive(pid):
             os.kill(pid, 15)
+
+        stt = self._stt_sessions.pop(session_id, None)
+        transcript_ok = False
+        if not temp_path:
+            self._sessions.update_status(
+                session_id, status="failed", error="missing temp_path", ended=True
+            )
+            return None
+
+        current = Path(temp_path)
+        if not current.is_file() or current.stat().st_size == 0:
+            self._sessions.update_status(
+                session_id,
+                status="failed",
+                error="empty_recording",
+                ended=True,
+            )
+            log.warning("live_recording_empty", session_id=session_id)
+            return None
+
+        try:
+            with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                if stt is not None:
+                    paths = stt.stop(timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+                    transcript_ok = paths is not None
+                elif current.with_suffix(".transcript.json").is_file():
+                    transcript_ok = True
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="streaming_stt",
+                status="completed" if transcript_ok else "failed",
+            )
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="remux",
+                status="skipped",
+            )
+            if transcript_ok:
+                index_transcript_safe(self._cfg, current.with_suffix(".transcript.json"))
+        except Exception as exc:  # noqa: BLE001
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="streaming_stt",
+                status="failed",
+                detail={"error": str(exc)},
+            )
+            log.exception("streaming_stt_finalize_failed", session_id=session_id)
+
+        self._sessions.update_status(
+            session_id,
+            status="completed",
+            local_path=str(current),
+            transcribe_status="completed" if transcript_ok else "failed",
+            ended=True,
+        )
+        self._sessions.clear_pid(session_id)
+        log.info(
+            "live_recording_completed_streaming",
+            session_id=session_id,
+            path=str(current),
+        )
+
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        creator = self._creators.get(session.creator_id)
+        if not creator:
+            return {"session_id": session_id, "path": str(current)}
+
+        job_id = self._jobs.enqueue(
+            session_id=session_id,
+            creator_id=creator.id,
+            mp4_path=str(current),
+        )
+        refresh_manifest(
+            self._conn,
+            sec_uid=creator.sec_uid,
+            workspace=self._ws,
+            platform=creator.platform,
+        )
+        label = creator_label(creator)
+        self._notify.emit(
+            NotifyEvent(
+                kind=EventKind.RECORDING_COMPLETED,
+                title=label,
+                body=f"直播录制已完成\n{current.name}\n{current.parent}",
+            )
+        )
+        if transcript_ok:
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.TRANSCRIBE_COMPLETED,
+                    title=label,
+                    body=f"直播转录完成（deepgram streaming）\n{current.name}",
+                )
+            )
+        return {
+            "session_id": session_id,
+            "path": str(current),
+            "creator_id": creator.id,
+            "job_id": job_id,
+        }
+
+    def _finalize_recording_legacy(
+        self, session_id: str, temp_path: str | None, pid: int
+    ) -> dict | None:
+        proc = self._processes.pop(session_id, None)
+        if proc is not None:
+            stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+        elif pid and self._process_alive(pid):
+            os.kill(pid, 15)
+
+        stt = self._stt_sessions.pop(session_id, None)
+        if stt is not None:
+            try:
+                stt.stop(timeout=5)
+            except Exception:  # noqa: BLE001
+                pass
+        self._streaming_legacy_finalize.discard(session_id)
 
         if not temp_path:
             self._sessions.update_status(

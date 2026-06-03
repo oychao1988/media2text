@@ -1,5 +1,8 @@
 import sqlite3
+import threading
 from pathlib import Path
+
+_connect_lock = threading.Lock()
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -255,12 +258,13 @@ def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.executescript(SCHEMA)
-    _migrate_creators(conn)
-    _migrate_live_sessions(conn)
-    _migrate_live_sessions_v2(conn)
-    _migrate_live_sessions_v3(conn)
-    from media2text.core.archive.schema import migrate_archive
+    with _connect_lock:
+        conn.executescript(SCHEMA)
+        _migrate_creators(conn)
+        _migrate_live_sessions(conn)
+        _migrate_live_sessions_v2(conn)
+        _migrate_live_sessions_v3(conn)
+        from media2text.core.archive.schema import migrate_archive
 
-    migrate_archive(conn)
+        migrate_archive(conn)
     return conn

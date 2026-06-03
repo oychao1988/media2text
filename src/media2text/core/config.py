@@ -50,8 +50,18 @@ class MonitorConfig(BaseModel):
     profile_stale_days: int = 7
 
 
+class StreamingSttConfig(BaseModel):
+    enabled: bool = True
+    engine: str = "deepgram"
+    flush_interval_sec: float = 30.0
+    reconnect: bool = True
+
+
 class LiveConfig(BaseModel):
+    pipeline_mode: str = "legacy"  # legacy | streaming
+    remux_on_complete: bool | None = None
     transcribe_on_complete: bool = False
+    streaming_stt: StreamingSttConfig = Field(default_factory=StreamingSttConfig)
     ffmpeg_path: str = "ffmpeg"
     ffmpeg_stop_timeout_sec: int = 30
     temp_format: str = "flv"
@@ -68,6 +78,21 @@ class LiveConfig(BaseModel):
     # During active recording, treat profile API offline as inconclusive when ffmpeg
     # is still writing or the room reflow API reports live (Douyin profile often flakes).
     offline_trust_recording_signals: bool = True
+
+    def effective_pipeline_mode(self) -> str:
+        mode = (self.pipeline_mode or "legacy").strip().lower()
+        return mode if mode in ("legacy", "streaming") else "legacy"
+
+    def is_streaming_pipeline(self) -> bool:
+        return (
+            self.effective_pipeline_mode() == "streaming"
+            and self.streaming_stt.enabled
+        )
+
+    def should_remux_on_complete(self) -> bool:
+        if self.remux_on_complete is not None:
+            return self.remux_on_complete
+        return self.effective_pipeline_mode() != "streaming"
 
 
 class WhisperConfig(BaseModel):
