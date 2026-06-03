@@ -58,6 +58,7 @@ class StreamingSttSession:
         *,
         stream_url: str,
         media_path: Path,
+        offset_sec: float = 0.0,
     ) -> None:
         self._cfg = cfg
         stt = cfg.live.streaming_stt
@@ -69,6 +70,7 @@ class StreamingSttSession:
             engine="deepgram",
             model=dg.model,
             flush_interval_sec=stt.flush_interval_sec,
+            offset_sec=offset_sec,
         )
         self._api_key = os.environ.get(dg.api_key_env, "").strip()
         self._language = cfg.transcribe.language
@@ -181,7 +183,9 @@ class StreamingSttSession:
         self._feeder.start()
         self._connection.start_listening()
 
-    def stop(self, *, timeout: float = 15.0) -> tuple[Path, Path] | None:
+    def stop(
+        self, *, timeout: float = 15.0, finalize: bool = True
+    ) -> tuple[Path, Path] | None:
         self._stopped = True
         if self._pcm_proc is not None:
             stop_process(self._pcm_proc, timeout=int(timeout))
@@ -197,6 +201,8 @@ class StreamingSttSession:
             self._conn_cm = None
             self._connection = None
         self._writer.maybe_flush_partial(force=True)
+        if not finalize:
+            return None
         if self._writer.segment_count() == 0 and self._error:
             return None
         return self._writer.finalize()

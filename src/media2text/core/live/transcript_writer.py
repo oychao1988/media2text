@@ -3,12 +3,90 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from media2text.core.transcribe.base import TranscriptResult, TranscriptSegment
 from media2text.core.transcribe.whisper import write_transcript_outputs
+
+_SEG_CHECKPOINT_RE = re.compile(r"\.transcript\.seg(\d+)\.json$")
+
+
+def segment_checkpoint_path(media_path: Path, index: int) -> Path:
+    return media_path.parent / f"{media_path.stem}.transcript.seg{index}.json"
+
+
+def list_segment_checkpoints(media_path: Path) -> list[Path]:
+    paths = [
+        p
+        for p in media_path.parent.glob(f"{media_path.stem}.transcript.seg*.json")
+        if p.is_file()
+    ]
+    return sorted(paths, key=_checkpoint_sort_key)
+
+
+def _checkpoint_sort_key(path: Path) -> int:
+    match = _SEG_CHECKPOINT_RE.search(path.name)
+    return int(match.group(1)) if match else 0
+
+
+def _segments_from_payload(payload: dict) -> list[TranscriptSegment]:
+    segments: list[TranscriptSegment] = []
+    for raw in payload.get("segments") or []:
+        if not isinstance(raw, dict):
+            continue
+        text = str(raw.get("text", "")).strip()
+        if not text:
+            continue
+        segments.append(
+            TranscriptSegment(
+                start=float(raw.get("start", 0.0)),
+                end=float(raw.get("end", 0.0)),
+                text=text,
+            )
+        )
+    return segments
+
+
+def merge_transcript_checkpoints(
+    media_path: Path,
+    checkpoint_paths: list[Path],
+    *,
+    trailing_segments: list[TranscriptSegment] | None = None,
+    engine: str = "deepgram",
+    model: str = "nova-3",
+) -> tuple[Path, Path] | None:
+    """Merge segment checkpoint files (+ optional live segments) into final sidecars."""
+    merged: list[TranscriptSegment] = []
+    resolved_engine = engine
+    resolved_model = model
+    for path in checkpoint_paths:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        merged.extend(_segments_from_payload(payload))
+        resolved_engine = str(payload.get("engine") or resolved_engine)
+        resolved_model = str(payload.get("model") or resolved_model)
+    if trailing_segments:
+        merged.extend(trailing_segments)
+    if not merged:
+        return None
+    merged.sort(key=lambda s: (s.start, s.end))
+    result = TranscriptResult(
+        text="\n".join(s.text for s in merged),
+        segments=merged,
+        engine=resolved_engine,
+        model=resolved_model,
+    )
+    paths = write_transcript_outputs(media_path, result)
+    partial_path = media_path.with_suffix(".transcript.partial.json")
+    partial_path.unlink(missing_ok=True)
+    for path in checkpoint_paths:
+        path.unlink(missing_ok=True)
+    return paths
 
 
 @dataclass
@@ -19,9 +97,9 @@ class TranscriptWriter:
     engine: str = "deepgram"
     model: str = "nova-3"
     flush_interval_sec: float = 30.0
-    _segments: list[TranscriptSegment] = field(default_factory=list)
-    _last_flush_mono: float = field(default_factory=time.monotonic)
-    _offset_sec: float = 0.0
+    offset_sec: float = 0.0
+    _segments: list[TranscriptSegment] = field(default_factory=list, repr=False)
+    _last_flush_mono: float = field(default_factory=time.monotonic, repr=False)
 
     @property
     def partial_path(self) -> Path:
@@ -33,8 +111,8 @@ class TranscriptWriter:
             return
         self._segments.append(
             TranscriptSegment(
-                start=self._offset_sec + start,
-                end=self._offset_sec + end,
+                start=self.offset_sec + start,
+                end=self.offset_sec + end,
                 text=cleaned,
             )
         )
@@ -81,6 +159,38 @@ class TranscriptWriter:
 
     def segment_count(self) -> int:
         return len(self._segments)
+
+    def current_segments(self) -> list[TranscriptSegment]:
+        return list(self._segments)
+
+    def segment_end_sec(self) -> float:
+        if not self._segments:
+            return self.offset_sec
+        return max(s.end for s in self._segments)
+
+    def checkpoint_segment(self, index: int) -> float:
+        """Persist segments for one STT run; return timeline offset for the next run."""
+        if not self._segments:
+            return self.offset_sec
+        path = segment_checkpoint_path(self.media_path, index)
+        payload = {
+            "engine": self.engine,
+            "model": self.model,
+            "text": "\n".join(s.text for s in self._segments),
+            "segments": [
+                {"start": s.start, "end": s.end, "text": s.text} for s in self._segments
+            ],
+            "segment_index": index,
+        }
+        path.write_text(
+            json.dumps(payload, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+        end = max(s.end for s in self._segments)
+        self._segments.clear()
+        self.offset_sec = end
+        self.partial_path.unlink(missing_ok=True)
+        return end
 
 
 def seal_partial_transcript(media_path: Path) -> tuple[Path, Path] | None:

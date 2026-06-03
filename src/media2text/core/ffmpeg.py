@@ -42,6 +42,62 @@ def remux_to_mp4(*, ffmpeg: str, src: Path, dst: Path) -> None:
         raise RuntimeError("remux produced empty file")
 
 
+def concat_to_flv(*, ffmpeg: str, sources: list[Path], dst: Path) -> None:
+    """Merge segment FLV files into one output (stream copy)."""
+    valid = [p for p in sources if p.is_file() and p.stat().st_size > 0]
+    if not valid:
+        raise RuntimeError("concat: no valid segment files")
+    if len(valid) == 1:
+        dst.parent.mkdir(parents=True, exist_ok=True)
+        cmd = [ffmpeg, "-y", "-i", str(valid[0]), "-c", "copy", str(dst)]
+        subprocess.run(cmd, check=True, capture_output=True)
+        if not dst.exists() or dst.stat().st_size == 0:
+            raise RuntimeError("concat produced empty file")
+        return
+
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    list_file = dst.with_suffix(".concat.txt")
+    try:
+        lines = [f"file '{p.resolve()}'" for p in valid]
+        list_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        cmd_copy = [
+            ffmpeg,
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_file),
+            "-c",
+            "copy",
+            str(dst),
+        ]
+        result = subprocess.run(cmd_copy, capture_output=True)
+        if result.returncode == 0 and dst.is_file() and dst.stat().st_size > 0:
+            return
+        cmd_genpts = [
+            ffmpeg,
+            "-y",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(list_file),
+            "-c",
+            "copy",
+            "-fflags",
+            "+genpts",
+            str(dst),
+        ]
+        subprocess.run(cmd_genpts, check=True, capture_output=True)
+        if not dst.exists() or dst.stat().st_size == 0:
+            raise RuntimeError("concat produced empty file")
+    finally:
+        list_file.unlink(missing_ok=True)
+
+
 def concat_to_mp4(*, ffmpeg: str, sources: list[Path], dst: Path) -> None:
     """Merge segment files into one MP4; copy first, then genpts fallback."""
     valid = [p for p in sources if p.is_file() and p.stat().st_size > 0]

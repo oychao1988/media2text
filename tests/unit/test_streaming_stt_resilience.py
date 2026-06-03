@@ -2,6 +2,7 @@ from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, StreamingSttConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.transcript_writer import TranscriptWriter
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import (
     CreatorRepo,
@@ -21,7 +22,7 @@ def _streaming_cfg(tmp_path) -> AppConfig:
     )
 
 
-def test_ffmpeg_reconnect_marks_degraded_and_legacy_finalize(tmp_path, monkeypatch) -> None:
+def test_ffmpeg_reconnect_checkpoints_stt_and_restarts_streaming(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = _streaming_cfg(tmp_path)
     from media2text.core.workspace import open_db
@@ -55,7 +56,12 @@ def test_ffmpeg_reconnect_marks_degraded_and_legacy_finalize(tmp_path, monkeypat
         stream_flv_url="https://example.com/live2.flv",
     )
 
+    writer = TranscriptWriter(seg)
+    writer.add_final("第一段", start=0.0, end=2.0)
     mock_stt = MagicMock()
+    mock_stt.writer = writer
+
+    new_stt = MagicMock()
     core = LiveRecordingCore(
         cfg,
         conn=conn,
@@ -65,6 +71,7 @@ def test_ffmpeg_reconnect_marks_degraded_and_legacy_finalize(tmp_path, monkeypat
         notify=MagicMock(),
     )
     core._stt_sessions[sid] = mock_stt
+    core._streaming_transcript_anchor[sid] = seg
 
     mock_proc = MagicMock()
     mock_proc.pid = 9999
@@ -77,25 +84,95 @@ def test_ffmpeg_reconnect_marks_degraded_and_legacy_finalize(tmp_path, monkeypat
             "media2text.core.live.recording.record_stream_copy",
             return_value=mock_proc,
         ),
+        patch(
+            "media2text.core.live.recording.StreamingSttSession",
+            return_value=new_stt,
+        ) as mock_stt_cls,
         patch("media2text.core.live.recording.time.sleep"),
     ):
         core._reconnect_segment(sid, creators.get(cid), str(seg), 4242)
 
-    assert sid in core._streaming_legacy_finalize
+    assert sid not in core._streaming_legacy_finalize
+    checkpoint = seg.parent / f"{seg.stem}.transcript.seg0.json"
+    assert checkpoint.is_file()
     events = PipelineEventRepo(conn).list_for_session(sid)
-    assert ("streaming_stt", "degraded") in {(e.stage, e.status) for e in events}
-    mock_stt.stop.assert_called_once()
+    assert ("streaming_stt", "reconnected") in {(e.stage, e.status) for e in events}
+    mock_stt.stop.assert_called_once_with(timeout=5, finalize=False)
+    mock_stt_cls.assert_called_once()
+    assert mock_stt_cls.call_args.kwargs["offset_sec"] == 2.0
+    assert mock_stt_cls.call_args.kwargs["media_path"] == seg
+    new_stt.start.assert_called_once()
+
+
+def test_streaming_finalize_merges_reconnect_segments(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _streaming_cfg(tmp_path)
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
+    cid = creators.add(
+        sec_uid="MS4wLjABAAAAmerge_fin",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    live_dir = tmp_path / "data/creators/MS4wLjABAAAAmerge_fin/live"
+    live_dir.mkdir(parents=True)
+    seg0 = live_dir / "20260603T120000Z.flv"
+    seg1 = live_dir / "20260603T120100Z_r1.flv"
+    seg0.write_bytes(b"x" * 128)
+    seg1.write_bytes(b"y" * 128)
+    sid = sessions.create(
+        creator_id=cid,
+        room_id="99",
+        temp_path=str(seg1),
+        ffmpeg_pid=4242,
+    )
+    sessions.append_segment_path(sid, str(seg0))
+    (seg0.parent / f"{seg0.stem}.transcript.seg0.json").write_text(
+        '{"engine":"deepgram","model":"nova-3","text":"第一段","segments":'
+        '[{"start":0.0,"end":2.0,"text":"第一段"}],"segment_index":0}',
+        encoding="utf-8",
+    )
+
+    writer = TranscriptWriter(seg0, offset_sec=2.0)
+    writer.add_final("第二段", start=0.0, end=1.5)
+    mock_stt = MagicMock()
+    mock_stt.writer = writer
+
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=MagicMock(),
+        platform="douyin",
+        processes={},
+        notify=MagicMock(),
+    )
+    core._stt_sessions[sid] = mock_stt
+    core._streaming_transcript_anchor[sid] = seg0
 
     with (
         patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.concat_to_mp4") as mock_concat,
+        patch("media2text.core.live.recording.concat_to_flv") as mock_concat_flv,
+        patch("media2text.core.live.recording.concat_to_mp4") as mock_concat_mp4,
+        patch("media2text.core.live.recording.remux_to_mp4"),
         patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.live.recording.index_transcript_safe"),
     ):
-        core._finalize_recording(sid, str(seg2), 9999)
+        meta = core._finalize_recording(sid, str(seg1), 4242)
 
-    mock_remux.assert_not_called()
-    mock_concat.assert_called_once()
+    assert meta is not None
+    mock_concat_flv.assert_called_once()
+    mock_concat_mp4.assert_not_called()
+    transcript = seg0.with_suffix(".transcript.json")
+    assert transcript.is_file()
+    body = transcript.read_text(encoding="utf-8")
+    assert "第一段" in body
+    assert "第二段" in body
+    events = PipelineEventRepo(conn).list_for_session(sid)
+    assert ("streaming_stt", "completed") in {(e.stage, e.status) for e in events}
+    assert ("remux", "skipped") in {(e.stage, e.status) for e in events}
 
 
 def test_stt_disconnect_degrades_when_reconnect_disabled(tmp_path, monkeypatch) -> None:

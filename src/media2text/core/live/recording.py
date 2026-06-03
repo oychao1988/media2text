@@ -13,10 +13,20 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.archive.hook import index_transcript_safe
-from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
+from media2text.core.ffmpeg import (
+    concat_to_flv,
+    concat_to_mp4,
+    record_stream_copy,
+    remux_to_mp4,
+    stop_process,
+)
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.streaming_stt import StreamingSttSession
-from media2text.core.live.transcript_writer import seal_partial_transcript
+from media2text.core.live.transcript_writer import (
+    list_segment_checkpoints,
+    merge_transcript_checkpoints,
+    seal_partial_transcript,
+)
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
@@ -53,6 +63,8 @@ class LiveRecordingCore:
         self._stt_sessions: dict[str, StreamingSttSession] = {}
         self._stream_urls: dict[str, str] = {}
         self._streaming_legacy_finalize: set[str] = set()
+        self._streaming_transcript_anchor: dict[str, Path] = {}
+        self._stt_checkpoint_counter: dict[str, int] = {}
 
     def scan_and_start(
         self, *, creator_id: str | None = None
@@ -285,6 +297,26 @@ class LiveRecordingCore:
 
         return self._finalize_recording(session_id, temp_path, pid)
 
+    def _transcript_anchor(self, session_id: str, temp_path: str | None) -> Path:
+        anchor = self._streaming_transcript_anchor.get(session_id)
+        if anchor is not None:
+            return anchor
+        if temp_path:
+            return Path(temp_path)
+        raise ValueError(f"missing transcript anchor for session {session_id}")
+
+    def _checkpoint_streaming_stt(
+        self, session_id: str, stt: StreamingSttSession
+    ) -> float:
+        idx = self._stt_checkpoint_counter.get(session_id, 0)
+        end = stt.writer.checkpoint_segment(idx)
+        self._stt_checkpoint_counter[session_id] = idx + 1
+        return end
+
+    def _clear_streaming_session_state(self, session_id: str) -> None:
+        self._streaming_transcript_anchor.pop(session_id, None)
+        self._stt_checkpoint_counter.pop(session_id, None)
+
     def _use_streaming_pipeline(self) -> bool:
         return self._cfg.live.is_streaming_pipeline() and self._platform == "douyin"
 
@@ -310,9 +342,11 @@ class LiveRecordingCore:
     def _handle_stt_disconnect(self, row, creator) -> None:
         session_id = row.id
         stt = self._stt_sessions.pop(session_id, None)
+        offset = 0.0
         if stt is not None:
+            offset = stt.writer.segment_end_sec()
             try:
-                stt.stop(timeout=5)
+                stt.stop(timeout=5, finalize=False)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "streaming_stt_stop_on_disconnect_failed",
@@ -347,10 +381,12 @@ class LiveRecordingCore:
             return
 
         try:
+            anchor = self._transcript_anchor(session_id, row.temp_path)
             new_stt = StreamingSttSession(
                 self._cfg,
                 stream_url=stream_url,
-                media_path=Path(row.temp_path),
+                media_path=anchor,
+                offset_sec=offset,
             )
             with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                 new_stt.start()
@@ -389,16 +425,24 @@ class LiveRecordingCore:
             os.kill(old_pid, 15)
 
         stt = self._stt_sessions.pop(session_id, None)
+        next_offset: float | None = None
+        streaming_merge = (
+            self._use_streaming_pipeline()
+            and session_id not in self._streaming_legacy_finalize
+        )
         if stt is not None:
+            if streaming_merge:
+                next_offset = self._checkpoint_streaming_stt(session_id, stt)
             try:
-                stt.stop(timeout=5)
+                stt.stop(timeout=5, finalize=False)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "streaming_stt_stop_on_reconnect_failed",
                     session_id=session_id,
                     error=str(exc),
                 )
-            self._mark_streaming_degraded(session_id, reason="ffmpeg_reconnect")
+            if not streaming_merge:
+                self._mark_streaming_degraded(session_id, reason="ffmpeg_reconnect")
 
         self._sessions.append_segment_path(session_id, temp_path)
         attempt = self._sessions.increment_reconnect_attempts(session_id)
@@ -441,6 +485,36 @@ class LiveRecordingCore:
         self._processes[session_id] = new_proc
         self._stream_urls[session_id] = stream_url
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+        if streaming_merge:
+            anchor = self._transcript_anchor(session_id, temp_path)
+            try:
+                new_stt = StreamingSttSession(
+                    self._cfg,
+                    stream_url=stream_url,
+                    media_path=anchor,
+                    offset_sec=next_offset or 0.0,
+                )
+                with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                    new_stt.start()
+                self._stt_sessions[session_id] = new_stt
+                record_event(
+                    self._conn,
+                    session_id=session_id,
+                    stage="streaming_stt",
+                    status="reconnected",
+                    detail={"reason": "ffmpeg_reconnect", "offset_sec": next_offset or 0.0},
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "streaming_stt_reconnect_after_ffmpeg_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+                self._mark_streaming_degraded(
+                    session_id,
+                    reason="ffmpeg_reconnect_stt_failed",
+                    error=str(exc),
+                )
         log.info(
             "live_recording_reconnected",
             session_id=session_id,
@@ -493,6 +567,8 @@ class LiveRecordingCore:
         use_streaming = self._use_streaming_pipeline()
         stt_session: StreamingSttSession | None = None
         if use_streaming:
+            self._streaming_transcript_anchor[session_id] = temp_path
+            self._stt_checkpoint_counter[session_id] = 0
             stt_session = StreamingSttSession(
                 self._cfg,
                 stream_url=stream_url,
@@ -713,11 +789,9 @@ class LiveRecordingCore:
     def _finalize_recording(
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
-        segments = self._sessions.list_segment_paths(session_id)
         use_streaming_finalize = (
             self._use_streaming_pipeline()
             and session_id not in self._streaming_legacy_finalize
-            and not segments
         )
         if use_streaming_finalize:
             return self._finalize_recording_streaming(session_id, temp_path, pid)
@@ -739,27 +813,70 @@ class LiveRecordingCore:
             self._sessions.update_status(
                 session_id, status="failed", error="missing temp_path", ended=True
             )
+            self._clear_streaming_session_state(session_id)
             return None
 
+        anchor = self._transcript_anchor(session_id, temp_path)
+        segment_paths = [Path(p) for p in self._sessions.list_segment_paths(session_id)]
         current = Path(temp_path)
-        if not current.is_file() or current.stat().st_size == 0:
+        flv_sources = segment_paths + [current]
+        valid_flvs = [p for p in flv_sources if p.is_file() and p.stat().st_size > 0]
+        if not valid_flvs:
             self._sessions.update_status(
                 session_id,
                 status="failed",
                 error="empty_recording",
                 ended=True,
             )
+            self._clear_streaming_session_state(session_id)
             log.warning("live_recording_empty", session_id=session_id)
             return None
 
+        output_flv = anchor
+        try:
+            if len(valid_flvs) > 1:
+                merged_tmp = anchor.with_name(f"{anchor.stem}.merged.flv")
+                concat_to_flv(
+                    ffmpeg=self._cfg.live.ffmpeg_path,
+                    sources=valid_flvs,
+                    dst=merged_tmp,
+                )
+                merged_tmp.replace(anchor)
+                for path in valid_flvs:
+                    if path.resolve() != anchor.resolve():
+                        path.unlink(missing_ok=True)
+            elif valid_flvs[0].resolve() != anchor.resolve():
+                valid_flvs[0].replace(anchor)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "streaming_flv_merge_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+            output_flv = valid_flvs[-1]
+
         try:
             with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                trailing = None
                 if stt is not None:
-                    paths = stt.stop(timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+                    stt.stop(
+                        timeout=self._cfg.live.ffmpeg_stop_timeout_sec,
+                        finalize=False,
+                    )
+                    trailing = stt.writer.current_segments()
+                checkpoints = list_segment_checkpoints(anchor)
+                if checkpoints or trailing:
+                    paths = merge_transcript_checkpoints(
+                        anchor,
+                        checkpoints,
+                        trailing_segments=trailing,
+                        engine="deepgram",
+                        model=self._cfg.transcribe.deepgram.model,
+                    )
                     transcript_ok = paths is not None
-                elif current.with_suffix(".transcript.json").is_file():
+                elif anchor.with_suffix(".transcript.json").is_file():
                     transcript_ok = True
-                elif seal_partial_transcript(current) is not None:
+                elif seal_partial_transcript(anchor) is not None:
                     transcript_ok = True
             record_event(
                 self._conn,
@@ -774,7 +891,7 @@ class LiveRecordingCore:
                 status="skipped",
             )
             if transcript_ok:
-                index_transcript_safe(self._cfg, current.with_suffix(".transcript.json"))
+                index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
         except Exception as exc:  # noqa: BLE001
             record_event(
                 self._conn,
@@ -785,10 +902,11 @@ class LiveRecordingCore:
             )
             log.exception("streaming_stt_finalize_failed", session_id=session_id)
 
+        self._clear_streaming_session_state(session_id)
         self._sessions.update_status(
             session_id,
             status="completed",
-            local_path=str(current),
+            local_path=str(output_flv),
             transcribe_status="completed" if transcript_ok else "failed",
             ended=True,
         )
@@ -796,7 +914,7 @@ class LiveRecordingCore:
         log.info(
             "live_recording_completed_streaming",
             session_id=session_id,
-            path=str(current),
+            path=str(output_flv),
         )
 
         session = self._sessions.get(session_id)
@@ -804,12 +922,12 @@ class LiveRecordingCore:
             return None
         creator = self._creators.get(session.creator_id)
         if not creator:
-            return {"session_id": session_id, "path": str(current)}
+            return {"session_id": session_id, "path": str(output_flv)}
 
         job_id = self._jobs.enqueue(
             session_id=session_id,
             creator_id=creator.id,
-            mp4_path=str(current),
+            mp4_path=str(output_flv),
         )
         refresh_manifest(
             self._conn,
@@ -822,7 +940,7 @@ class LiveRecordingCore:
             NotifyEvent(
                 kind=EventKind.RECORDING_COMPLETED,
                 title=label,
-                body=f"直播录制已完成\n{current.name}\n{current.parent}",
+                body=f"直播录制已完成\n{output_flv.name}\n{output_flv.parent}",
             )
         )
         if transcript_ok:
@@ -830,12 +948,12 @@ class LiveRecordingCore:
                 NotifyEvent(
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=label,
-                    body=f"直播转录完成（deepgram streaming）\n{current.name}",
+                    body=f"直播转录完成（deepgram streaming）\n{output_flv.name}",
                 )
             )
         return {
             "session_id": session_id,
-            "path": str(current),
+            "path": str(output_flv),
             "creator_id": creator.id,
             "job_id": job_id,
         }
