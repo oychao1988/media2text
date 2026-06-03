@@ -67,11 +67,11 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 20s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle。P0 不含墙钟 offline / `live_ended`（→ P1） |
+| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 20s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
-直播收尾：`finalize` 仅 remux + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行。手动清队列：`media2text post-process run [--limit N] --json`。通知时序：`recording_completed` 在 remux 后；`transcribe_completed` 在 worker 完成后。`live.offline_confirm_polls`（默认 3）避免 API 短暂 offline 误停录；ffmpeg 异常退出可分段重连（`max_reconnect_attempts`）。
+直播收尾：`finalize` 仅 remux + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行。手动清队列：`media2text post-process run [--limit N] --json`。通知时序：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → remux → `recording_completed`；`transcribe_completed` / `summarize_completed` 在 worker 完成后。`min_recording_sec_before_offline_end`（默认 45s）忽略开播后短暂 offline；ffmpeg 异常退出可分段重连（`max_reconnect_attempts`）。
 
 ### 3. 手动作品流水线（单博主）
 

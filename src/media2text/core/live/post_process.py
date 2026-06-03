@@ -68,6 +68,14 @@ def run_post_process_job(
             result.update(summarize_meta)
             if summarize_meta.get("summarized") or summarize_meta.get("summary_path"):
                 refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
+                label = creator_label(creator)
+                notify.emit(
+                    NotifyEvent(
+                        kind=EventKind.SUMMARIZE_COMPLETED,
+                        title=label,
+                        body=f"直播摘要完成\n{mp4.name}",
+                    )
+                )
 
         if creator:
             jobs.update_stage(job_id, stage="cloud_upload")

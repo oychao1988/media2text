@@ -65,6 +65,10 @@ class LiveSessionRow:
     offline_streak: int = 0
     reconnect_attempts: int = 0
     segment_paths_json: str | None = None
+    first_seen_live_at: str | None = None
+    recording_started_at: str | None = None
+    offline_since_at: str | None = None
+    platform_live_started_at: str | None = None
 
 
 @dataclass
