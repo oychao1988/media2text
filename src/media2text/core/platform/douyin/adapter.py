@@ -147,7 +147,15 @@ class DouyinAdapterV1:
         except (ParseFailed, httpx.HTTPError, JSONDecodeError):
             if not session:
                 raise
-            info = self._live_room_via_playwright(session, sec_uid)
+            return self._live_room_via_playwright(session, sec_uid)
+
+        if (not info.is_live or not info.room_id) and session:
+            try:
+                pw_info = self._live_room_via_playwright(session, sec_uid)
+                if pw_info.is_live and pw_info.room_id:
+                    return pw_info
+            except Exception:  # noqa: BLE001 — Playwright page/navigation flakes
+                pass
 
         return info
 
@@ -168,7 +176,21 @@ class DouyinAdapterV1:
 
         return self._resolve_stream_url(room_id=room_id, sec_uid=sec_uid)
 
-    def _resolve_stream_url(self, *, room_id: str, sec_uid: str | None) -> str:
+    def get_room_reflow(self, *, room_id: str, sec_uid: str | None = None) -> LiveRoomInfo:
+        return parse_reflow_room(
+            self._fetch_reflow_payload(room_id=room_id, sec_uid=sec_uid)
+        )
+
+    @staticmethod
+    def _reflow_payload_has_room(payload: dict) -> bool:
+        room = payload.get("room")
+        if not isinstance(room, dict):
+            data = payload.get("data")
+            if isinstance(data, dict):
+                room = data.get("room")
+        return isinstance(room, dict) and bool(room)
+
+    def _fetch_reflow_payload(self, *, room_id: str, sec_uid: str | None) -> dict:
         if not self._client and not self._session_path:
             raise AuthRequired("no session")
 
@@ -190,18 +212,25 @@ class DouyinAdapterV1:
                 if response.status_code < 400:
                     body = response.text.strip()
                     if body and body[0] in "{[":
-                        reflow = parse_reflow_room(response.json())
-                        if reflow.stream_flv_url:
-                            return reflow.stream_flv_url
+                        payload = response.json()
+                        if self._reflow_payload_has_room(payload):
+                            return payload
         except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
             pass
 
         session = self._require_session()
         try:
-            payload = fetch_json(session, url, params=params, referer="https://live.douyin.com/")
+            return fetch_json(
+                session,
+                url,
+                params=params,
+                referer=f"https://live.douyin.com/{room_id}",
+            )
         except Exception as exc:
             raise ParseFailed(f"reflow fetch failed: {exc}") from exc
-        reflow = parse_reflow_room(payload)
+
+    def _resolve_stream_url(self, *, room_id: str, sec_uid: str | None) -> str:
+        reflow = self.get_room_reflow(room_id=room_id, sec_uid=sec_uid)
         if not reflow.stream_flv_url:
             raise ParseFailed("stream flv url not found")
         return reflow.stream_flv_url

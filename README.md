@@ -118,9 +118,11 @@ media2text archive index --json                       # 含 dynamics/*/content.m
 `--daemon` 会占用终端直至 `Ctrl+C`；若要放到系统后台：
 
 ```bash
-nohup media2text monitor watch --daemon >> data/monitor-watch.log 2>&1 &
+nohup bin/monitor-watch-daemon.sh >> data/monitor-watch.log 2>&1 &
 pgrep -fl "monitor watch"    # 确认在跑
 ```
+
+脚本会设置 `PLAYWRIGHT_BROWSERS_PATH`（默认 `~/Library/Caches/ms-playwright`）并清理已死进程留下的锁；抖音直播 reflow 依赖该路径下的 Chromium。
 
 同一时间只能有一个 daemon（锁文件 `data/.monitor-watch.lock`）。再次启动若报 `already_running`，说明已有实例在运行。
 

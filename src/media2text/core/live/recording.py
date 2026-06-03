@@ -14,6 +14,7 @@ from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.live.protocol import LivePlatformAdapter
+from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
@@ -45,6 +46,7 @@ class LiveRecordingCore:
         self._platform = platform
         self._processes = processes
         self._notify = notify
+        self._flv_size_snapshots: dict[str, int] = {}
 
     def scan_and_start(
         self, *, creator_id: str | None = None
@@ -194,9 +196,7 @@ class LiveRecordingCore:
                 continue
 
             try:
-                still_live = self._adapter.get_live_room(
-                    sec_uid=creator.sec_uid
-                ).is_live
+                still_live = self._recording_still_live(creator, row)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "live_status_check_failed",
@@ -259,9 +259,7 @@ class LiveRecordingCore:
 
         if self._cfg.live.ffmpeg_exit_recheck:
             try:
-                still_live = self._adapter.get_live_room(
-                    sec_uid=creator.sec_uid
-                ).is_live
+                still_live = self._recording_still_live(creator, row)
             except Exception as exc:  # noqa: BLE001
                 log.warning(
                     "live_ffmpeg_exit_recheck_failed",
@@ -434,6 +432,64 @@ class LiveRecordingCore:
                 )
             )
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
+
+    def _recording_still_live(self, creator, row) -> bool:
+        try:
+            profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+        except Exception:
+            if self._cfg.live.offline_trust_recording_signals:
+                return self._infer_live_from_recording(row, creator)
+            raise
+
+        if profile.is_live:
+            return True
+        if not self._cfg.live.offline_trust_recording_signals:
+            return False
+        return self._infer_live_from_recording(row, creator)
+
+    def _infer_live_from_recording(self, row, creator) -> bool:
+        pid = row.ffmpeg_pid
+        if pid is None or not self._process_alive(pid):
+            return False
+        temp_path = row.temp_path
+        if temp_path and self._flv_file_growing(row.id, temp_path):
+            log.debug(
+                "live_offline_ignored_flv_growing",
+                session_id=row.id,
+                creator_id=row.creator_id,
+            )
+            return True
+        reflow_getter = getattr(self._adapter, "get_room_reflow", None)
+        room_id = row.room_id
+        if room_id and callable(reflow_getter):
+            try:
+                reflow = reflow_getter(room_id=room_id, sec_uid=creator.sec_uid)
+                if isinstance(reflow, LiveRoomInfo) and reflow.is_live:
+                    log.debug(
+                        "live_offline_ignored_reflow_live",
+                        session_id=row.id,
+                        room_id=room_id,
+                    )
+                    return True
+            except Exception as exc:  # noqa: BLE001
+                log.debug(
+                    "live_reflow_check_failed",
+                    session_id=row.id,
+                    room_id=room_id,
+                    error=str(exc),
+                )
+        return False
+
+    def _flv_file_growing(self, session_id: str, temp_path: str) -> bool:
+        path = Path(temp_path)
+        if not path.is_file():
+            return False
+        size = path.stat().st_size
+        prev = self._flv_size_snapshots.get(session_id)
+        self._flv_size_snapshots[session_id] = size
+        if prev is None:
+            return size > 4096
+        return size > prev
 
     def _emit_live_ended(self, creator, row) -> None:
         label = creator_label(creator)

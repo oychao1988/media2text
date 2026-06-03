@@ -65,6 +65,9 @@ class LiveConfig(BaseModel):
     post_process_max_parallel: int = 0
     post_process_stale_running_sec: int = 3600
     scan_concurrency: int = 4
+    # During active recording, treat profile API offline as inconclusive when ffmpeg
+    # is still writing or the room reflow API reports live (Douyin profile often flakes).
+    offline_trust_recording_signals: bool = True
 
 
 class WhisperConfig(BaseModel):
