@@ -15,7 +15,12 @@ from media2text.core.live.pipeline_events import stage_event
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import (
+    CreatorRepo,
+    LiveSessionRepo,
+    PipelineEventRepo,
+    PostProcessJobRepo,
+)
 from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
@@ -24,6 +29,21 @@ log = structlog.get_logger()
 
 def _transcript_exists(media: Path) -> bool:
     return media.with_suffix(".transcript.json").is_file()
+
+
+def _streaming_rest_fallback_reason(conn, session_id: str) -> str | None:
+    """Why post_process should REST-transcribe when live.transcribe_on_complete is false."""
+    session = LiveSessionRepo(conn).get(session_id)
+    if not session:
+        return None
+    if (session.pipeline_mode or "").strip().lower() == "streaming":
+        if session.transcribe_status == "failed":
+            return "finalize_failed"
+        return "streaming_missing_sidecar"
+    for ev in PipelineEventRepo(conn).list_for_session(session_id):
+        if ev.stage == "streaming_stt" and ev.status == "degraded":
+            return "degraded"
+    return None
 
 
 def run_post_process_job(
@@ -56,21 +76,37 @@ def run_post_process_job(
             result["transcribed"] = True
             result["transcribe_engine"] = "streaming"
             sessions.update_status(job.session_id, transcribe_status="completed")
-        elif cfg.live.transcribe_on_complete and media.is_file():
-            jobs.update_stage(job_id, stage="transcribe")
-            with stage_event(
-                conn, session_id=job.session_id, stage="transcribe", job_id=job_id
-            ):
-                transcribe_meta = _transcribe_media(
-                    cfg, media, creator=creator, notify=notify
+        else:
+            fallback_reason = _streaming_rest_fallback_reason(conn, job.session_id)
+            should_rest = media.is_file() and (
+                cfg.live.transcribe_on_complete or fallback_reason is not None
+            )
+            if should_rest:
+                jobs.update_stage(job_id, stage="transcribe")
+                stage_detail = (
+                    {"fallback_rest": True, "reason": fallback_reason}
+                    if fallback_reason
+                    else None
                 )
-            result.update(transcribe_meta)
-            if transcribe_meta.get("transcribed"):
-                sessions.update_status(
-                    job.session_id, transcribe_status="completed"
-                )
-            elif transcribe_meta.get("transcribe_error"):
-                sessions.update_status(job.session_id, transcribe_status="failed")
+                with stage_event(
+                    conn,
+                    session_id=job.session_id,
+                    stage="transcribe",
+                    job_id=job_id,
+                    detail=stage_detail,
+                ):
+                    transcribe_meta = _transcribe_media(
+                        cfg, media, creator=creator, notify=notify
+                    )
+                result.update(transcribe_meta)
+                if transcribe_meta.get("transcribed"):
+                    sessions.update_status(
+                        job.session_id, transcribe_status="completed"
+                    )
+                elif transcribe_meta.get("transcribe_error"):
+                    sessions.update_status(
+                        job.session_id, transcribe_status="failed"
+                    )
 
         has_transcript = result.get("transcribed") or _transcript_exists(media)
         summarize_meta: dict = {}
