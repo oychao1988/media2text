@@ -69,6 +69,7 @@ class LiveSessionRow:
     recording_started_at: str | None = None
     offline_since_at: str | None = None
     platform_live_started_at: str | None = None
+    pipeline_mode: str | None = None
 
 
 @dataclass
@@ -82,6 +83,11 @@ class PostProcessJobRow:
     error: str | None
     created_at: str
     updated_at: str
+
+    @property
+    def media_path(self) -> str:
+        """FLV or MP4 absolute path (`mp4_path` column name retained for D4)."""
+        return self.mp4_path
 
 
 @dataclass
