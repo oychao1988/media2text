@@ -220,6 +220,22 @@ def _migrate_live_sessions_v2(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_LIVE_SESSION_V3_COLUMNS = (
+    ("first_seen_live_at", "TEXT"),
+    ("recording_started_at", "TEXT"),
+    ("offline_since_at", "TEXT"),
+    ("platform_live_started_at", "TEXT"),
+)
+
+
+def _migrate_live_sessions_v3(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(live_sessions)").fetchall()}
+    for name, col_type in _LIVE_SESSION_V3_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -228,6 +244,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
     _migrate_creators(conn)
     _migrate_live_sessions(conn)
     _migrate_live_sessions_v2(conn)
+    _migrate_live_sessions_v3(conn)
     from media2text.core.archive.schema import migrate_archive
 
     migrate_archive(conn)

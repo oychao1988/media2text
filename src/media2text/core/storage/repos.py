@@ -433,10 +433,11 @@ class LiveSessionRepo:
         self._conn.execute(
             """
             INSERT INTO live_sessions
-              (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status)
-            VALUES (?, ?, ?, ?, ?, ?, 'recording')
+              (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
+               first_seen_live_at, recording_started_at)
+            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?)
             """,
-            (sid, creator_id, room_id, ffmpeg_pid, now, temp_path),
+            (sid, creator_id, room_id, ffmpeg_pid, now, temp_path, now, now),
         )
         self._conn.commit()
         return sid
@@ -573,6 +574,20 @@ class LiveSessionRepo:
     def reset_offline_streak(self, session_id: str) -> None:
         self._conn.execute(
             "UPDATE live_sessions SET offline_streak = 0 WHERE id = ?",
+            (session_id,),
+        )
+        self._conn.commit()
+
+    def set_offline_since(self, session_id: str, iso_ts: str) -> None:
+        self._conn.execute(
+            "UPDATE live_sessions SET offline_since_at = ? WHERE id = ?",
+            (iso_ts, session_id),
+        )
+        self._conn.commit()
+
+    def clear_offline_since(self, session_id: str) -> None:
+        self._conn.execute(
+            "UPDATE live_sessions SET offline_since_at = NULL WHERE id = ?",
             (session_id,),
         )
         self._conn.commit()

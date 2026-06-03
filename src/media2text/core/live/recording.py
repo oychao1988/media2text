@@ -139,7 +139,7 @@ class LiveRecordingCore:
         skip = skip_session_ids or set()
         finalized: list[dict] = []
         min_offline = self._cfg.live.min_recording_sec_before_offline_end
-        confirm_polls = self._cfg.live.offline_confirm_polls
+        confirm_sec = self._cfg.live.offline_confirm_sec
 
         for row in self._sessions.list_active():
             if row.id in skip:
@@ -170,14 +170,30 @@ class LiveRecordingCore:
                 continue
 
             if still_live:
-                self._sessions.reset_offline_streak(row.id)
+                if row.offline_since_at:
+                    self._sessions.clear_offline_since(row.id)
+                    log.debug(
+                        "live_offline_cancelled",
+                        session_id=row.id,
+                        creator_id=creator.id,
+                    )
                 continue
 
             if self._recording_age_sec(row.started_at) < min_offline:
                 continue
 
-            streak = self._sessions.increment_offline_streak(row.id)
-            if streak < confirm_polls:
+            now = datetime.now(timezone.utc)
+            if row.offline_since_at is None:
+                iso = now.isoformat()
+                self._sessions.set_offline_since(row.id, iso)
+                self._emit_live_ended(creator, row)
+                continue
+
+            offline_since = self._parse_iso(row.offline_since_at)
+            if offline_since is None:
+                continue
+            elapsed = (now - offline_since).total_seconds()
+            if elapsed < confirm_sec:
                 continue
 
             meta = self._finalize_recording(row.id, row.temp_path, pid)
@@ -319,6 +335,19 @@ class LiveRecordingCore:
                 session_id=session_id,
                 exit_code=exit_code,
             )
+            creator = self._creators.get(creator_id)
+            if creator:
+                label = creator_label(creator)
+                self._notify.emit(
+                    NotifyEvent(
+                        kind=EventKind.LIVE_START_FAILED,
+                        title=label,
+                        body=(
+                            f"ffmpeg 启动失败（exit {exit_code}）\n"
+                            f"room_id: {room_id or '—'}"
+                        ),
+                    )
+                )
             return {
                 "session_id": session_id,
                 "temp_path": str(temp_path),
@@ -343,6 +372,25 @@ class LiveRecordingCore:
                 )
             )
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
+
+    def _emit_live_ended(self, creator, row) -> None:
+        label = creator_label(creator)
+        self._notify.emit(
+            NotifyEvent(
+                kind=EventKind.LIVE_ENDED,
+                title=label,
+                body=(
+                    f"检测到下播，等待 {self._cfg.live.offline_confirm_sec}s 确认后停录\n"
+                    f"session: {row.id[:8]}…"
+                ),
+            )
+        )
+
+    def _parse_iso(self, value: str) -> datetime | None:
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return None
 
     def _recording_age_sec(self, started_at: str) -> float:
         try:

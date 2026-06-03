@@ -56,7 +56,8 @@ class LiveConfig(BaseModel):
     ffmpeg_stop_timeout_sec: int = 30
     temp_format: str = "flv"
     live_poll_interval_sec: int = 20
-    offline_confirm_polls: int = 3
+    offline_confirm_sec: int = 45
+    offline_confirm_polls: int = 3  # deprecated; logic uses offline_confirm_sec
     ffmpeg_exit_recheck: bool = True
     max_reconnect_attempts: int = 2
     min_recording_sec_before_offline_end: int = 45
@@ -153,11 +154,14 @@ class SummarizeConfig(BaseModel):
 
 class NotifyEventsConfig(BaseModel):
     live_started: bool = True
+    live_start_failed: bool = True
+    live_ended: bool = True
     new_aweme: bool = True
     new_archive: bool = True
     new_dynamic: bool = True
     recording_completed: bool = True
     transcribe_completed: bool = True
+    summarize_completed: bool = True
     upload_completed: bool = True
     upload_failed: bool = True
     upload_skipped: bool = True
