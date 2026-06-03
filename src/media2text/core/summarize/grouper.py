@@ -66,6 +66,59 @@ def _has_transcript(row: LiveSessionRow) -> bool:
     return transcript_path_for_media(Path(row.local_path)).is_file()
 
 
+def _can_link(prev: LiveSessionRow, nxt: LiveSessionRow, merge_gap_minutes: int) -> bool:
+    prev_end = session_end_ts(prev)
+    nxt_start = session_start_ts(nxt)
+    if not prev_end or not nxt_start:
+        return False
+    gap = _gap_minutes(prev_end, nxt_start)
+    same_room = (
+        prev.room_id
+        and nxt.room_id
+        and prev.room_id == nxt.room_id
+    )
+    return gap <= merge_gap_minutes and (
+        same_room or not prev.room_id or not nxt.room_id
+    )
+
+
+def _build_chains(
+    ordered_rows: list[LiveSessionRow],
+    merge_gap_minutes: int,
+) -> list[tuple[list[LiveSessionRow], float | None]]:
+    if not ordered_rows:
+        return []
+
+    chains: list[tuple[list[LiveSessionRow], float | None]] = []
+    chain: list[LiveSessionRow] = [ordered_rows[0]]
+    max_gap: float | None = None
+
+    for nxt in ordered_rows[1:]:
+        prev = chain[-1]
+        prev_end = session_end_ts(prev)
+        nxt_start = session_start_ts(nxt)
+        if not prev_end or not nxt_start:
+            if len(chain) >= 2:
+                chains.append((chain, max_gap))
+            chain = [nxt]
+            max_gap = None
+            continue
+
+        if _can_link(prev, nxt, merge_gap_minutes):
+            gap = _gap_minutes(prev_end, nxt_start)
+            max_gap = gap if max_gap is None else max(max_gap, gap)
+            chain.append(nxt)
+        else:
+            if len(chain) >= 2:
+                chains.append((chain, max_gap))
+            chain = [nxt]
+            max_gap = None
+
+    if len(chain) >= 2:
+        chains.append((chain, max_gap))
+    return chains
+
+
 def build_suggested_groups(
     *,
     creator_id: str,
@@ -73,13 +126,37 @@ def build_suggested_groups(
     workspace: Path,
     merge_gap_minutes: int,
     tz: str,
+    merge_cross_midnight: bool = False,
 ) -> list[SuggestedGroup]:
+    del workspace  # reserved for future path checks
     eligible = [
         r
         for r in rows
         if r.status == "completed" and r.local_path and _has_transcript(r)
     ]
-    eligible.sort(key=lambda r: session_start_ts(r) or datetime.min.replace(tzinfo=ZoneInfo("UTC")))
+    eligible.sort(
+        key=lambda r: session_start_ts(r)
+        or datetime.min.replace(tzinfo=ZoneInfo("UTC"))
+    )
+
+    groups: list[SuggestedGroup] = []
+    group_index = 0
+
+    if merge_cross_midnight:
+        for chain, max_gap in _build_chains(eligible, merge_gap_minutes):
+            start = session_start_ts(chain[0])
+            day = _calendar_date(start, tz) if start else "unknown"
+            groups.append(
+                _make_group(
+                    creator_id=creator_id,
+                    day=day,
+                    chain=chain,
+                    group_index=group_index,
+                    max_gap=max_gap,
+                )
+            )
+            group_index += 1
+        return groups
 
     by_date: dict[str, list[LiveSessionRow]] = {}
     for row in eligible:
@@ -89,62 +166,8 @@ def build_suggested_groups(
         day = _calendar_date(start, tz)
         by_date.setdefault(day, []).append(row)
 
-    groups: list[SuggestedGroup] = []
-    group_index = 0
-
     for day in sorted(by_date.keys()):
-        day_rows = by_date[day]
-        if len(day_rows) < 2:
-            continue
-
-        chain: list[LiveSessionRow] = [day_rows[0]]
-        max_gap: float | None = None
-
-        for nxt in day_rows[1:]:
-            prev = chain[-1]
-            prev_end = session_end_ts(prev)
-            nxt_start = session_start_ts(nxt)
-            if not prev_end or not nxt_start:
-                if len(chain) >= 2:
-                    groups.append(
-                        _make_group(
-                            creator_id=creator_id,
-                            day=day,
-                            chain=chain,
-                            group_index=group_index,
-                            max_gap=max_gap,
-                        )
-                    )
-                    group_index += 1
-                chain = [nxt]
-                max_gap = None
-                continue
-
-            gap = _gap_minutes(prev_end, nxt_start)
-            same_room = (
-                prev.room_id
-                and nxt.room_id
-                and prev.room_id == nxt.room_id
-            )
-            if gap <= merge_gap_minutes and (same_room or not prev.room_id or not nxt.room_id):
-                max_gap = gap if max_gap is None else max(max_gap, gap)
-                chain.append(nxt)
-            else:
-                if len(chain) >= 2:
-                    groups.append(
-                        _make_group(
-                            creator_id=creator_id,
-                            day=day,
-                            chain=chain,
-                            group_index=group_index,
-                            max_gap=max_gap,
-                        )
-                    )
-                    group_index += 1
-                chain = [nxt]
-                max_gap = None
-
-        if len(chain) >= 2:
+        for chain, max_gap in _build_chains(by_date[day], merge_gap_minutes):
             groups.append(
                 _make_group(
                     creator_id=creator_id,
@@ -157,6 +180,16 @@ def build_suggested_groups(
             group_index += 1
 
     return groups
+
+
+def media_paths_in_multi_groups(groups: list[SuggestedGroup]) -> set[str]:
+    paths: set[str] = set()
+    for group in groups:
+        if len(group.session_ids) < 2:
+            continue
+        for p in group.media_paths:
+            paths.add(str(Path(p).resolve()))
+    return paths
 
 
 def _make_group(

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from media2text.core.summarize.base import DISCLAIMER_MD, SummaryResult
+from media2text.core.summarize.sections import parse_sections_from_markdown
 
 
 def _media_base(media: Path) -> Path:
@@ -35,6 +36,7 @@ def write_summary(
     result: SummaryResult,
     *,
     source_transcript: Path,
+    parse_sections: bool = True,
 ) -> tuple[Path, Path]:
     md_path, json_path = summary_paths_for_media(media)
     body = DISCLAIMER_MD + "\n" + result.markdown.strip() + "\n"
@@ -52,6 +54,10 @@ def write_summary(
     }
     if result.llm_usage:
         meta["llm_usage"] = result.llm_usage
+    if parse_sections:
+        sections = parse_sections_from_markdown(result.markdown)
+        if sections:
+            meta["sections"] = sections
     json_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",
@@ -65,6 +71,7 @@ def write_merged_summary(
     result: SummaryResult,
     *,
     sources: list[dict],
+    parse_sections: bool = True,
 ) -> tuple[Path, Path]:
     md_path, json_path = merged_summary_paths(live_dir, date_yyyymmdd)
     body = DISCLAIMER_MD + "\n" + result.markdown.strip() + "\n"
@@ -83,6 +90,10 @@ def write_merged_summary(
     }
     if result.llm_usage:
         meta["llm_usage"] = result.llm_usage
+    if parse_sections:
+        sections = parse_sections_from_markdown(result.markdown)
+        if sections:
+            meta["sections"] = sections
     json_path.write_text(
         json.dumps(meta, ensure_ascii=False, indent=2),
         encoding="utf-8",

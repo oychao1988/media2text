@@ -141,6 +141,8 @@ class SummarizeChunkConfig(BaseModel):
 
 class SummarizeMergeConfig(BaseModel):
     auto_merge_after_parts: bool = False
+    merge_cross_midnight: bool = False
+    per_part: bool = True
 
 
 class SummarizeConfig(BaseModel):
@@ -150,6 +152,7 @@ class SummarizeConfig(BaseModel):
     default_profile: str = "auto"
     merge_gap_minutes: int = 60
     merge_date_tz: str = "UTC"
+    parse_sections: bool = True
     max_files_per_run: int = 0
     llm: SummarizeLlmConfig = Field(default_factory=SummarizeLlmConfig)
     chunk: SummarizeChunkConfig = Field(default_factory=SummarizeChunkConfig)

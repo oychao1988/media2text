@@ -8,7 +8,10 @@ from media2text.core.storage.models import LiveSessionRow
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.summarize.chunker import chunk_plain_text, chunk_segments, format_chunk
 from media2text.core.summarize.errors import SummarizeError
-from media2text.core.summarize.grouper import build_suggested_groups
+from media2text.core.summarize.grouper import (
+    build_suggested_groups,
+    media_paths_in_multi_groups,
+)
 from media2text.core.summarize.merger import merge_sessions
 from media2text.core.summarize.base import SummaryResult, usage_delta
 from media2text.core.summarize.openai_backend import SummarizeBackend, primary_model
@@ -111,7 +114,12 @@ def summarize_one(
         provider_base_url=getattr(backend, "provider_base_url", None),
         llm_usage=llm_usage,
     )
-    summary_md, _ = write_summary(write_media, result, source_transcript=source)
+    summary_md, _ = write_summary(
+        write_media,
+        result,
+        source_transcript=source,
+        parse_sections=cfg.summarize.parse_sections,
+    )
     return {
         "media_path": str(write_media),
         "summary_path": str(summary_md),
@@ -239,13 +247,40 @@ def run_batch(
     if limit is not None and limit > 0:
         deduped = deduped[:limit]
 
+    skip_group_paths: set[str] = set()
+    if creator_id and not cfg.summarize.merge.per_part:
+        creator_pre = CreatorRepo(conn).get(creator_id)
+        if creator_pre:
+            rows_pre = LiveSessionRepo(conn).list_completed_for_creator(creator_id)
+            groups_pre = build_suggested_groups(
+                creator_id=creator_id,
+                rows=rows_pre,
+                workspace=workspace,
+                merge_gap_minutes=cfg.summarize.merge_gap_minutes,
+                tz=cfg.summarize.merge_date_tz,
+                merge_cross_midnight=cfg.summarize.merge.merge_cross_midnight,
+            )
+            skip_group_paths = media_paths_in_multi_groups(groups_pre)
+
     results: list[dict] = []
     errors: list[dict] = []
+    skipped_per_part: list[str] = []
     summarized = 0
     skipped = 0
     batch_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "requests": 0}
 
     for media in deduped:
+        if skip_group_paths and str(media.resolve()) in skip_group_paths:
+            skipped_per_part.append(str(media))
+            skipped += 1
+            results.append(
+                {
+                    "media_path": str(media),
+                    "skipped": True,
+                    "skip_reason": "per_part_disabled_in_group",
+                }
+            )
+            continue
         try:
             item = summarize_one(
                 media, cfg, backend, profile=profile, force=force
@@ -275,6 +310,7 @@ def run_batch(
                 workspace=workspace,
                 merge_gap_minutes=cfg.summarize.merge_gap_minutes,
                 tz=cfg.summarize.merge_date_tz,
+                merge_cross_midnight=cfg.summarize.merge.merge_cross_midnight,
             )
             suggested = [g.to_dict() for g in groups]
             refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=workspace)
@@ -292,7 +328,7 @@ def run_batch(
         for sec_uid in sec_uids:
             refresh_manifest(conn, sec_uid=sec_uid, workspace=workspace)
 
-    return {
+    out: dict = {
         "ok": not errors,
         "command": "summarize run",
         "summarized": summarized,
@@ -302,6 +338,9 @@ def run_batch(
         "suggested_groups": suggested,
         "errors": errors,
     }
+    if skipped_per_part:
+        out["skipped_per_part"] = skipped_per_part
+    return out
 
 
 def backfill_batch(
@@ -335,13 +374,38 @@ def backfill_batch(
     if limit is not None and limit > 0:
         deduped = deduped[:limit]
 
+    skip_group_paths: set[str] = set()
+    if creator_id and not cfg.summarize.merge.per_part:
+        rows_pre = LiveSessionRepo(conn).list_completed_for_creator(creator_id)
+        groups_pre = build_suggested_groups(
+            creator_id=creator_id,
+            rows=rows_pre,
+            workspace=workspace,
+            merge_gap_minutes=cfg.summarize.merge_gap_minutes,
+            tz=cfg.summarize.merge_date_tz,
+            merge_cross_midnight=cfg.summarize.merge.merge_cross_midnight,
+        )
+        skip_group_paths = media_paths_in_multi_groups(groups_pre)
+
     results: list[dict] = []
     errors: list[dict] = []
+    skipped_per_part: list[str] = []
     summarized = 0
     skipped = 0
     batch_usage = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "requests": 0}
 
     for media in deduped:
+        if skip_group_paths and str(media.resolve()) in skip_group_paths:
+            skipped_per_part.append(str(media))
+            skipped += 1
+            results.append(
+                {
+                    "media_path": str(media),
+                    "skipped": True,
+                    "skip_reason": "per_part_disabled_in_group",
+                }
+            )
+            continue
         try:
             item = summarize_one(
                 media, cfg, backend, profile=profile, force=force
@@ -375,7 +439,7 @@ def backfill_batch(
     for sec_uid in sorted(sec_uids):
         refresh_manifest(conn, sec_uid=sec_uid, workspace=workspace)
 
-    return {
+    backfill_out: dict = {
         "ok": not errors,
         "command": "summarize backfill",
         "pending": pending,
@@ -385,6 +449,9 @@ def backfill_batch(
         "results": results,
         "errors": errors,
     }
+    if skipped_per_part:
+        backfill_out["skipped_per_part"] = skipped_per_part
+    return backfill_out
 
 
 def merge_batch(
@@ -428,6 +495,7 @@ def merge_batch(
             workspace=workspace,
             merge_gap_minutes=cfg.summarize.merge_gap_minutes,
             tz=cfg.summarize.merge_date_tz,
+            merge_cross_midnight=cfg.summarize.merge.merge_cross_midnight,
         )
         matching = [g for g in groups if g.date == date]
         if not matching:

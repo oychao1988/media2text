@@ -86,6 +86,24 @@ def test_resolve_llm_endpoints_multi_provider() -> None:
     assert resolve_models(cfg) == ["glm", "deepseek", "gpt-4o-mini"]
 
 
+@patch.dict("os.environ", {"OLLAMA_API_KEY": "ollama"}, clear=True)
+def test_resolve_llm_endpoints_ollama_provider() -> None:
+    cfg = SummarizeLlmConfig(
+        providers=[
+            SummarizeLlmProviderConfig(
+                name="ollama",
+                base_url="http://127.0.0.1:11434/v1",
+                api_key_envs=["OLLAMA_API_KEY"],
+                models=["qwen2.5:7b"],
+            ),
+        ]
+    )
+    eps = resolve_llm_endpoints(cfg)
+    assert len(eps) == 1
+    assert eps[0].base_url == "http://127.0.0.1:11434/v1"
+    assert eps[0].model == "qwen2.5:7b"
+
+
 def test_is_rate_limit_error() -> None:
     assert is_rate_limit_error(Exception("429 Too Many Requests"))
     assert is_rate_limit_error(SimpleNamespace(status_code=429))

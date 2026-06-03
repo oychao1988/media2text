@@ -23,11 +23,15 @@ def test_write_summary_sidecars(tmp_path: Path) -> None:
         },
     )
     md_path, json_path = write_summary(
-        media, result, source_transcript=media.with_suffix(".transcript.json")
+        media,
+        result,
+        source_transcript=media.with_suffix(".transcript.json"),
+        parse_sections=True,
     )
     text = md_path.read_text(encoding="utf-8")
     assert DISCLAIMER_MD.split("\n")[0] in text
     meta = json.loads(json_path.read_text(encoding="utf-8"))
     assert meta["profile"] == "live_market_recap"
     assert meta["llm_usage"]["total_tokens"] == 1200
-    assert "sections" not in meta
+    assert meta["sections"][0]["title"] == "核心观点"
+
