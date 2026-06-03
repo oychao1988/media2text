@@ -12,6 +12,7 @@ def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     cfg.live.offline_confirm_sec = confirm_sec
+    cfg.live.offline_trust_recording_signals = False
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
