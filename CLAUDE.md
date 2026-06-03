@@ -155,6 +155,8 @@ media2text creator show <creator_id> --json
 | `live status [--creator <id>] --json` | 当前录制、后处理队列与 daemon 锁 |
 | `live timeline <session_id> --json` | 单场 pipeline events 时间线 |
 | `live stats [--days N] --json` | 各 stage 耗时 P50/P95 聚合 |
+
+`live.scan_concurrency`（默认 4）并行 poll 无 active session 的博主；`post_process_max_parallel: 0` 为自适应 worker 数。
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |

@@ -13,6 +13,7 @@ from media2text.core.storage.repos import (
     PipelineEventRepo,
     PostProcessJobRepo,
 )
+from media2text.core.live.post_process_pool import resolve_post_process_workers
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="Live recording pipeline status and timeline")
@@ -102,7 +103,7 @@ def status_cmd(
         },
         "active_recordings": active,
         "post_process": {
-            "max_workers": cfg.live.post_process_max_parallel,
+            "max_workers": resolve_post_process_workers(cfg),
             "pending": counts.get("pending", 0),
             "running": counts.get("running", 0),
             "jobs": job_items,
