@@ -432,7 +432,12 @@ class AliyunDriveClient:
         except RuntimeError as exc:
             if size <= chunk_size or not _is_chunked_retry_error(exc):
                 raise
-            log.info("aliyundrive_upload_retry_chunked", file_name=name, size=size, error=str(exc)[:200])
+            log.info(
+                "aliyundrive_upload_retry_chunked name=%s size=%s error=%s",
+                name,
+                size,
+                str(exc)[:200],
+            )
             return self._upload_streaming_once(
                 local_path,
                 size=size,

@@ -230,6 +230,22 @@ class DouyinAdapterV1:
             raise ParseFailed(f"reflow fetch failed: {exc}") from exc
 
     def _resolve_stream_url(self, *, room_id: str, sec_uid: str | None) -> str:
+        if self._session_path and self._session_path.is_file():
+            try:
+                from media2text.core.platform.douyin.live_enter import (
+                    resolve_stream_via_web_enter,
+                )
+
+                live_url = f"https://live.douyin.com/{room_id}"
+                stream_url, _, _ = resolve_stream_via_web_enter(
+                    self._session_path, live_url
+                )
+                return stream_url
+            except ParseFailed:
+                pass
+            except Exception:
+                pass
+
         reflow = self.get_room_reflow(room_id=room_id, sec_uid=sec_uid)
         if not reflow.stream_flv_url:
             raise ParseFailed("stream flv url not found")

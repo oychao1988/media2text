@@ -100,6 +100,30 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
             }
         )
 
+    if cfg.live.is_streaming_pipeline():
+        dg_env = cfg.transcribe.deepgram.api_key_env
+        import os
+
+        dg_ok = bool(os.environ.get(dg_env, "").strip())
+        try:
+            import deepgram  # noqa: F401
+
+            dg_installed = True
+        except ImportError:
+            dg_installed = False
+        checks.append(
+            {
+                "name": "streaming_stt_deepgram",
+                "ok": dg_ok and dg_installed,
+                "relevant": True,
+                "hint": (
+                    f'pip install -e ".[transcribe-deepgram]" and export {dg_env}'
+                    if not dg_ok or not dg_installed
+                    else None
+                ),
+            }
+        )
+
     if ad.enabled:
         token_path = cfg.aliyundrive_token_path()
         aliyundrive_ok = False
@@ -129,6 +153,10 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
         )
     if cfg.summarize.enabled:
         ok = ok and any(c["ok"] for c in checks if c["name"] == "summarize_llm")
+    if cfg.live.is_streaming_pipeline():
+        ok = ok and any(
+            c["ok"] for c in checks if c["name"] == "streaming_stt_deepgram"
+        )
     emit(
         {
             "ok": ok,

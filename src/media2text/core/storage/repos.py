@@ -1079,7 +1079,7 @@ class CloudUploadRepo:
         eligible: list[CloudUploadRow] = []
         for session_id, uploads in by_session.items():
             kinds = {u.file_kind for u in uploads}
-            if "mp4" not in kinds:
+            if not kinds.intersection({"mp4", "flv"}):
                 continue
             session = self._conn.execute(
                 "SELECT transcribe_status FROM live_sessions WHERE id = ?",

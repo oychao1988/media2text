@@ -19,9 +19,19 @@ monitor:
   profile_stale_days: 7
 
 live:
+  # streaming: parallel FLV record + Deepgram WS STT (no post-process transcribe).
+  # legacy: v2 remux to MP4 + optional post-process transcribe (code default).
+  pipeline_mode: streaming
+  remux_on_complete: false          # streaming default; legacy uses true when unset
+  streaming_stt:
+    enabled: true
+    engine: deepgram
+    flush_interval_sec: 30
+    reconnect: true
   # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
   # When true and transcribe.engine is configured (whisper / openai / deepgram), transcribe
   # runs in the post-process drain (monitor daemon or `media2text post-process run`), not inline.
+  # Must stay false when pipeline_mode=streaming (STT runs during the live).
   transcribe_on_complete: false
   live_poll_interval_sec: 10       # LiveTick only; falls back to monitor.live_poll_interval_sec
   offline_confirm_sec: 45          # wall-clock seconds before finalize after first offline

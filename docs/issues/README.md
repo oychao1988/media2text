@@ -66,7 +66,18 @@
 | GitHub | 规格正文 | 说明 |
 |--------|----------|------|
 | [#96](https://github.com/oychao1988/media2text/issues/96) | [summarize-v2-deferred](../superpowers/issues/2026-06-03-summarize-v2-deferred-issue-body.md) | Summarize v2 延期项 |
-| [#97](https://github.com/oychao1988/media2text/issues/97) | [live-streaming-transcribe-spike](../superpowers/issues/2026-06-03-live-streaming-transcribe-spike-issue-body.md) | 录播实时转写 spike（非 v2 范围） |
+| [#97](https://github.com/oychao1988/media2text/issues/97) | [live-streaming-stt-p0](../superpowers/issues/2026-06-03-live-streaming-transcribe-spike-issue-body.md) | v3 流式 STT P0 → PR [#100](https://github.com/oychao1988/media2text/pull/100) |
+
+**Streaming STT P1/P2（#97 合并后）**：
+
+| GitHub | 规格正文 | 说明 |
+|--------|----------|------|
+| [#101](https://github.com/oychao1988/media2text/issues/101) | [p1-offset-merge](../superpowers/issues/2026-06-03-live-streaming-stt-p1-offset-merge-issue-body.md) | 断流 transcript offset merge |
+| [#102](https://github.com/oychao1988/media2text/issues/102) | [p1-bilibili](../superpowers/issues/2026-06-03-live-streaming-stt-p1-bilibili-issue-body.md) | B 站 streaming STT |
+| [#103](https://github.com/oychao1988/media2text/issues/103) | [p1-db-snapshot](../superpowers/issues/2026-06-03-live-streaming-stt-p1-db-snapshot-issue-body.md) | `pipeline_mode` 快照 + DB 别名 |
+| [#104](https://github.com/oychao1988/media2text/issues/104) | [p2-observability](../superpowers/issues/2026-06-03-live-streaming-stt-p2-observability-issue-body.md) | partial 通知、metrics、`live stats` |
+
+规格：[live-streaming-stt-design](../superpowers/specs/2026-06-03-live-streaming-stt-design.md)
 
 ### 直播录制管道 v1（2026-06-02，已交付）
 

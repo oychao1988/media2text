@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from media2text.core.config import AppConfig, LiveConfig
+import pytest
+
+from media2text.core.config import AppConfig, LiveConfig, StreamingSttConfig
+from media2text.core.errors import ConfigError
 
 
 def test_load_config_defaults(tmp_path: Path, monkeypatch) -> None:
@@ -29,3 +32,12 @@ def test_live_config_recording_defaults() -> None:
     assert lc.ffmpeg_exit_recheck is True
     assert lc.max_reconnect_attempts == 2
     assert lc.min_recording_sec_before_offline_end == 45
+
+
+def test_live_config_rejects_streaming_with_transcribe_on_complete() -> None:
+    with pytest.raises(ConfigError, match="transcribe_on_complete"):
+        LiveConfig(
+            pipeline_mode="streaming",
+            transcribe_on_complete=True,
+            streaming_stt=StreamingSttConfig(enabled=True),
+        )

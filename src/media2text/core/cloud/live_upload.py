@@ -82,8 +82,15 @@ def _resolve_creator_key(cfg: AppConfig, conn, creator: CreatorRow) -> tuple[str
     return key, None
 
 
+def _media_file_kind(media: Path) -> str:
+    ext = media.suffix.lower()
+    if ext == ".flv":
+        return "flv"
+    return "mp4"
+
+
 def _upload_paths(cfg: AppConfig, mp4: Path) -> list[tuple[Path, str]]:
-    items: list[tuple[Path, str]] = [(mp4, "mp4")]
+    items: list[tuple[Path, str]] = [(mp4, _media_file_kind(mp4))]
     if not cfg.aliyundrive.upload_transcripts:
         return items
     json_path = mp4.with_suffix(".transcript.json")
@@ -339,16 +346,20 @@ def _upload_with_client(
                     check_name_mode=check_mode,
                     replace_file_id=replace_id,
                 )
-                file_id = str(result.get("file_id") or client.find_exact_name_in_parent(
-                    local_path.name, parent_file_id=folder_id
-                )["file_id"])
+                file_id_raw = result.get("file_id")
+                if not file_id_raw:
+                    remote = client.find_exact_name_in_parent(
+                        local_path.name, parent_file_id=folder_id
+                    )
+                    file_id_raw = remote["file_id"] if remote else None
+                file_id = str(file_id_raw or "")
                 uploads.mark_done(
                     upload_id,
                     cloud_file_id=file_id,
                     cloud_relative_path=rel_path,
                 )
                 uploaded_files.append(local_path)
-                if file_kind == "mp4":
+                if file_kind in ("mp4", "flv"):
                     mp4_file_id = file_id
                     mp4_rel_path = rel_path
                 break
@@ -392,3 +403,139 @@ def _upload_with_client(
         "cloud_relative_path": mp4_rel_path,
         "cloud_upload_status": "done",
     }
+
+
+def upload_summary_sidecars_if_needed(
+    cfg: AppConfig,
+    conn,
+    *,
+    session_id: str,
+    media: Path,
+    creator: CreatorRow,
+    notify: NotifyService | None = None,
+) -> dict[str, Any]:
+    """Upload .summary.* after summarize finished if initial upload already completed."""
+    ad = cfg.aliyundrive
+    if not ad.enabled or not ad.upload_transcripts:
+        return {}
+
+    summary_md, summary_json = summary_paths_for_media(media)
+    if not summary_md.is_file() and not summary_json.is_file():
+        return {}
+
+    sessions = LiveSessionRepo(conn)
+    row = sessions.get(session_id)
+    if not row or row.cloud_upload_status != "done":
+        return {}
+
+    uploads = CloudUploadRepo(conn)
+    done_kinds = {
+        u.file_kind
+        for u in uploads.list_for_session(session_id)
+        if u.upload_status == "done"
+    }
+    if "summary_md" in done_kinds and "summary_json" in done_kinds:
+        return {}
+    if not summary_md.is_file() and not summary_json.is_file():
+        return {}
+
+    notify = notify or NotifyService(cfg)
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return {"upload_supplemental_skipped": True, "reason": "token_missing"}
+
+    creator_key, skip_reason = _resolve_creator_key(cfg, conn, creator)
+    if not creator_key:
+        return {"upload_supplemental_skipped": True, "reason": skip_reason}
+
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            return _upload_summary_sidecars(
+                client,
+                cfg=cfg,
+                conn=conn,
+                session_id=session_id,
+                media=media,
+                creator=creator,
+                creator_key=creator_key,
+                notify=notify,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.warning("aliyundrive_summary_supplemental_failed", error=str(exc))
+        return {"upload_supplemental_failed": str(exc)}
+
+
+def _upload_summary_sidecars(
+    client: AliyunDriveClient,
+    *,
+    cfg: AppConfig,
+    conn,
+    session_id: str,
+    media: Path,
+    creator: CreatorRow,
+    creator_key: str,
+    notify: NotifyService,
+) -> dict[str, Any]:
+    ad = cfg.aliyundrive
+    uploads = CloudUploadRepo(conn)
+    folder_id = client.ensure_folder_path(
+        [ad.root_folder, creator.platform, creator_key, "live"],
+        parent_file_id=ad.parent_file_id,
+    )
+    rel_base = f"{ad.root_folder}/{creator.platform}/{creator_key}/live"
+    uploaded: list[str] = []
+    summary_md, summary_json = summary_paths_for_media(media)
+    done_kinds = {
+        u.file_kind
+        for u in uploads.list_for_session(session_id)
+        if u.upload_status == "done"
+    }
+
+    for local_path, file_kind in [
+        (summary_md, "summary_md"),
+        (summary_json, "summary_json"),
+    ]:
+        if not local_path.is_file() or file_kind in done_kinds:
+            continue
+        size = local_path.stat().st_size
+        pre_hash = compute_pre_hash(local_path)
+        upload_id = uploads.create(
+            session_id=session_id,
+            creator_id=creator.id,
+            platform=creator.platform,
+            file_name=local_path.name,
+            file_kind=file_kind,
+            local_path=str(local_path),
+            size=size,
+            pre_hash=pre_hash,
+        )
+        rel_path = f"{rel_base}/{local_path.name}"
+        check_mode, replace_id = _check_name_mode_for_upload(
+            client, parent_file_id=folder_id, local_path=local_path
+        )
+        result = client.upload_file_streaming(
+            local_path,
+            parent_file_id=folder_id,
+            remote_name=local_path.name,
+            check_name_mode=check_mode,
+            replace_file_id=replace_id,
+        )
+        file_id = result.get("file_id")
+        if not file_id:
+            remote = client.find_exact_name_in_parent(
+                local_path.name, parent_file_id=folder_id
+            )
+            file_id = remote["file_id"] if remote else None
+        if not file_id:
+            raise RuntimeError(f"upload missing file_id for {local_path.name}")
+        uploads.mark_done(
+            upload_id,
+            cloud_file_id=str(file_id),
+            cloud_relative_path=rel_path,
+        )
+        uploaded.append(local_path.name)
+
+    if uploaded:
+        log.info("aliyundrive_summary_supplemental", files=uploaded)
+        return {"upload_supplemental": True, "files": uploaded}
+    return {}
