@@ -5,7 +5,7 @@ import time
 from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig
-from media2text.core.live.post_process_pool import PostProcessExecutor
+from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
 
 
 def test_submit_returns_immediately_while_job_runs(monkeypatch, tmp_path) -> None:
@@ -103,3 +103,18 @@ def test_drain_pending_submits_without_blocking(monkeypatch, tmp_path) -> None:
     assert submitted == ["job-a", "job-b"]
     pool.shutdown(wait=False)
     conn.close()
+
+
+def test_resolve_post_process_workers_explicit() -> None:
+    cfg = AppConfig()
+    cfg.live.post_process_max_parallel = 3
+    assert resolve_post_process_workers(cfg) == 3
+
+
+def test_resolve_post_process_workers_auto(monkeypatch) -> None:
+    cfg = AppConfig()
+    cfg.live.post_process_max_parallel = 0
+    monkeypatch.setattr("media2text.core.live.post_process_pool.os.cpu_count", lambda: 8)
+    assert resolve_post_process_workers(cfg) == 2
+    monkeypatch.setattr("media2text.core.live.post_process_pool.os.cpu_count", lambda: 2)
+    assert resolve_post_process_workers(cfg) == 1

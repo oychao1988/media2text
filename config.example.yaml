@@ -30,7 +30,8 @@ live:
   max_reconnect_attempts: 2
   min_recording_sec_before_offline_end: 45
   post_process_poll_interval_sec: 10
-  post_process_max_parallel: 1
+  post_process_max_parallel: 0         # 0 = auto: min(2, max(1, cpu_count // 2))
+  scan_concurrency: 4                   # parallel get_live_room for creators without active session
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv

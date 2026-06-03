@@ -62,8 +62,9 @@ class LiveConfig(BaseModel):
     max_reconnect_attempts: int = 2
     min_recording_sec_before_offline_end: int = 45
     post_process_poll_interval_sec: int = 10
-    post_process_max_parallel: int = 1
+    post_process_max_parallel: int = 0
     post_process_stale_running_sec: int = 3600
+    scan_concurrency: int = 4
 
 
 class WhisperConfig(BaseModel):

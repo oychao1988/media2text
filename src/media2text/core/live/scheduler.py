@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from media2text.core.config import AppConfig
-from media2text.core.live.post_process_pool import PostProcessExecutor
+from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
 from media2text.core.platform.bilibili.dynamic import run_dynamic_tick
 
 if TYPE_CHECKING:
@@ -132,7 +132,7 @@ class MonitorScheduler:
         self._watcher = watcher
         self._cfg = cfg
         self._stop = threading.Event()
-        max_workers = max(1, cfg.live.post_process_max_parallel)
+        max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
         self._live_loop: LiveTickLoop | None = None
         self._slow_loop: SlowTickLoop | None = None

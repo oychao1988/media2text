@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import Popen
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+
 import structlog
 
 from media2text.core.config import AppConfig
@@ -60,37 +62,38 @@ class LiveRecordingCore:
         auth_required = False
         platform_changed = False
 
+        scan_targets: list = []
         for creator in targets:
             if self._sessions.get_active_for_creator(creator.id):
                 continue
-            try:
-                live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-            except AuthRequired as exc:
-                auth_required = True
-                errors.append(
-                    {"creator_id": creator.id, "error": str(exc), "auth_required": True}
-                )
-                continue
-            except PlatformChanged as exc:
-                platform_changed = True
-                errors.append(
-                    {
-                        "creator_id": creator.id,
-                        "error": str(exc),
-                        "platform_changed": True,
-                    }
-                )
-                continue
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "live_status_check_failed",
-                    creator_id=creator.id,
-                    error=str(exc),
-                )
-                errors.append({"creator_id": creator.id, "error": str(exc)})
-                continue
+            scan_targets.append(creator)
 
-            if not live_info.is_live or not live_info.room_id:
+        live_by_creator: dict[str, tuple] = {}
+        workers = max(1, self._cfg.live.scan_concurrency)
+        if scan_targets:
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(self._fetch_live_info, creator): creator
+                    for creator in scan_targets
+                }
+                for fut in as_completed(futures):
+                    creator = futures[fut]
+                    live_by_creator[creator.id] = fut.result()
+
+        for creator in scan_targets:
+            outcome = live_by_creator.get(creator.id)
+            if outcome is None:
+                continue
+            live_info, err = outcome
+            if err is not None:
+                kind, payload = err
+                if kind == "auth_required":
+                    auth_required = True
+                elif kind == "platform_changed":
+                    platform_changed = True
+                errors.append(payload)
+                continue
+            if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             room_id = live_info.room_id
             stream_url = live_info.stream_flv_url
@@ -133,6 +136,38 @@ class LiveRecordingCore:
             started_session_ids.add(meta["session_id"])
 
         return started, started_session_ids, errors, auth_required, platform_changed
+
+    def _fetch_live_info(self, creator):
+        try:
+            return self._adapter.get_live_room(sec_uid=creator.sec_uid), None
+        except AuthRequired as exc:
+            return None, (
+                "auth_required",
+                {
+                    "creator_id": creator.id,
+                    "error": str(exc),
+                    "auth_required": True,
+                },
+            )
+        except PlatformChanged as exc:
+            return None, (
+                "platform_changed",
+                {
+                    "creator_id": creator.id,
+                    "error": str(exc),
+                    "platform_changed": True,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "live_status_check_failed",
+                creator_id=creator.id,
+                error=str(exc),
+            )
+            return None, (
+                "error",
+                {"creator_id": creator.id, "error": str(exc)},
+            )
 
     def poll_active_recordings(
         self, *, skip_session_ids: set[str] | None = None

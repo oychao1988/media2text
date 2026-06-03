@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from concurrent.futures import ThreadPoolExecutor
 
 from media2text.core.config import AppConfig
@@ -7,6 +8,13 @@ from media2text.core.live.post_process import run_post_process_job
 from media2text.core.notify import NotifyService
 from media2text.core.storage.repos import PostProcessJobRepo
 from media2text.core.workspace import open_db
+
+
+def resolve_post_process_workers(cfg: AppConfig) -> int:
+    n = cfg.live.post_process_max_parallel
+    if n > 0:
+        return n
+    return min(2, max(1, (os.cpu_count() or 2) // 2))
 
 
 class PostProcessExecutor:
