@@ -11,6 +11,7 @@ from media2text.core.storage.models import (
     CreatorRow,
     DynamicRow,
     LiveSessionRow,
+    PipelineEventRow,
     PostProcessJobRow,
 )
 
@@ -790,6 +791,156 @@ class PostProcessJobRepo:
             count += 1
         self._conn.commit()
         return count
+
+    def list_in_flight(self, *, limit: int = 50) -> list[PostProcessJobRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM post_process_jobs
+            WHERE status IN ('pending', 'running')
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [PostProcessJobRow(**dict(r)) for r in rows]
+
+    def count_by_status(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            """
+            SELECT status, COUNT(*) AS n
+            FROM post_process_jobs
+            GROUP BY status
+            """
+        ).fetchall()
+        return {str(r["status"]): int(r["n"]) for r in rows}
+
+
+class PipelineEventRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def insert(
+        self,
+        *,
+        session_id: str,
+        stage: str,
+        status: str,
+        job_id: str | None = None,
+        detail: dict | None = None,
+        started_at: str,
+        ended_at: str | None = None,
+        duration_ms: int | None = None,
+    ) -> str:
+        import uuid
+
+        event_id = str(uuid.uuid4())
+        self._conn.execute(
+            """
+            INSERT INTO live_pipeline_events
+              (id, session_id, job_id, stage, status, detail_json,
+               started_at, ended_at, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                session_id,
+                job_id,
+                stage,
+                status,
+                json.dumps(detail, ensure_ascii=False) if detail else None,
+                started_at,
+                ended_at,
+                duration_ms,
+            ),
+        )
+        self._conn.commit()
+        return event_id
+
+    def complete(
+        self,
+        event_id: str,
+        *,
+        status: str,
+        ended_at: str,
+        duration_ms: int | None = None,
+        detail: dict | None = None,
+    ) -> None:
+        if detail is not None:
+            self._conn.execute(
+                """
+                UPDATE live_pipeline_events
+                SET status = ?, ended_at = ?, duration_ms = ?, detail_json = ?
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    ended_at,
+                    duration_ms,
+                    json.dumps(detail, ensure_ascii=False),
+                    event_id,
+                ),
+            )
+        else:
+            self._conn.execute(
+                """
+                UPDATE live_pipeline_events
+                SET status = ?, ended_at = ?, duration_ms = ?
+                WHERE id = ?
+                """,
+                (status, ended_at, duration_ms, event_id),
+            )
+        self._conn.commit()
+
+    def list_for_session(self, session_id: str) -> list[PipelineEventRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM live_pipeline_events
+            WHERE session_id = ?
+            ORDER BY started_at ASC, id ASC
+            """,
+            (session_id,),
+        ).fetchall()
+        return [PipelineEventRow(**dict(r)) for r in rows]
+
+    def stats_since(self, since_iso: str) -> list[dict]:
+        rows = self._conn.execute(
+            """
+            SELECT stage, duration_ms
+            FROM live_pipeline_events
+            WHERE started_at >= ?
+              AND duration_ms IS NOT NULL
+              AND status = 'completed'
+            """,
+            (since_iso,),
+        ).fetchall()
+        by_stage: dict[str, list[int]] = {}
+        for row in rows:
+            stage = str(row["stage"])
+            ms = int(row["duration_ms"])
+            by_stage.setdefault(stage, []).append(ms)
+        out: list[dict] = []
+        for stage, values in sorted(by_stage.items()):
+            values.sort()
+            out.append(
+                {
+                    "stage": stage,
+                    "count": len(values),
+                    "p50_ms": _percentile(values, 50),
+                    "p95_ms": _percentile(values, 95),
+                }
+            )
+        return out
+
+
+def _percentile(sorted_values: list[int], pct: float) -> int:
+    if not sorted_values:
+        return 0
+    k = (len(sorted_values) - 1) * (pct / 100.0)
+    f = int(k)
+    c = min(f + 1, len(sorted_values) - 1)
+    if f == c:
+        return sorted_values[f]
+    return int(sorted_values[f] + (sorted_values[c] - sorted_values[f]) * (k - f))
 
 
 class CloudUploadRepo:

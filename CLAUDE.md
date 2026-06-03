@@ -152,6 +152,9 @@ media2text creator show <creator_id> --json
 | `creator remove <id> [--delete-media] --json` | 移除博主 |
 | `monitor watch [--daemon] [--creator <id>] --json` | 直播 + VOD/archive + 动态 |
 | `post-process run [--limit N] --json` | 消化积压的直播后处理任务 |
+| `live status [--creator <id>] --json` | 当前录制、后处理队列与 daemon 锁 |
+| `live timeline <session_id> --json` | 单场 pipeline events 时间线 |
+| `live stats [--days N] --json` | 各 stage 耗时 P50/P95 聚合 |
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |
