@@ -67,7 +67,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | 循环：直播 tick 默认 `live.live_poll_interval_sec`（20s，回退 `monitor.live_poll_interval_sec`）；守护进程内按 `live.post_process_poll_interval_sec` **同步 drain** 转写队列（非独立线程）；抖音 VOD ~300s；B 站 archive/dynamic 见 `platforms.bilibili` |
+| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 20s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle。P0 不含墙钟 offline / `live_ended`（→ P1） |
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
@@ -92,7 +92,7 @@ media2text transcribe run data/creators/<sec_uid>/live/xxx.mp4 --json
 # 引擎在 config.yaml：transcribe.engine = whisper | openai | deepgram
 ```
 
-直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra；由 `monitor watch --daemon` 或 `post-process run` drain 执行，不在 finalize 内阻塞。
+直播结束自动转写：配置 `live.transcribe_on_complete: true` 且已安装对应转写 extra；由 `monitor watch --daemon` 的 `PostProcessPool` 或 `post-process run` 执行，不在 finalize 内阻塞。
 
 ### 4a. LLM 摘要（`summarize`，与转写引擎独立）
 
