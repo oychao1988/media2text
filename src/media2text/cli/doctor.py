@@ -118,8 +118,17 @@ def doctor(json_out: bool = typer.Option(False, "--json")) -> None:
                 "relevant": True,
                 "hint": (
                     f'pip install -e ".[transcribe-deepgram]" and export {dg_env}'
+                    + (
+                        "; B 站 streaming 还需 media2text auth login --platform bilibili"
+                        if has_bilibili
+                        else ""
+                    )
                     if not dg_ok or not dg_installed
-                    else None
+                    else (
+                        "B 站 streaming 需 sessions/bilibili.json + Deepgram"
+                        if has_bilibili
+                        else None
+                    )
                 ),
             }
         )
