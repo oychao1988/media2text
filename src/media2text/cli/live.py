@@ -74,6 +74,8 @@ def status_cmd(
                 "offline_since_at": row.offline_since_at,
                 "ffmpeg_pid": row.ffmpeg_pid,
                 "status": row.status,
+                "pipeline_mode": row.pipeline_mode,
+                "transcribe_status": row.transcribe_status,
             }
         )
 

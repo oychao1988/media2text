@@ -207,7 +207,7 @@ class LiveRecordingCore:
                     finalized.append(meta)
                 continue
 
-            if self._use_streaming_pipeline() and row.id not in self._streaming_legacy_finalize:
+            if self._use_streaming_pipeline(row.id) and row.id not in self._streaming_legacy_finalize:
                 stt = self._stt_sessions.get(row.id)
                 if stt is not None and not stt.is_alive():
                     self._handle_stt_disconnect(row, creator)
@@ -319,7 +319,11 @@ class LiveRecordingCore:
 
     _STREAMING_PLATFORMS = frozenset({"douyin", "bilibili"})
 
-    def _use_streaming_pipeline(self) -> bool:
+    def _use_streaming_pipeline(self, session_id: str | None = None) -> bool:
+        if session_id:
+            row = self._sessions.get(session_id)
+            if row and row.pipeline_mode:
+                return row.pipeline_mode == "streaming"
         return (
             self._cfg.live.is_streaming_pipeline()
             and self._platform in self._STREAMING_PLATFORMS
@@ -432,7 +436,7 @@ class LiveRecordingCore:
         stt = self._stt_sessions.pop(session_id, None)
         next_offset: float | None = None
         streaming_merge = (
-            self._use_streaming_pipeline()
+            self._use_streaming_pipeline(session_id)
             and session_id not in self._streaming_legacy_finalize
         )
         if stt is not None:
@@ -546,6 +550,7 @@ class LiveRecordingCore:
             temp_path=str(temp_path),
             ffmpeg_pid=None,
             platform_live_started_at=live_info.platform_live_started_at,
+            pipeline_mode=self._cfg.live.effective_pipeline_mode(),
         )
         record_event(
             self._conn,
@@ -569,7 +574,7 @@ class LiveRecordingCore:
 
         self._stream_urls[session_id] = stream_url
 
-        use_streaming = self._use_streaming_pipeline()
+        use_streaming = self._use_streaming_pipeline(session_id)
         stt_session: StreamingSttSession | None = None
         if use_streaming:
             self._streaming_transcript_anchor[session_id] = temp_path
@@ -599,6 +604,7 @@ class LiveRecordingCore:
                 with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                     stt_session.start()
                 self._stt_sessions[session_id] = stt_session
+                self._sessions.update_status(session_id, transcribe_status="streaming")
                 record_event(
                     self._conn,
                     session_id=session_id,
@@ -795,7 +801,7 @@ class LiveRecordingCore:
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
         use_streaming_finalize = (
-            self._use_streaming_pipeline()
+            self._use_streaming_pipeline(session_id)
             and session_id not in self._streaming_legacy_finalize
         )
         if use_streaming_finalize:

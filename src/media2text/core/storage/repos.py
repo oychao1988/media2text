@@ -429,6 +429,7 @@ class LiveSessionRepo:
         temp_path: str,
         ffmpeg_pid: int | None = None,
         platform_live_started_at: str | None = None,
+        pipeline_mode: str | None = None,
     ) -> str:
         sid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -436,8 +437,9 @@ class LiveSessionRepo:
             """
             INSERT INTO live_sessions
               (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
-               first_seen_live_at, recording_started_at, platform_live_started_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?)
+               first_seen_live_at, recording_started_at, platform_live_started_at,
+               pipeline_mode)
+            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -449,6 +451,7 @@ class LiveSessionRepo:
                 now,
                 now,
                 platform_live_started_at,
+                pipeline_mode,
             ),
         )
         self._conn.commit()
