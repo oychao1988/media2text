@@ -317,8 +317,13 @@ class LiveRecordingCore:
         self._streaming_transcript_anchor.pop(session_id, None)
         self._stt_checkpoint_counter.pop(session_id, None)
 
+    _STREAMING_PLATFORMS = frozenset({"douyin", "bilibili"})
+
     def _use_streaming_pipeline(self) -> bool:
-        return self._cfg.live.is_streaming_pipeline() and self._platform == "douyin"
+        return (
+            self._cfg.live.is_streaming_pipeline()
+            and self._platform in self._STREAMING_PLATFORMS
+        )
 
     def _mark_streaming_degraded(
         self,
