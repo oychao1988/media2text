@@ -85,3 +85,59 @@ def test_streaming_finalize_skips_remux(tmp_path, monkeypatch) -> None:
     jobs = PostProcessJobRepo(conn).list_pending(limit=5)
     assert len(jobs) == 1
     assert jobs[0].mp4_path.endswith(".flv")
+
+
+def test_streaming_finalize_seals_partial_without_stt(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _streaming_cfg(tmp_path)
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
+    cid = creators.add(
+        sec_uid="MS4wLjABAAAApartial",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    live_dir = tmp_path / "data/creators/MS4wLjABAAAApartial/live"
+    live_dir.mkdir(parents=True)
+    flv = live_dir / "20260603T130000Z.flv"
+    flv.write_bytes(b"x" * 128)
+    partial = flv.with_suffix(".transcript.partial.json")
+    partial.write_text(
+        '{"engine":"deepgram","model":"nova-3","text":"外部停录","segments":'
+        '[{"start":0.0,"end":1.0,"text":"外部停录"}],"partial":true}',
+        encoding="utf-8",
+    )
+    sid = sessions.create(
+        creator_id=cid,
+        room_id="100",
+        temp_path=str(flv),
+        ffmpeg_pid=5252,
+    )
+
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=MagicMock(),
+        platform="douyin",
+        processes={},
+        notify=MagicMock(),
+    )
+
+    with (
+        patch("media2text.core.live.recording.stop_process"),
+        patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.live.recording.index_transcript_safe"),
+    ):
+        meta = core._finalize_recording(sid, str(flv), 5252)
+
+    assert meta is not None
+    assert flv.with_suffix(".transcript.json").is_file()
+    assert not partial.exists()
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.transcribe_status == "completed"
+    events = PipelineEventRepo(conn).list_for_session(sid)
+    assert ("streaming_stt", "completed") in {(e.stage, e.status) for e in events}

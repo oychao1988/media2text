@@ -81,3 +81,52 @@ class TranscriptWriter:
 
     def segment_count(self) -> int:
         return len(self._segments)
+
+
+def seal_partial_transcript(media_path: Path) -> tuple[Path, Path] | None:
+    """Promote ``.transcript.partial.json`` to final sidecars when STT session is gone."""
+    partial_path = media_path.with_suffix(".transcript.partial.json")
+    if not partial_path.is_file():
+        return None
+
+    json_path = media_path.with_suffix(".transcript.json")
+    md_path = media_path.with_suffix(".transcript.md")
+    if json_path.is_file():
+        partial_path.unlink(missing_ok=True)
+        return json_path, md_path
+
+    try:
+        payload = json.loads(partial_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+
+    segments: list[TranscriptSegment] = []
+    for raw in payload.get("segments") or []:
+        if not isinstance(raw, dict):
+            continue
+        text = str(raw.get("text", "")).strip()
+        if not text:
+            continue
+        segments.append(
+            TranscriptSegment(
+                start=float(raw.get("start", 0.0)),
+                end=float(raw.get("end", 0.0)),
+                text=text,
+            )
+        )
+
+    text = str(payload.get("text") or "").strip()
+    if not text and segments:
+        text = "\n".join(s.text for s in segments)
+    if not text:
+        return None
+
+    result = TranscriptResult(
+        text=text,
+        segments=segments,
+        engine=str(payload.get("engine") or "deepgram"),
+        model=str(payload.get("model") or "nova-3"),
+    )
+    paths = write_transcript_outputs(media_path, result)
+    partial_path.unlink(missing_ok=True)
+    return paths

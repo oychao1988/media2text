@@ -94,6 +94,15 @@ class LiveConfig(BaseModel):
             return self.remux_on_complete
         return self.effective_pipeline_mode() != "streaming"
 
+    @model_validator(mode="after")
+    def _validate_streaming_pipeline(self) -> LiveConfig:
+        if self.is_streaming_pipeline() and self.transcribe_on_complete:
+            raise ConfigError(
+                "live.transcribe_on_complete must be false when pipeline_mode=streaming "
+                "(streaming STT replaces post-recording transcribe)"
+            )
+        return self
+
 
 class WhisperConfig(BaseModel):
     model: str = "medium"

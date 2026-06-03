@@ -16,6 +16,7 @@ from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import concat_to_mp4, record_stream_copy, remux_to_mp4, stop_process
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.streaming_stt import StreamingSttSession
+from media2text.core.live.transcript_writer import seal_partial_transcript
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
@@ -757,6 +758,8 @@ class LiveRecordingCore:
                     paths = stt.stop(timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
                     transcript_ok = paths is not None
                 elif current.with_suffix(".transcript.json").is_file():
+                    transcript_ok = True
+                elif seal_partial_transcript(current) is not None:
                     transcript_ok = True
             record_event(
                 self._conn,
