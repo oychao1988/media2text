@@ -13,6 +13,7 @@ class EventKind(StrEnum):
     NEW_DYNAMIC = "new_dynamic"
     RECORDING_COMPLETED = "recording_completed"
     TRANSCRIBE_COMPLETED = "transcribe_completed"
+    TRANSCRIBE_PARTIAL = "transcribe_partial"
     SUMMARIZE_COMPLETED = "summarize_completed"
     UPLOAD_COMPLETED = "upload_completed"
     UPLOAD_FAILED = "upload_failed"

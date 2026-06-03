@@ -21,6 +21,7 @@ from media2text.core.ffmpeg import (
     stop_process,
 )
 from media2text.core.live.protocol import LivePlatformAdapter
+from media2text.core.live.partial_notify import PartialTranscriptNotifier
 from media2text.core.live.streaming_stt import StreamingSttSession
 from media2text.core.live.transcript_writer import (
     list_segment_checkpoints,
@@ -65,6 +66,7 @@ class LiveRecordingCore:
         self._streaming_legacy_finalize: set[str] = set()
         self._streaming_transcript_anchor: dict[str, Path] = {}
         self._stt_checkpoint_counter: dict[str, int] = {}
+        self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
 
     def scan_and_start(
         self, *, creator_id: str | None = None
@@ -316,6 +318,43 @@ class LiveRecordingCore:
     def _clear_streaming_session_state(self, session_id: str) -> None:
         self._streaming_transcript_anchor.pop(session_id, None)
         self._stt_checkpoint_counter.pop(session_id, None)
+        self._partial_notifiers.pop(session_id, None)
+
+    def _build_streaming_stt_session(
+        self,
+        session_id: str,
+        *,
+        creator,
+        stream_url: str,
+        media_path: Path,
+        offset_sec: float = 0.0,
+    ) -> StreamingSttSession:
+        label = creator_label(creator)
+        gate = self._partial_notifiers.setdefault(
+            session_id,
+            PartialTranscriptNotifier(self._cfg, self._notify, title=label),
+        )
+
+        def on_first_final(latency_sec: float) -> None:
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="streaming_stt",
+                status="first_final",
+                duration_ms=int(latency_sec * 1000),
+            )
+
+        def on_partial_summary(summary: str, segment_count: int) -> None:
+            gate.maybe_emit(summary, segment_count=segment_count)
+
+        return StreamingSttSession(
+            self._cfg,
+            stream_url=stream_url,
+            media_path=media_path,
+            offset_sec=offset_sec,
+            on_first_final=on_first_final,
+            on_partial_summary=on_partial_summary,
+        )
 
     _STREAMING_PLATFORMS = frozenset({"douyin", "bilibili"})
 
@@ -391,8 +430,9 @@ class LiveRecordingCore:
 
         try:
             anchor = self._transcript_anchor(session_id, row.temp_path)
-            new_stt = StreamingSttSession(
-                self._cfg,
+            new_stt = self._build_streaming_stt_session(
+                session_id,
+                creator=creator,
                 stream_url=stream_url,
                 media_path=anchor,
                 offset_sec=offset,
@@ -497,8 +537,9 @@ class LiveRecordingCore:
         if streaming_merge:
             anchor = self._transcript_anchor(session_id, temp_path)
             try:
-                new_stt = StreamingSttSession(
-                    self._cfg,
+                new_stt = self._build_streaming_stt_session(
+                    session_id,
+                    creator=creator,
                     stream_url=stream_url,
                     media_path=anchor,
                     offset_sec=next_offset or 0.0,
@@ -579,8 +620,12 @@ class LiveRecordingCore:
         if use_streaming:
             self._streaming_transcript_anchor[session_id] = temp_path
             self._stt_checkpoint_counter[session_id] = 0
-            stt_session = StreamingSttSession(
-                self._cfg,
+            creator_row = self._creators.get(creator_id)
+            if creator_row is None:
+                raise ValueError(f"creator not found: {creator_id}")
+            stt_session = self._build_streaming_stt_session(
+                session_id,
+                creator=creator_row,
                 stream_url=stream_url,
                 media_path=temp_path,
             )

@@ -169,15 +169,28 @@ def stats_cmd(
     cfg = AppConfig.load()
     conn = open_db(cfg)
     events = PipelineEventRepo(conn)
+    sessions = LiveSessionRepo(conn)
     since = datetime.now(timezone.utc) - timedelta(days=days)
-    stage_stats = events.stats_since(since.isoformat())
+    since_iso = since.isoformat()
+    stage_stats = events.stats_since(since_iso)
+    streaming_metrics = events.streaming_metrics_since(since_iso)
+    streaming_sessions = sessions.list_streaming_summary_since(since_iso)
     emit(
         {
             "ok": True,
             "command": "live stats",
             "days": days,
-            "since": since.isoformat(),
+            "since": since_iso,
             "stages": stage_stats,
+            "streaming": {
+                "sessions": streaming_sessions,
+                "metrics": streaming_metrics,
+                "targets_ms": {
+                    "s1_finalize_stt_p95": 10_000,
+                    "s2_offline_to_complete_p95": 50_000,
+                    "first_final_latency_p95": 30_000,
+                },
+            },
         },
         as_json=json_out,
     )

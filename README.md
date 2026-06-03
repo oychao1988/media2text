@@ -230,7 +230,7 @@ transcribe:
 media2text transcribe run path/to/video.mp4 --json
 ```
 
-实时流式（WebSocket / Flux）未接入 CLI，仅用于实验脚本 `scripts/test_deepgram_sdk*.py`。
+实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`（S1/S2/首条 final 延迟）。
 
 Deepgram 后处理（`smart_format: false` 时）：去掉中文词间空格；`text` 按 utterance 换行（与 `segments` 一一对应），段内遇 `。！？；…` 再拆行。JSON 里 `text` 为含 `\n` 的多行字符串。
 

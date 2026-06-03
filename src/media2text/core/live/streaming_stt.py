@@ -6,6 +6,7 @@ import os
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from pathlib import Path
 
 import structlog
@@ -59,18 +60,24 @@ class StreamingSttSession:
         stream_url: str,
         media_path: Path,
         offset_sec: float = 0.0,
+        on_first_final: Callable[[float], None] | None = None,
+        on_partial_summary: Callable[[str, int], None] | None = None,
     ) -> None:
         self._cfg = cfg
         stt = cfg.live.streaming_stt
         dg = cfg.transcribe.deepgram
         self._stream_url = stream_url
         self._media_path = media_path
+        self._on_first_final = on_first_final
+        self._first_final_sent = False
+        self._started_mono = time.monotonic()
         self._writer = TranscriptWriter(
             media_path,
             engine="deepgram",
             model=dg.model,
             flush_interval_sec=stt.flush_interval_sec,
             offset_sec=offset_sec,
+            on_partial_summary=on_partial_summary,
         )
         self._api_key = os.environ.get(dg.api_key_env, "").strip()
         self._language = cfg.transcribe.language
@@ -148,6 +155,10 @@ class StreamingSttSession:
                 start = float(result.start)
             if result.duration is not None:
                 end = start + float(result.duration)
+            if not self._first_final_sent:
+                self._first_final_sent = True
+                if self._on_first_final is not None:
+                    self._on_first_final(time.monotonic() - self._started_mono)
             self._writer.add_final(transcript, start=start, end=end)
 
         def on_error(err) -> None:
