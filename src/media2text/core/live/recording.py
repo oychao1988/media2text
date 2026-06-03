@@ -50,6 +50,7 @@ class LiveRecordingCore:
         self._notify = notify
         self._flv_size_snapshots: dict[str, int] = {}
         self._stt_sessions: dict[str, StreamingSttSession] = {}
+        self._stream_urls: dict[str, str] = {}
         self._streaming_legacy_finalize: set[str] = set()
 
     def scan_and_start(
@@ -193,6 +194,11 @@ class LiveRecordingCore:
                     finalized.append(meta)
                 continue
 
+            if self._use_streaming_pipeline() and row.id not in self._streaming_legacy_finalize:
+                stt = self._stt_sessions.get(row.id)
+                if stt is not None and not stt.is_alive():
+                    self._handle_stt_disconnect(row, creator)
+
             try:
                 still_live = self._recording_still_live(creator, row)
             except Exception as exc:  # noqa: BLE001
@@ -281,6 +287,93 @@ class LiveRecordingCore:
     def _use_streaming_pipeline(self) -> bool:
         return self._cfg.live.is_streaming_pipeline() and self._platform == "douyin"
 
+    def _mark_streaming_degraded(
+        self,
+        session_id: str,
+        *,
+        reason: str,
+        error: str | None = None,
+    ) -> None:
+        self._streaming_legacy_finalize.add(session_id)
+        detail: dict[str, str] = {"reason": reason}
+        if error:
+            detail["error"] = error
+        record_event(
+            self._conn,
+            session_id=session_id,
+            stage="streaming_stt",
+            status="degraded",
+            detail=detail,
+        )
+
+    def _handle_stt_disconnect(self, row, creator) -> None:
+        session_id = row.id
+        stt = self._stt_sessions.pop(session_id, None)
+        if stt is not None:
+            try:
+                stt.stop(timeout=5)
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "streaming_stt_stop_on_disconnect_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+
+        if not self._cfg.live.streaming_stt.reconnect:
+            self._mark_streaming_degraded(session_id, reason="stt_disconnect")
+            return
+
+        stream_url = self._stream_urls.get(session_id)
+        if not stream_url and row.room_id:
+            try:
+                stream_url = self._adapter.resolve_stream_url(
+                    room_id=row.room_id,
+                    sec_uid=creator.sec_uid,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "streaming_stt_reconnect_resolve_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+                stream_url = None
+
+        if not stream_url or not row.temp_path:
+            self._mark_streaming_degraded(
+                session_id,
+                reason="stt_reconnect_no_url",
+            )
+            return
+
+        try:
+            new_stt = StreamingSttSession(
+                self._cfg,
+                stream_url=stream_url,
+                media_path=Path(row.temp_path),
+            )
+            with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                new_stt.start()
+            self._stt_sessions[session_id] = new_stt
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="streaming_stt",
+                status="reconnected",
+                detail={"reason": "stt_disconnect"},
+            )
+            log.info("streaming_stt_reconnected", session_id=session_id)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "streaming_stt_reconnect_failed",
+                session_id=session_id,
+                error=str(exc),
+            )
+            self._mark_streaming_degraded(
+                session_id,
+                reason="stt_reconnect_failed",
+                error=str(exc),
+            )
+
     def _reconnect_segment(
         self,
         session_id: str,
@@ -304,14 +397,7 @@ class LiveRecordingCore:
                     session_id=session_id,
                     error=str(exc),
                 )
-            self._streaming_legacy_finalize.add(session_id)
-            record_event(
-                self._conn,
-                session_id=session_id,
-                stage="streaming_stt",
-                status="degraded",
-                detail={"reason": "ffmpeg_reconnect"},
-            )
+            self._mark_streaming_degraded(session_id, reason="ffmpeg_reconnect")
 
         self._sessions.append_segment_path(session_id, temp_path)
         attempt = self._sessions.increment_reconnect_attempts(session_id)
@@ -352,6 +438,7 @@ class LiveRecordingCore:
             temp_path=str(new_temp),
         )
         self._processes[session_id] = new_proc
+        self._stream_urls[session_id] = stream_url
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
         log.info(
             "live_recording_reconnected",
@@ -399,6 +486,8 @@ class LiveRecordingCore:
                 )
             if not stream_url:
                 raise ValueError("empty stream url after resolve")
+
+        self._stream_urls[session_id] = stream_url
 
         use_streaming = self._use_streaming_pipeline()
         stt_session: StreamingSttSession | None = None
@@ -643,6 +732,7 @@ class LiveRecordingCore:
             os.kill(pid, 15)
 
         stt = self._stt_sessions.pop(session_id, None)
+        self._stream_urls.pop(session_id, None)
         transcript_ok = False
         if not temp_path:
             self._sessions.update_status(
@@ -763,6 +853,7 @@ class LiveRecordingCore:
             except Exception:  # noqa: BLE001
                 pass
         self._streaming_legacy_finalize.discard(session_id)
+        self._stream_urls.pop(session_id, None)
 
         if not temp_path:
             self._sessions.update_status(
