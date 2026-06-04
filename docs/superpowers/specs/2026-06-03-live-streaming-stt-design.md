@@ -17,7 +17,7 @@
 | 收尾媒体 | **保留 FLV，默认不 remux MP4** | remux 仅 copy，仍占 finalize 时间与磁盘 IO；FLV 足够云备份 |
 | 后处理 | **跳过 transcribe**；**summarize ∥ upload 并行**（见 §4.4） | 两者互不依赖主路径；缩短下播→云盘/摘要总延迟 |
 | 开播语义 **D2** | **record + STT 均成功才 `live_started`**；任一路失败 → `live_start_failed` | 与 v2 一致；避免「在录但无字幕」静默失败 |
-| 断流 P0 **D1** | **单段 streaming**；ffmpeg 重连时 **降级 legacy finalize**（remux+REST）或标记 degraded | P0 不做 transcript offset merge；避免 transcript 短于 FLV |
+| 断流 **D1** | **P1（#101，`main`）：** ffmpeg 重连 → checkpoint + offset merge；**仍保留** STT 失败 / 无法续传时 **degraded → legacy finalize** | P0 spike 先降级；P1 为默认 happy path |
 | DB 列 **D4** | **保留 `post_process_jobs.mp4_path` 列名**；存 FLV/MP4 路径；代码层可读作 media path | 避免 P0 做 DB 迁移 |
 | enter 调用 | **仅在 `_start_recording` / 重连 resolve**；poll 不打开 Playwright | enter ~8s；不得拖 G1/G5 |
 | 回退 | **`pipeline_mode: legacy`** 保持 v2 行为不变 | 流式失败或未装 deepgram-sdk 时可降级 |
@@ -62,6 +62,15 @@ PoC 证明：**并行 PCM → Deepgram WS** 可在直播进行中产出 `[final]
 | S6 | 成本可见 | 配置/doc 注明 Deepgram 流式计费 | README |
 
 **代理指标：** 「首条 final 字幕延迟」从开播计，P95 ≤ 30s（网络 + Deepgram 冷启动）。
+
+**Metrics 口径（#104 / `live stats --json`）：**
+
+| 字段 | 定义 | 注意 |
+|------|------|------|
+| `s1_finalize_stt_ms` | `streaming_stt` stage `duration_ms`（finalize 段） | 对应 S1 |
+| `s2_offline_to_complete_ms` | `live_sessions.ended_at − offline_since_at` | **非**飞书 `recording_completed` 发出时刻；通知可能晚数秒 |
+| `first_final_latency_ms` | 开播 → `streaming_stt/first_final` 事件 | 代理指标 |
+| `s3_offline_to_summarize_ms` | offline → `summarize/completed`（#117） | 对应 S3；可选 `--check-targets`（#113） |
 
 ---
 
@@ -200,17 +209,24 @@ creators/{sec_uid}/live/
 
 ## 6. 断流重连与 transcript 合并
 
-现有录制：`{stamp}_r1.flv`, `_r2.flv` … legacy finalize 时 concat → mp4。
+现有录制：`{stamp}_r1.flv`, `_r2.flv` … finalize 时 concat（streaming 保留 FLV；legacy → MP4）。
 
-### P0（**D1 已锁定**）：单段或降级
+### 当前实现（`main`，#101 已合并）
 
 | 场景 | 动作 |
 |------|------|
-| **无重连** | 与 PoC 相同：单 FLV + 单 WS transcript |
-| **ffmpeg 重连**（出现 `_r1.flv`） | **不**在 streaming 下做 merge；session 标记 `streaming_stt=degraded`，finalize 走 **legacy**（concat/remux + post_process REST transcribe），或整段 session 创建时即 `pipeline_mode=legacy` |
-| **STT 断、录制续** | STT 侧重连（`streaming_stt.reconnect`）；仍失败 → 同上降级 |
+| **无重连** | 单 FLV + 单 WS transcript |
+| **ffmpeg 重连**（`_rN.flv`） | **P1 默认：** checkpoint 段 transcript + 新 WS（`offset_sec`）+ finalize `merge_transcript_checkpoints` + 可选 FLV concat |
+| **STT 断、录制续** | `streaming_stt.reconnect` 重连 WS；失败 → `degraded` → **legacy finalize**（remux MP4） |
+| **degraded / 无 sidecar** | legacy finalize + post_process **REST 补转写**（#111，即使 `transcribe_on_complete=false`） |
 
-### P1：offset merge（原设计保留）
+### 历史 P0 spike（#97，已被 P1 取代为 happy path）
+
+| 场景 | 原 P0 动作 |
+|------|------------|
+| **ffmpeg 重连** | 不 merge；直接 degraded → legacy（REST） |
+
+### P1 设计（已实现 #101）
 
 ```
 segment 0: t0=0,     ffmpeg+STT run #1
@@ -275,11 +291,12 @@ transcribe:
 
 ## 10. 实现分期
 
-| 阶段 | 内容 | 文件约数 |
-|------|------|----------|
-| **P0** | `streaming_stt` + `LiveRecordingCore` 分支；D1 重连降级；post_process 并行；抖音 enter resolve | ~9 |
-| **P1** | 断流 transcript offset merge + FLV concat 可选；B 站 | +6 |
-| **P2** | partial 通知；metrics；`live stats` streaming 列 | +4 |
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| **P0** | `streaming_stt` + `LiveRecordingCore`；post_process 并行；抖音 enter | ✅ #97 → PR [#100](https://github.com/oychao1988/media2text/pull/100) |
+| **P1** | offset merge；B 站；DB 快照 | ✅ #101–#103 → [#105](https://github.com/oychao1988/media2text/pull/105) [#108](https://github.com/oychao1988/media2text/pull/108) [#109](https://github.com/oychao1988/media2text/pull/109) |
+| **P2** | partial 通知；metrics；`live stats` | ✅ #104 → PR [#110](https://github.com/oychao1988/media2text/pull/110) |
+| **Gap** | REST fallback、config、benchmark、mock WS、legacy 回归、S3、spec 同步 | 🔄 #111–#117（见 [issues/README](../../issues/README.md)） |
 
 ---
 
@@ -308,7 +325,7 @@ transcribe:
 
 | ID | 决策 | 选择 |
 |----|------|------|
-| D1 | P0 断流 | 单段 streaming；重连 → legacy finalize 或 degraded |
+| D1 | P0 断流 | 单段 streaming；重连 → legacy finalize 或 degraded（**P1 #101：ffmpeg 重连默认 merge**） |
 | D2 | STT 失败 | 两路均成功才 `live_started` |
 | D3 | 默认模式 | 代码 `legacy`；example `streaming` |
 | D4 | DB 列 | 保留 `mp4_path` |
@@ -326,5 +343,21 @@ transcribe:
 | DX Review | `/plan-devex-review` | CLI/DX | 0 | — | 未跑 |
 
 **UNRESOLVED:** 0  
-**VERDICT:** **ENG CLEARED** — 可开 P0 实现
+**VERDICT:** **ENG CLEARED** — P0–P2 已 ship；gap 见 §10
+
+---
+
+## 13. Implementation status（2026-06）
+
+| GitHub | 合并 PR | 摘要 |
+|--------|---------|------|
+| [#97](https://github.com/oychao1988/media2text/issues/97) | [#100](https://github.com/oychao1988/media2text/pull/100) | P0 streaming STT + monitor |
+| [#101](https://github.com/oychao1988/media2text/issues/101) | [#105](https://github.com/oychao1988/media2text/pull/105) | offset merge / reconnect checkpoint |
+| [#102](https://github.com/oychao1988/media2text/issues/102) | [#108](https://github.com/oychao1988/media2text/pull/108) | B 站 streaming |
+| [#103](https://github.com/oychao1988/media2text/issues/103) | [#109](https://github.com/oychao1988/media2text/pull/109) | `pipeline_mode` 快照 |
+| [#104](https://github.com/oychao1988/media2text/issues/104) | [#110](https://github.com/oychao1988/media2text/pull/110) | partial 通知 + metrics |
+
+**Spec 差距跟进（开放）：** [#111](https://github.com/oychao1988/media2text/issues/111)–[#117](https://github.com/oychao1988/media2text/issues/117) — 索引 [docs/issues/README.md](../../issues/README.md)。
+
+**Legacy 回归测试：** `tests/unit/test_live_legacy_pipeline.py`（#116）。
 
