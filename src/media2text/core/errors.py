@@ -22,6 +22,18 @@ class RecordingError(Media2TextError):
     code = "recording_error"
 
 
+class AlreadyRecording(RecordingError):
+    code = "already_recording"
+
+
+class NotLive(RecordingError):
+    code = "not_live"
+
+
+class NotRecording(RecordingError):
+    code = "not_recording"
+
+
 class TranscribeError(Media2TextError):
     code = "transcribe_error"
 

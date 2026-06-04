@@ -1395,3 +1395,83 @@ class DesktopChatRepo:
             (thread_id,),
         ).fetchall()
         return [DesktopChatMessageRow(**dict(r)) for r in rows]
+
+    def list_threads(
+        self,
+        *,
+        creator_id: str | None = None,
+        session_id: str | None = None,
+    ) -> list[DesktopChatThreadRow]:
+        query = "SELECT * FROM desktop_chat_threads WHERE 1=1"
+        params: list[str] = []
+        if creator_id is not None:
+            query += " AND creator_id = ?"
+            params.append(creator_id)
+        if session_id is not None:
+            query += " AND session_id = ?"
+            params.append(session_id)
+        query += " ORDER BY updated_at DESC"
+        rows = self._conn.execute(query, params).fetchall()
+        return [DesktopChatThreadRow(**dict(r)) for r in rows]
+
+    def update_thread(
+        self,
+        thread_id: str,
+        *,
+        title: str | None = None,
+        provider_name: str | None = None,
+        model: str | None = None,
+        context_mode: str | None = None,
+        session_id: str | None = None,
+        clear_session: bool = False,
+    ) -> bool:
+        row = self.get_thread(thread_id)
+        if not row:
+            return False
+        fields: list[str] = []
+        values: list[object] = []
+        if title is not None:
+            fields.append("title = ?")
+            values.append(title)
+        if provider_name is not None:
+            fields.append("provider_name = ?")
+            values.append(provider_name)
+        if model is not None:
+            fields.append("model = ?")
+            values.append(model)
+        if context_mode is not None:
+            fields.append("context_mode = ?")
+            values.append(context_mode)
+        if clear_session:
+            fields.append("session_id = ?")
+            values.append(None)
+        elif session_id is not None:
+            fields.append("session_id = ?")
+            values.append(session_id)
+        if not fields:
+            return True
+        now = datetime.now(timezone.utc).isoformat()
+        fields.append("updated_at = ?")
+        values.append(now)
+        values.append(thread_id)
+        self._conn.execute(
+            f"UPDATE desktop_chat_threads SET {', '.join(fields)} WHERE id = ?",
+            values,
+        )
+        self._conn.commit()
+        return True
+
+    def delete_thread(self, thread_id: str) -> bool:
+        row = self.get_thread(thread_id)
+        if not row:
+            return False
+        self._conn.execute(
+            "DELETE FROM desktop_chat_messages WHERE thread_id = ?",
+            (thread_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM desktop_chat_threads WHERE id = ?",
+            (thread_id,),
+        )
+        self._conn.commit()
+        return True

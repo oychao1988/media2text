@@ -12,7 +12,15 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.desktop.auto_record import effective_auto_record
-from media2text.core.errors import AuthRequired, PlatformChanged
+from media2text.core.errors import (
+    AlreadyRecording,
+    AuthRequired,
+    NotLive,
+    NotRecording,
+    PlatformChanged,
+    RecordingError,
+)
+from media2text.core.live.snapshot import upsert_live_snapshot
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import (
     concat_to_flv,
@@ -116,6 +124,8 @@ class LiveRecordingCore:
                     platform_changed = True
                 errors.append(payload)
                 continue
+            if live_info is not None:
+                upsert_live_snapshot(self._conn, creator.id, live_info)
             if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             if not effective_auto_record(creator, self._cfg):
@@ -155,6 +165,47 @@ class LiveRecordingCore:
             started_session_ids.add(meta["session_id"])
 
         return started, started_session_ids, errors, auth_required, platform_changed
+
+    def start_recording_for_creator(self, creator_id: str) -> dict:
+        """Start recording when the creator is live and has no active session."""
+        if self._sessions.get_active_for_creator(creator_id):
+            raise AlreadyRecording("creator already has an active recording")
+        creator = self._creators.get(creator_id)
+        if not creator:
+            raise ValueError(f"creator not found: {creator_id}")
+        if creator.platform != self._platform:
+            raise ValueError(
+                f"creator platform {creator.platform!r} does not match {self._platform!r}"
+            )
+        live_info, err = self._fetch_live_info(creator)
+        if err is not None:
+            kind, _payload = err
+            if kind == "auth_required":
+                raise AuthRequired("auth required for live status")
+            if kind == "platform_changed":
+                raise PlatformChanged("platform changed")
+            raise RecordingError(str(_payload.get("error", "live status check failed")))
+        if live_info is not None:
+            upsert_live_snapshot(self._conn, creator_id, live_info)
+        if live_info is None or not live_info.is_live or not live_info.room_id:
+            raise NotLive("creator is not live")
+        return self._start_recording(
+            creator.id,
+            creator.sec_uid,
+            live_info.room_id,
+            live_info,
+        )
+
+    def stop_recording_for_creator(self, creator_id: str) -> dict | None:
+        """Finalize the active recording session for a creator."""
+        row = self._sessions.get_active_for_creator(creator_id)
+        if not row:
+            raise NotRecording("no active recording for creator")
+        return self._finalize_recording(
+            row.id,
+            row.temp_path,
+            row.ffmpeg_pid or 0,
+        )
 
     def _fetch_live_info(self, creator):
         try:
@@ -226,6 +277,12 @@ class LiveRecordingCore:
                     error=str(exc),
                 )
                 continue
+
+            try:
+                profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+                upsert_live_snapshot(self._conn, creator.id, profile)
+            except Exception:  # noqa: BLE001
+                pass
 
             if still_live:
                 if row.offline_since_at:
