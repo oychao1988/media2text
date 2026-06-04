@@ -516,6 +516,18 @@ class LiveSessionRepo:
         ).fetchone()
         return LiveSessionRow(**dict(row)) if row else None
 
+    def get_latest_for_creator(self, creator_id: str) -> LiveSessionRow | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM live_sessions
+            WHERE creator_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (creator_id,),
+        ).fetchone()
+        return LiveSessionRow(**dict(row)) if row else None
+
     def list_completed_for_creator(self, creator_id: str) -> list[LiveSessionRow]:
         rows = self._conn.execute(
             """

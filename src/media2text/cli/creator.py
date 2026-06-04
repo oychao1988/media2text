@@ -14,7 +14,7 @@ from media2text.core.platform.profile import (
 )
 from media2text.core.platform.bilibili.resolver import resolve_mid
 from media2text.core.platform.douyin.resolver import resolve_sec_uid
-from media2text.core.storage.repos import CreatorRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="Creator registry")
@@ -143,6 +143,7 @@ def show(
         )
         raise typer.Exit(1)
     stale_days = cfg.monitor.profile_stale_days
+    sessions = LiveSessionRepo(conn)
     payload = _creator_list_item(row, stale_days=stale_days)
     payload.update(
         {
@@ -154,6 +155,17 @@ def show(
             "pending_download_count": creators.count_pending_download(creator_id),
         }
     )
+    latest = sessions.get_latest_for_creator(creator_id)
+    if latest:
+        payload["latest_live_session"] = {
+            "session_id": latest.id,
+            "started_at": latest.started_at,
+            "status": latest.status,
+            "pipeline_mode": latest.pipeline_mode,
+            "transcribe_status": latest.transcribe_status,
+        }
+    else:
+        payload["latest_live_session"] = None
     emit({"ok": True, "command": "creator show", "creator": payload}, as_json=json_out)
 
 

@@ -37,4 +37,5 @@ def test_live_stats_includes_streaming_block(tmp_path, monkeypatch) -> None:
     assert result.exit_code == 0
     assert '"streaming"' in result.stdout
     assert "first_final_latency_ms" in result.stdout
+    assert "s3_offline_to_summarize_p95" in result.stdout
     assert "transcript_segment_count" in result.stdout or "sessions" in result.stdout

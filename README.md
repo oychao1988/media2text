@@ -230,7 +230,19 @@ transcribe:
 media2text transcribe run path/to/video.mp4 --json
 ```
 
-实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`（S1/S2/首条 final 延迟）。
+实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`（S1/S2/首条 final 延迟；S3 在 #117 合并后出现在 metrics 中）。
+
+### streaming 延迟自检
+
+对比近 N 天 streaming 场次的 P95 与 `streaming.targets_ms`（S1 10s / S2 50s / 首条 final 30s；S3 占位 180s，待 dogfood 校准）：
+
+```bash
+media2text live stats --days 7 --json --check-targets
+```
+
+- 退出码 **0**：有样本且全部达标，或窗口内无可用样本（`target_check.insufficient_data: true`）
+- 退出码 **1**：至少一项 P95 超标；JSON 含 `target_check.violations` 与 `over_by_ms`
+- 查看某博主最近一场直播的 `pipeline_mode` / `transcribe_status`：`media2text creator show <id> --json` → `latest_live_session`
 
 Deepgram 后处理（`smart_format: false` 时）：去掉中文词间空格；`text` 按 utterance 换行（与 `segments` 一一对应），段内遇 `。！？；…` 再拆行。JSON 里 `text` 为含 `\n` 的多行字符串。
 
