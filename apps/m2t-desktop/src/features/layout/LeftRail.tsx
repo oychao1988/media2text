@@ -1,13 +1,18 @@
-import { MOCK_CREATORS } from '../creators/mockCreators';
+import type { Creator } from '../../lib/types';
+import { useDaemonRunning } from '../daemon/DaemonCard';
+import { creatorInitial } from '../creators/creatorUtils';
+import { StatusLight } from '../creators/StatusLight';
 import { useLayoutStore } from './useLayoutStore';
 
 type Props = {
-  selectedCreatorId: string;
+  creators: Creator[];
+  selectedCreatorId: string | null;
   onSelectCreator: (id: string) => void;
 };
 
-export function LeftRail({ selectedCreatorId, onSelectCreator }: Props) {
+export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props) {
   const { expandLeftPanel, setUserMenuOpen, userMenuOpen } = useLayoutStore();
+  const daemonRunning = useDaemonRunning();
 
   return (
     <div className="left-rail rail" aria-label="折叠快捷栏">
@@ -24,8 +29,8 @@ export function LeftRail({ selectedCreatorId, onSelectCreator }: Props) {
         </button>
       </div>
       <div className="rail-scroll" role="list" aria-label="博主快捷选择">
-        {MOCK_CREATORS.map((creator) => {
-          const live = creator.light === 'red' || creator.light === 'green';
+        {creators.map((creator) => {
+          const live = creator.is_live || creator.status_light === 'green';
           return (
             <div
               key={creator.id}
@@ -33,7 +38,7 @@ export function LeftRail({ selectedCreatorId, onSelectCreator }: Props) {
               role="listitem"
               tabIndex={0}
               data-creator={creator.id}
-              title={`${creator.name} · ${creator.sub}`}
+              title={creator.display_name ?? creator.id}
               onClick={() => onSelectCreator(creator.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -42,8 +47,8 @@ export function LeftRail({ selectedCreatorId, onSelectCreator }: Props) {
                 }
               }}
             >
-              <span>{creator.initial}</span>
-              <span className={`light ${creator.light}`} aria-hidden="true" />
+              <span>{creatorInitial(creator.display_name)}</span>
+              <StatusLight light={creator.status_light} className="rail-light" />
             </div>
           );
         })}
@@ -53,11 +58,15 @@ export function LeftRail({ selectedCreatorId, onSelectCreator }: Props) {
           type="button"
           className="rail-daemon"
           id="rail-daemon"
-          title="Daemon 运行中 · 点击展开侧栏"
+          title="Daemon · 点击展开侧栏"
           aria-label="Daemon 状态"
           onClick={expandLeftPanel}
         >
-          <span className="rail-daemon-dot live" id="rail-daemon-dot" aria-hidden="true" />
+          <span
+            className={`rail-daemon-dot${daemonRunning ? ' live' : ''}`}
+            id="rail-daemon-dot"
+            aria-hidden="true"
+          />
         </button>
         <button
           type="button"

@@ -2,7 +2,15 @@ import { useMemo, useState } from 'react';
 import { CreatorList } from '../creators/CreatorList';
 import { CreatorListEmpty } from '../creators/CreatorListEmpty';
 import { CreatorListSkeleton } from '../creators/CreatorListSkeleton';
-import { MOCK_CREATORS, type MockCreator } from '../creators/mockCreators';
+import { useCreators } from '../creators/CreatorsContext';
+import { DaemonCard } from '../daemon/DaemonCard';
+import { useLiveStatus } from '../live/useLiveStatus';
+import { TranscriptPane } from '../transcript/TranscriptPane';
+import type { LiveSessionSummary } from '../../lib/types';
+import { ViewConfig } from '../views/ViewConfig';
+import { ViewHistory } from '../views/ViewHistory';
+import { ViewLive } from '../views/ViewLive';
+import { ViewManage } from '../views/ViewManage';
 import { CenterToolbar } from './CenterToolbar';
 import { LeftRail } from './LeftRail';
 import { RightRail } from './RightRail';
@@ -10,10 +18,6 @@ import { SidePanelHeader } from './SidePanelHeader';
 import { useColumnResize } from './useColumnResize';
 import { useLayoutStore } from './useLayoutStore';
 import { UserMenu } from './UserMenu';
-import { ViewConfig } from '../views/ViewConfig';
-import { ViewHistory } from '../views/ViewHistory';
-import { ViewLive } from '../views/ViewLive';
-import { ViewManage } from '../views/ViewManage';
 
 function readLoadingPreview(): boolean {
   try {
@@ -22,13 +26,6 @@ function readLoadingPreview(): boolean {
     return false;
   }
 }
-
-const BADGE_BY_LIGHT: Record<MockCreator['light'], { text: string; className: string }> = {
-  green: { text: '🟢 录制中', className: 'badge-recording' },
-  red: { text: '🔴 在播未录', className: 'badge-live' },
-  yellow: { text: '🟡 收尾中', className: 'badge-live' },
-  gray: { text: '⚫ 离线', className: '' },
-};
 
 export function AppShell() {
   const {
@@ -44,15 +41,26 @@ export function AppShell() {
     showEmptyCreators,
   } = useLayoutStore();
 
-  const [selectedId, setSelectedId] = useState('laofanqie');
-  const creatorsLoading = readLoadingPreview();
+  const {
+    creators,
+    loading: creatorsLoading,
+    error: creatorsError,
+    selectedId,
+    selected,
+    setSelectedId,
+    refresh: refreshCreators,
+  } = useCreators();
 
-  const selected = useMemo(
-    () => MOCK_CREATORS.find((c) => c.id === selectedId) ?? MOCK_CREATORS[1],
-    [selectedId],
+  const [historySession, setHistorySession] = useState<LiveSessionSummary | null>(null);
+  const previewLoading = readLoadingPreview();
+  const { activeSessionId, refresh: refreshLive } = useLiveStatus(
+    centerView === 'live' || centerView === 'history' ? selectedId : null,
   );
 
-  const badge = BADGE_BY_LIGHT[selected.light];
+  const badge = selected
+    ? { text: selected.badge, className: selected.badge_class }
+    : { text: '', className: '' };
+
   const resize = useColumnResize();
 
   const appClass = [
@@ -66,11 +74,30 @@ export function AppShell() {
 
   const showCreatorContext = centerView === 'live' || centerView === 'history';
   const activeCreatorTab = centerView === 'history' ? 'history' : centerTab;
+  const showRecordBanner = selected?.status_light === 'red';
+
+  const transcriptSessionId = useMemo(() => {
+    if (centerView === 'history' && historySession) return historySession.session_id;
+    if (centerView === 'live' || centerTab === 'live') return activeSessionId;
+    return null;
+  }, [centerView, centerTab, historySession, activeSessionId]);
+
+  const summaryPath = useMemo(() => {
+    if (centerView === 'history' && historySession) return historySession.summary_path;
+    return null;
+  }, [centerView, historySession]);
+
+  const listLoading = previewLoading || creatorsLoading;
+  const listEmpty = !listLoading && !creatorsError && (showEmptyCreators || creators.length === 0);
 
   return (
     <div className={appClass} id="app">
       <aside className="panel panel-left" aria-label="博主列表">
-        <LeftRail selectedCreatorId={selectedId} onSelectCreator={setSelectedId} />
+        <LeftRail
+          creators={creators}
+          selectedCreatorId={selectedId}
+          onSelectCreator={setSelectedId}
+        />
         <div className="left-content">
           <div className="left-main">
             <SidePanelHeader
@@ -78,24 +105,23 @@ export function AppShell() {
               collapseLabel="折叠左栏"
               onCollapse={() => setLeftCollapsed(true)}
             />
-            {creatorsLoading ? (
+            {listLoading ? (
               <CreatorListSkeleton />
-            ) : showEmptyCreators ? (
+            ) : listEmpty ? (
               <CreatorListEmpty onAddCreator={() => openCenterView('manage')} />
             ) : (
-              <CreatorList selectedId={selectedId} onSelect={(c) => setSelectedId(c.id)} />
+              <CreatorList
+                creators={creators}
+                selectedId={selectedId}
+                loading={listLoading}
+                error={creatorsError}
+                onSelect={(c) => setSelectedId(c.id)}
+                onRetry={() => void refreshCreators()}
+              />
             )}
           </div>
           <div className="left-daemon-wrap">
-            <div className="daemon-card" id="daemon-card">
-              <div className="daemon-card-head">
-                <div className="daemon-status">
-                  <span className="status-dot live" aria-hidden="true" />
-                  <strong>Daemon 运行中</strong>
-                </div>
-              </div>
-              <div className="daemon-meta">PID — · 静态壳（P6 接线）</div>
-            </div>
+            <DaemonCard />
           </div>
           <div className="left-user-wrap">
             <button
@@ -138,7 +164,7 @@ export function AppShell() {
       <main className="center" aria-label="主展示区">
         {showCreatorContext ? (
           <CenterToolbar
-            creatorName={selected.name}
+            creatorName={selected?.display_name ?? ''}
             badge={badge.text}
             badgeClass={badge.className}
           />
@@ -152,8 +178,17 @@ export function AppShell() {
             <ViewManage />
           ) : (
             <>
-              <ViewLive active={activeCreatorTab === 'live'} />
-              <ViewHistory active={activeCreatorTab === 'history'} />
+              <ViewLive
+                active={activeCreatorTab === 'live'}
+                creatorId={selectedId}
+                showRecordBanner={showRecordBanner}
+                onRecordingStarted={() => void refreshLive()}
+              />
+              <ViewHistory
+                active={activeCreatorTab === 'history'}
+                creatorId={selectedId}
+                onSessionSelect={setHistorySession}
+              />
             </>
           )}
         </div>
@@ -173,14 +208,19 @@ export function AppShell() {
 
       <aside className="panel panel-right" aria-label="转写与 Agent">
         <RightRail />
-        <div className="right-content">
+        <div className="right-content right-split">
           <SidePanelHeader
-            title="Agent"
+            title="内容"
             collapseLabel="折叠右栏"
             onCollapse={() => setRightCollapsed(true)}
           />
+          <TranscriptPane
+            sessionId={transcriptSessionId}
+            summaryPath={summaryPath}
+            mode={centerView === 'history' ? 'playback' : 'live'}
+          />
           <div className="right-agent-shell">
-            <p className="view-shell-note">Agent / 转写面板静态壳（P7）</p>
+            <p className="view-shell-note">Agent 面板（P7 #132）</p>
           </div>
         </div>
       </aside>
