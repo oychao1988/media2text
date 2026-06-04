@@ -91,6 +91,10 @@ class LiveConfig(BaseModel):
             and self.streaming_stt.enabled
         )
 
+    def snapshot_pipeline_mode(self) -> str:
+        """Value stored on live_sessions.pipeline_mode at session create."""
+        return "streaming" if self.is_streaming_pipeline() else "legacy"
+
     def should_remux_on_complete(self) -> bool:
         if self.remux_on_complete is not None:
             return self.remux_on_complete

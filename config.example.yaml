@@ -24,7 +24,7 @@ live:
   pipeline_mode: streaming
   remux_on_complete: false          # streaming default; legacy uses true when unset
   streaming_stt:
-    enabled: true
+    enabled: true                   # false: record FLV only, no Deepgram WS (even if pipeline_mode=streaming)
     engine: deepgram
     flush_interval_sec: 30
     reconnect: true
