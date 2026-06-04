@@ -3,6 +3,7 @@ workspace: ./data
 platforms:
   douyin:
     poll_interval_sec: 60
+    live_poll_interval_sec: 0   # 0 = use live.live_poll_interval_sec → monitor.live_poll_interval_sec
     download_concurrency: 3
     max_sync_pages: 0
   bilibili:
@@ -19,6 +20,7 @@ monitor:
   profile_stale_days: 7
 
 live:
+  auto_record: true               # false = poll only updates snapshots; manual start via desktop API
   # streaming: parallel FLV record + Deepgram WS STT (no post-process transcribe).
   # legacy: v2 remux to MP4 + optional post-process transcribe (code default).
   pipeline_mode: streaming
@@ -49,6 +51,14 @@ live:
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
+
+# m2t-desktop sidecar (FastAPI) — UI-only keys; daemon uses live/monitor above
+desktop:
+  api_port: 8765
+  theme: light                    # light | dark; synced with localStorage m2t-desktop-theme
+  chat:
+    default_model: auto
+    max_context_chars: 24000
 
 # 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
 aliyundrive:
@@ -129,6 +139,9 @@ summarize:
   parse_sections: true
   max_files_per_run: 0
   llm:
+    # default_provider / default_model: summarize.llm.providers[].name + model id
+    # default_provider: nvidia
+    # default_model: deepseek-ai/deepseek-v4-pro
     temperature: 0.2
     top_p: 0.95
     max_output_tokens: 4096

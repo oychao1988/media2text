@@ -19,6 +19,15 @@ log = structlog.get_logger()
 FIXTURE_ROOT = Path(__file__).parent / "fixtures"
 
 
+def live_poll_interval_sec(cfg: AppConfig) -> int:
+    dcfg = cfg.platforms.douyin
+    return (
+        dcfg.live_poll_interval_sec
+        or cfg.live.live_poll_interval_sec
+        or cfg.monitor.live_poll_interval_sec
+    )
+
+
 class LiveWatcher:
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
@@ -69,10 +78,7 @@ class LiveWatcher:
         return result
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
-        poll = (
-            self._cfg.live.live_poll_interval_sec
-            or self._cfg.monitor.live_poll_interval_sec
-        )
+        poll = live_poll_interval_sec(self._cfg)
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):

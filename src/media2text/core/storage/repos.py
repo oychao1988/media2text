@@ -8,7 +8,10 @@ import json
 from media2text.core.storage.models import (
     AwemeRow,
     CloudUploadRow,
+    CreatorLiveSnapshotRow,
     CreatorRow,
+    DesktopChatMessageRow,
+    DesktopChatThreadRow,
     DynamicRow,
     LiveSessionRow,
     PipelineEventRow,
@@ -101,6 +104,14 @@ class CreatorRepo:
         cur = self._conn.execute(
             "UPDATE creators SET monitor_enabled = ? WHERE id = ?",
             (1 if enabled else 0, creator_id),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def set_auto_record_override(self, creator_id: str, override: str) -> bool:
+        cur = self._conn.execute(
+            "UPDATE creators SET auto_record_override = ? WHERE id = ?",
+            (override, creator_id),
         )
         self._conn.commit()
         return cur.rowcount > 0
@@ -1257,3 +1268,130 @@ class CloudUploadRepo:
     def delete_record(self, upload_id: str) -> None:
         self._conn.execute("DELETE FROM cloud_uploads WHERE id = ?", (upload_id,))
         self._conn.commit()
+
+
+class LiveSnapshotRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def upsert(
+        self,
+        creator_id: str,
+        *,
+        is_live: bool,
+        room_id: str | None = None,
+        title: str | None = None,
+        checked_at: str | None = None,
+    ) -> None:
+        now = checked_at or datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT INTO creator_live_snapshots (
+              creator_id, is_live, room_id, title, checked_at
+            )
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(creator_id) DO UPDATE SET
+              is_live = excluded.is_live,
+              room_id = excluded.room_id,
+              title = excluded.title,
+              checked_at = excluded.checked_at
+            """,
+            (creator_id, 1 if is_live else 0, room_id, title, now),
+        )
+        self._conn.commit()
+
+    def get(self, creator_id: str) -> CreatorLiveSnapshotRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM creator_live_snapshots WHERE creator_id = ?",
+            (creator_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return CreatorLiveSnapshotRow(**dict(row))
+
+
+class DesktopChatRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def create_thread(
+        self,
+        *,
+        creator_id: str,
+        session_id: str | None = None,
+        title: str | None = None,
+        provider_name: str | None = None,
+        model: str = "auto",
+        context_mode: str = "both",
+    ) -> str:
+        tid = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT INTO desktop_chat_threads (
+              id, creator_id, session_id, title, provider_name, model,
+              context_mode, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                tid,
+                creator_id,
+                session_id,
+                title,
+                provider_name,
+                model,
+                context_mode,
+                now,
+                now,
+            ),
+        )
+        self._conn.commit()
+        return tid
+
+    def get_thread(self, thread_id: str) -> DesktopChatThreadRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM desktop_chat_threads WHERE id = ?",
+            (thread_id,),
+        ).fetchone()
+        if not row:
+            return None
+        return DesktopChatThreadRow(**dict(row))
+
+    def add_message(
+        self,
+        thread_id: str,
+        *,
+        role: str,
+        content: str,
+        thinking_text: str | None = None,
+        duration_ms: int | None = None,
+    ) -> str:
+        mid = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            INSERT INTO desktop_chat_messages (
+              id, thread_id, role, content, thinking_text, duration_ms, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (mid, thread_id, role, content, thinking_text, duration_ms, now),
+        )
+        self._conn.execute(
+            "UPDATE desktop_chat_threads SET updated_at = ? WHERE id = ?",
+            (now, thread_id),
+        )
+        self._conn.commit()
+        return mid
+
+    def list_messages(self, thread_id: str) -> list[DesktopChatMessageRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM desktop_chat_messages
+            WHERE thread_id = ?
+            ORDER BY created_at
+            """,
+            (thread_id,),
+        ).fetchall()
+        return [DesktopChatMessageRow(**dict(r)) for r in rows]

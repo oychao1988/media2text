@@ -74,6 +74,17 @@ def resolve_models(cfg: SummarizeLlmConfig) -> list[str]:
     return models
 
 
+def _endpoint_sort_key(ep: LlmEndpoint, cfg: SummarizeLlmConfig) -> tuple[int, int]:
+    score = 0
+    if cfg.default_provider:
+        if ep.provider_name.lower() != cfg.default_provider.lower():
+            score += 2
+    if cfg.default_model:
+        if ep.model != cfg.default_model:
+            score += 1
+    return (score, 0)
+
+
 def resolve_llm_endpoints(cfg: SummarizeLlmConfig) -> list[LlmEndpoint]:
     endpoints: list[LlmEndpoint] = []
     for prov in cfg.providers:
@@ -94,6 +105,8 @@ def resolve_llm_endpoints(cfg: SummarizeLlmConfig) -> list[LlmEndpoint]:
                             api_key=key,
                         )
                     )
+    if cfg.default_provider or cfg.default_model:
+        endpoints.sort(key=lambda ep: _endpoint_sort_key(ep, cfg))
     return endpoints
 
 

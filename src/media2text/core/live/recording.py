@@ -11,6 +11,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import structlog
 
 from media2text.core.config import AppConfig
+from media2text.core.desktop.auto_record import effective_auto_record
 from media2text.core.errors import AuthRequired, PlatformChanged
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import (
@@ -116,6 +117,8 @@ class LiveRecordingCore:
                 errors.append(payload)
                 continue
             if live_info is None or not live_info.is_live or not live_info.room_id:
+                continue
+            if not effective_auto_record(creator, self._cfg):
                 continue
             room_id = live_info.room_id
             try:
