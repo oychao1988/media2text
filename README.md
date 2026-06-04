@@ -232,7 +232,16 @@ transcribe:
 media2text transcribe run path/to/video.mp4 --json
 ```
 
-实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`（S1/S2/首条 final 延迟）。
+实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`：
+
+| 指标 | 含义 |
+|------|------|
+| **S1** `s1_finalize_stt_ms` | 下播 → transcript 封存（`streaming_stt` stage 耗时） |
+| **S2** `s2_offline_to_complete_ms` | 下播确认 → 会话 `ended_at`（finalize 完成，无 remux） |
+| **S3** `s3_offline_to_summarize_ms` | 下播确认 → `summarize` stage 完成（post_process 摘要，省录后 transcribe 后应更快） |
+| 首条 final | 开播 → 首条 final 字幕（`first_final_latency_ms`） |
+
+S2 口径为 DB 中 `offline_pending` 至 `live_sessions.ended_at`，与 `recording_completed` 通知时刻可能差数秒。S3 口径为 `offline_pending` 至 `summarize` completed 的 `ended_at`（等价于 `summarize_completed` 通知前序）。`targets_ms.s3_offline_to_summarize_p95` 为占位阈值，待 dogfood 后校准；#113 合并后可通过 `--check-targets` gate。
 
 Deepgram 后处理（`smart_format: false` 时）：去掉中文词间空格；`text` 按 utterance 换行（与 `segments` 一一对应），段内遇 `。！？；…` 再拆行。JSON 里 `text` 为含 `\n` 的多行字符串。
 

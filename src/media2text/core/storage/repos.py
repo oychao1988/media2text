@@ -516,6 +516,18 @@ class LiveSessionRepo:
         ).fetchone()
         return LiveSessionRow(**dict(row)) if row else None
 
+    def get_latest_for_creator(self, creator_id: str) -> LiveSessionRow | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM live_sessions
+            WHERE creator_id = ?
+            ORDER BY started_at DESC
+            LIMIT 1
+            """,
+            (creator_id,),
+        ).fetchone()
+        return LiveSessionRow(**dict(row)) if row else None
+
     def list_completed_for_creator(self, creator_id: str) -> list[LiveSessionRow]:
         rows = self._conn.execute(
             """
@@ -1000,9 +1012,11 @@ class PipelineEventRepo:
             since_iso, stage="streaming_stt", status="first_final"
         )
         s2 = self._offline_to_complete_stats(since_iso)
+        s3 = self._offline_to_summarize_stats(since_iso)
         return {
             "s1_finalize_stt_ms": s1,
             "s2_offline_to_complete_ms": s2,
+            "s3_offline_to_summarize_ms": s3,
             "first_final_latency_ms": first_final,
         }
 
@@ -1051,6 +1065,43 @@ class PipelineEventRepo:
             try:
                 t0 = datetime.fromisoformat(str(offline_at).replace("Z", "+00:00"))
                 t1 = datetime.fromisoformat(str(completed_at).replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            deltas.append(max(0, int((t1 - t0).total_seconds() * 1000)))
+        return _aggregate_ms(deltas)
+
+    def _offline_to_summarize_stats(self, since_iso: str) -> dict:
+        rows = self._conn.execute(
+            """
+            SELECT (
+                     SELECT started_at FROM live_pipeline_events e
+                     WHERE e.session_id = ls.id
+                       AND e.stage = 'recording'
+                       AND e.status = 'offline_pending'
+                     ORDER BY started_at ASC LIMIT 1
+                   ) AS offline_at,
+                   (
+                     SELECT ended_at FROM live_pipeline_events e
+                     WHERE e.session_id = ls.id
+                       AND e.stage = 'summarize'
+                       AND e.status = 'completed'
+                     ORDER BY ended_at DESC LIMIT 1
+                   ) AS summarize_at
+            FROM live_sessions ls
+            WHERE ls.started_at >= ?
+              AND ls.pipeline_mode = 'streaming'
+            """,
+            (since_iso,),
+        ).fetchall()
+        deltas: list[int] = []
+        for row in rows:
+            offline_at = row["offline_at"]
+            summarize_at = row["summarize_at"]
+            if not offline_at or not summarize_at:
+                continue
+            try:
+                t0 = datetime.fromisoformat(str(offline_at).replace("Z", "+00:00"))
+                t1 = datetime.fromisoformat(str(summarize_at).replace("Z", "+00:00"))
             except ValueError:
                 continue
             deltas.append(max(0, int((t1 - t0).total_seconds() * 1000)))
