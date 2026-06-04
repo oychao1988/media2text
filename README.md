@@ -152,6 +152,8 @@ pgrep -fl "monitor watch"    # 确认在跑
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
 | `live.pipeline_mode` | `streaming`（并行 FLV + Deepgram WS，抖音/B 站直播；example 推荐）或 `legacy`（代码默认：remux MP4 + 录后转写） |
+| `live.streaming_stt.enabled` | `false` 时仅录 FLV、不启 WS（即使 `pipeline_mode=streaming`）；session 快照为 `legacy` |
+| `live.remux_on_complete` | streaming 默认 `false`（保留 FLV）；设为 `true` 可在 finalize 额外 remux 出 MP4（FLV 仍保留） |
 | `live` | ffmpeg、重连/离线确认；streaming 需 `DEEPGRAM_API_KEY` + `.[transcribe-deepgram]` + 对应平台登录态；`transcribe_on_complete` 仅 legacy |
 | `notify` | 监控事件提醒：系统提示音 + 飞书群机器人 webhook（见下方） |
 | `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
@@ -230,11 +232,20 @@ transcribe:
 media2text transcribe run path/to/video.mp4 --json
 ```
 
-实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`（S1/S2/首条 final 延迟；S3 在 #117 合并后出现在 metrics 中）。
+实时流式（`live.pipeline_mode: streaming`）在录制期间通过 **Deepgram `listen.v1` WebSocket** 出字，按流式用量计费（与 REST 录后转写分开计费）。需 `pip install -e ".[transcribe-deepgram]"` 与 `DEEPGRAM_API_KEY`；可选 `notify.events.transcribe_partial: true` 推送 partial 摘要（默认关）。验收指标见 `media2text live stats --json` 的 `streaming.metrics`：
+
+| 指标 | 含义 |
+|------|------|
+| **S1** `s1_finalize_stt_ms` | 下播 → transcript 封存（`streaming_stt` stage 耗时） |
+| **S2** `s2_offline_to_complete_ms` | 下播确认 → 会话 `ended_at`（finalize 完成，无 remux） |
+| **S3** `s3_offline_to_summarize_ms` | 下播确认 → `summarize` stage 完成（post_process 摘要） |
+| 首条 final | 开播 → 首条 final 字幕（`first_final_latency_ms`） |
+
+S2 口径为 DB 中 `offline_pending` 至 `live_sessions.ended_at`，与 `recording_completed` 通知时刻可能差数秒。S3 口径为 `offline_pending` 至 `summarize` completed 的 `ended_at`。`targets_ms.s3_offline_to_summarize_p95` 默认 180s，待 dogfood 校准。
 
 ### streaming 延迟自检
 
-对比近 N 天 streaming 场次的 P95 与 `streaming.targets_ms`（S1 10s / S2 50s / 首条 final 30s；S3 占位 180s，待 dogfood 校准）：
+对比近 N 天 streaming 场次的 P95 与 `streaming.targets_ms`（S1/S2/S3/首条 final，见上表）：
 
 ```bash
 media2text live stats --days 7 --json --check-targets

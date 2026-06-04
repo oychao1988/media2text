@@ -362,7 +362,11 @@ class LiveRecordingCore:
         if session_id:
             row = self._sessions.get(session_id)
             if row and row.pipeline_mode:
-                return row.pipeline_mode == "streaming"
+                return (
+                    row.pipeline_mode == "streaming"
+                    and self._cfg.live.streaming_stt.enabled
+                    and self._platform in self._STREAMING_PLATFORMS
+                )
         return (
             self._cfg.live.is_streaming_pipeline()
             and self._platform in self._STREAMING_PLATFORMS
@@ -591,7 +595,7 @@ class LiveRecordingCore:
             temp_path=str(temp_path),
             ffmpeg_pid=None,
             platform_live_started_at=live_info.platform_live_started_at,
-            pipeline_mode=self._cfg.live.effective_pipeline_mode(),
+            pipeline_mode=self._cfg.live.snapshot_pipeline_mode(),
         )
         record_event(
             self._conn,
@@ -940,14 +944,6 @@ class LiveRecordingCore:
                 stage="streaming_stt",
                 status="completed" if transcript_ok else "failed",
             )
-            record_event(
-                self._conn,
-                session_id=session_id,
-                stage="remux",
-                status="skipped",
-            )
-            if transcript_ok:
-                index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
         except Exception as exc:  # noqa: BLE001
             record_event(
                 self._conn,
@@ -958,11 +954,39 @@ class LiveRecordingCore:
             )
             log.exception("streaming_stt_finalize_failed", session_id=session_id)
 
+        media_path = output_flv
+        if self._cfg.live.should_remux_on_complete():
+            mp4 = output_flv.with_suffix(".mp4")
+            try:
+                with stage_event(self._conn, session_id=session_id, stage="remux"):
+                    remux_to_mp4(
+                        ffmpeg=self._cfg.live.ffmpeg_path,
+                        src=output_flv,
+                        dst=mp4,
+                    )
+                media_path = mp4
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "streaming_remux_failed",
+                    session_id=session_id,
+                    error=str(exc),
+                )
+        else:
+            record_event(
+                self._conn,
+                session_id=session_id,
+                stage="remux",
+                status="skipped",
+            )
+
+        if transcript_ok:
+            index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
+
         self._clear_streaming_session_state(session_id)
         self._sessions.update_status(
             session_id,
             status="completed",
-            local_path=str(output_flv),
+            local_path=str(media_path),
             transcribe_status="completed" if transcript_ok else "failed",
             ended=True,
         )
@@ -970,7 +994,7 @@ class LiveRecordingCore:
         log.info(
             "live_recording_completed_streaming",
             session_id=session_id,
-            path=str(output_flv),
+            path=str(media_path),
         )
 
         session = self._sessions.get(session_id)
@@ -978,12 +1002,12 @@ class LiveRecordingCore:
             return None
         creator = self._creators.get(session.creator_id)
         if not creator:
-            return {"session_id": session_id, "path": str(output_flv)}
+            return {"session_id": session_id, "path": str(media_path)}
 
         job_id = self._jobs.enqueue(
             session_id=session_id,
             creator_id=creator.id,
-            mp4_path=str(output_flv),
+            mp4_path=str(media_path),
         )
         refresh_manifest(
             self._conn,
@@ -996,7 +1020,7 @@ class LiveRecordingCore:
             NotifyEvent(
                 kind=EventKind.RECORDING_COMPLETED,
                 title=label,
-                body=f"直播录制已完成\n{output_flv.name}\n{output_flv.parent}",
+                body=f"直播录制已完成\n{media_path.name}\n{media_path.parent}",
             )
         )
         if transcript_ok:
@@ -1004,12 +1028,12 @@ class LiveRecordingCore:
                 NotifyEvent(
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=label,
-                    body=f"直播转录完成（deepgram streaming）\n{output_flv.name}",
+                    body=f"直播转录完成（deepgram streaming）\n{media_path.name}",
                 )
             )
         return {
             "session_id": session_id,
-            "path": str(output_flv),
+            "path": str(media_path),
             "creator_id": creator.id,
             "job_id": job_id,
         }
