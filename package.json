@@ -1,0 +1,8 @@
+{
+  "name": "media2text",
+  "private": true,
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "dev:desktop": "pnpm --filter m2t-desktop tauri dev"
+  }
+}
