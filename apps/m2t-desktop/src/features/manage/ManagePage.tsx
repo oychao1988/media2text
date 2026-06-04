@@ -1,17 +1,179 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import { showToast } from '../../lib/toast';
-import type { Creator } from '../../lib/types';
+import type { ConfigDto, Creator } from '../../lib/types';
 import {
   autoRecordPillLabel,
   creatorInitial,
   formatCreatorSub,
-  statusAriaLabel,
+  manageStatusText,
 } from '../creators/creatorUtils';
 import { StatusLight } from '../creators/StatusLight';
 import { useCreators } from '../creators/CreatorsContext';
 
 type ManageFilter = 'all' | 'on' | 'off';
+
+type ManageDrawerProps = {
+  creator: Creator;
+  globalAutoRecord: boolean;
+  syncBusy: string | null;
+  onToggleMonitor: (c: Creator) => void;
+  onSetAutoRecord: (value: string) => void;
+  onRunSync: (kind: 'profile' | 'catalog' | 'dynamics') => void;
+  onRemove: () => void;
+};
+
+function ManageCreatorDrawer({
+  creator,
+  globalAutoRecord,
+  syncBusy,
+  onToggleMonitor,
+  onSetAutoRecord,
+  onRunSync,
+  onRemove,
+}: ManageDrawerProps) {
+  const drawerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const drawer = drawerRef.current;
+    if (!drawer) return;
+    drawer.scrollIntoView({ block: 'nearest', behavior: 'auto' });
+  }, [creator.id]);
+
+  return (
+    <div
+      ref={drawerRef}
+      className="manage-drawer"
+      id="manage-drawer"
+      aria-label="博主详情抽屉"
+      role="region"
+      data-creator={creator.id}
+    >
+      <div className="manage-drawer-collapse">
+        <div className="manage-drawer-inner">
+          <div className="inspector-head">
+            <div className="manage-avatar lg" id="detail-avatar" aria-hidden="true">
+              {creatorInitial(creator.display_name)}
+              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
+            </div>
+            <div className="inspector-head-text">
+              <h3 id="detail-name">{creator.display_name ?? creator.id}</h3>
+              <p className="sub" id="detail-sub">
+                {formatCreatorSub(creator)}
+              </p>
+            </div>
+            <div className="inspector-head-actions">
+              {creator.profile_url ? (
+                <button
+                  type="button"
+                  className="btn"
+                  id="detail-open-profile"
+                  onClick={() =>
+                    window.open(creator.profile_url!, '_blank', 'noopener,noreferrer')
+                  }
+                >
+                  打开主页
+                </button>
+              ) : null}
+              <button type="button" className="btn-ghost danger" id="detail-remove" onClick={onRemove}>
+                移除博主
+              </button>
+            </div>
+          </div>
+          <div className="inspector-grid">
+            <section className="inspector-block">
+              <h4>监控</h4>
+              <div className="toggle-row">
+                <span>直播检测 + 录制流水线</span>
+                <button
+                  type="button"
+                  className={`toggle${creator.monitor_enabled ? ' on' : ''}`}
+                  id="detail-monitor-toggle"
+                  aria-pressed={creator.monitor_enabled}
+                  aria-label="开启监控"
+                  onClick={() => onToggleMonitor(creator)}
+                />
+              </div>
+              <p className="hint">
+                开启后由 daemon 自动处理；中栏「直播」预览可选，不影响后台录制。
+              </p>
+            </section>
+            <section className="inspector-block" id="detail-auto-record-section">
+              <h4>开录策略</h4>
+              <div
+                className="detail-record-segments radio-group"
+                id="detail-auto-record-group"
+                role="radiogroup"
+                aria-label="开录策略"
+              >
+                {(
+                  [
+                    [
+                      'inherit',
+                      '继承全局',
+                      `跟随全局设置（当前：${globalAutoRecord ? '开' : '关'}）`,
+                    ],
+                    ['on', '始终自动', '检测到直播即开录'],
+                    ['off', '仅手动', '需在直播 Tab 点「开始录制」'],
+                  ] as const
+                ).map(([val, label, sub]) => (
+                  <label
+                    key={val}
+                    className={`radio-opt${creator.auto_record_override === val ? ' selected' : ''}`}
+                  >
+                    <input
+                      type="radio"
+                      name="auto-record"
+                      value={val}
+                      checked={creator.auto_record_override === val}
+                      onChange={() => onSetAutoRecord(val)}
+                    />
+                    <strong>{label}</strong>
+                    <span>{sub}</span>
+                  </label>
+                ))}
+              </div>
+            </section>
+            <section className="inspector-block ops">
+              <h4>运维</h4>
+              <div className="detail-actions">
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  id="detail-sync-profile"
+                  disabled={syncBusy != null}
+                  onClick={() => onRunSync('profile')}
+                >
+                  同步资料
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost"
+                  id="detail-sync-catalog"
+                  disabled={syncBusy != null}
+                  onClick={() => onRunSync('catalog')}
+                >
+                  同步作品
+                </button>
+                {creator.platform === 'bilibili' ? (
+                  <button
+                    type="button"
+                    className="btn-ghost"
+                    id="detail-sync-dynamics"
+                    disabled={syncBusy != null}
+                    onClick={() => onRunSync('dynamics')}
+                  >
+                    同步动态（B 站）
+                  </button>
+                ) : null}
+              </div>
+            </section>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export function ManagePage() {
   const { refresh: refreshSidebar } = useCreators();
@@ -21,9 +183,10 @@ export function ManagePage() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(true);
   const [syncBusy, setSyncBusy] = useState<string | null>(null);
+  const [globalAutoRecord, setGlobalAutoRecord] = useState(true);
 
-  const load = useCallback(async () => {
-    setLoading(true);
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    if (!opts?.silent) setLoading(true);
     try {
       const res = await apiGet<{ ok: boolean; creators: Creator[] }>('/api/creators?all=1', true);
       setCreators(res.creators ?? []);
@@ -32,9 +195,9 @@ export function ManagePage() {
         return res.creators[0]?.id ?? null;
       });
     } catch {
-      setCreators([]);
+      if (!opts?.silent) setCreators([]);
     } finally {
-      setLoading(false);
+      if (!opts?.silent) setLoading(false);
     }
   }, []);
 
@@ -42,14 +205,31 @@ export function ManagePage() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    void apiGet<{ config: ConfigDto }>('/api/config', true)
+      .then((res) => setGlobalAutoRecord(res.config.autoRecord))
+      .catch(() => undefined);
+  }, []);
+
   const filtered = useMemo(() => {
     if (filter === 'on') return creators.filter((c) => c.monitor_enabled);
     if (filter === 'off') return creators.filter((c) => !c.monitor_enabled);
     return creators;
   }, [creators, filter]);
 
+  useEffect(() => {
+    if (loading) return;
+    if (!selectedId) return;
+    if (filtered.some((c) => c.id === selectedId)) return;
+    setSelectedId(null);
+  }, [loading, filtered, selectedId]);
+
   const selected = creators.find((c) => c.id === selectedId) ?? null;
   const monitoredCount = creators.filter((c) => c.monitor_enabled).length;
+
+  const selectCreator = (id: string) => {
+    setSelectedId((prev) => (prev === id ? null : id));
+  };
 
   const addCreator = async () => {
     const u = url.trim();
@@ -65,16 +245,29 @@ export function ManagePage() {
     }
   };
 
-  const patchCreator = async (id: string, body: Record<string, unknown>) => {
-    await apiPatch(`/api/creators/${id}`, body);
-    await load();
-    await refreshSidebar();
+  const patchCreator = async (
+    id: string,
+    body: Record<string, unknown>,
+    optimistic?: Partial<Creator>,
+  ) => {
+    if (optimistic) {
+      setCreators((prev) => prev.map((c) => (c.id === id ? { ...c, ...optimistic } : c)));
+    }
+    try {
+      await apiPatch(`/api/creators/${id}`, body);
+      await load({ silent: true });
+      await refreshSidebar();
+    } catch {
+      await load({ silent: true });
+      throw new Error('patch failed');
+    }
   };
 
   const toggleMonitor = async (c: Creator) => {
+    const next = !c.monitor_enabled;
     try {
-      await patchCreator(c.id, { monitorEnabled: !c.monitor_enabled });
-      showToast(c.monitor_enabled ? '已关闭监控' : '已开启监控', 'success');
+      await patchCreator(c.id, { monitorEnabled: next }, { monitor_enabled: next });
+      showToast(next ? '已开启监控' : '已关闭监控', 'success');
     } catch {
       /* toast */
     }
@@ -83,7 +276,9 @@ export function ManagePage() {
   const setAutoRecord = async (value: string) => {
     if (!selected) return;
     try {
-      await patchCreator(selected.id, { autoRecordOverride: value });
+      await patchCreator(selected.id, { autoRecordOverride: value }, {
+        auto_record_override: value,
+      });
     } catch {
       /* toast */
     }
@@ -98,7 +293,7 @@ export function ManagePage() {
       else if (kind === 'catalog') await apiPost(`/api/creators/${selected.id}/sync`);
       else await apiPost(`/api/creators/${selected.id}/sync-dynamics`);
       showToast('同步完成', 'success');
-      await load();
+      await load({ silent: true });
       await refreshSidebar();
     } catch {
       showToast('同步失败', 'error');
@@ -168,159 +363,67 @@ export function ManagePage() {
           {loading ? <p className="hint">加载…</p> : null}
           {!loading && !filtered.length ? <p className="hint">筛选无结果</p> : null}
           {filtered.map((c) => (
-            <div
-              key={c.id}
-              className={`manage-row${selectedId === c.id ? ' selected' : ''}${!c.monitor_enabled ? ' dimmed' : ''}`}
-              role="listitem"
-              tabIndex={0}
-              onClick={() => setSelectedId(c.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  setSelectedId(c.id);
-                }
-              }}
-            >
-              <div className="manage-avatar" aria-hidden="true">
-                {creatorInitial(c.display_name)}
-                <StatusLight light={c.status_light} abbr={c.status_abbr} />
-              </div>
-              <div className="manage-row-info">
-                <div className="manage-row-name">{c.display_name ?? c.unique_id ?? c.id}</div>
-                <div className="manage-row-meta">
-                  <span className="platform-tag">{c.platform}</span>
-                  <span className="manage-status-text">{statusAriaLabel(c.status_light)}</span>
-                  {c.profile_stale ? <span className="tag warn">资料过期</span> : null}
-                  {syncBusy?.startsWith(`${c.id}:`) ? <span className="tag">同步中</span> : null}
+            <Fragment key={c.id}>
+              <div
+                className={`manage-row${selectedId === c.id ? ' selected' : ''}${!c.monitor_enabled ? ' dimmed' : ''}`}
+                role="listitem"
+                tabIndex={0}
+                data-creator={c.id}
+                aria-expanded={selectedId === c.id}
+                onClick={() => selectCreator(c.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    selectCreator(c.id);
+                  }
+                }}
+              >
+                <div className="manage-avatar" aria-hidden="true">
+                  {creatorInitial(c.display_name)}
+                  <StatusLight light={c.status_light} abbr={c.status_abbr} />
+                </div>
+                <div className="manage-row-info">
+                  <div className="manage-row-name">{c.display_name ?? c.unique_id ?? c.id}</div>
+                  <div className="manage-row-meta">
+                    <span className="platform-tag">{c.platform}</span>
+                    <span className="manage-status-text">{manageStatusText(c)}</span>
+                    {c.profile_stale ? <span className="tag warn">资料过期</span> : null}
+                    {syncBusy?.startsWith(`${c.id}:`) ? <span className="tag">同步中</span> : null}
+                  </div>
+                </div>
+                <div className="manage-row-pills">
+                  {(() => {
+                    const pill = autoRecordPillLabel(c.monitor_enabled, c.auto_record_override);
+                    return <span className={pill.className}>{pill.text}</span>;
+                  })()}
+                </div>
+                <div className="manage-row-monitor">
+                  <span className="manage-row-monitor-label">监控</span>
+                  <button
+                    type="button"
+                    className={`toggle${c.monitor_enabled ? ' on' : ''} manage-monitor-toggle`}
+                    aria-label="监控开关"
+                    aria-pressed={c.monitor_enabled}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      void toggleMonitor(c);
+                    }}
+                  />
                 </div>
               </div>
-              <div className="manage-row-pills">
-                {(() => {
-                  const pill = autoRecordPillLabel(c.monitor_enabled, c.auto_record_override);
-                  return <span className={pill.className}>{pill.text}</span>;
-                })()}
-              </div>
-              <div className="manage-row-monitor">
-                <span className="manage-row-monitor-label">监控</span>
-                <button
-                  type="button"
-                  className={`toggle${c.monitor_enabled ? ' on' : ''} manage-monitor-toggle`}
-                  aria-label="监控开关"
-                  aria-pressed={c.monitor_enabled}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    void toggleMonitor(c);
-                  }}
+              {selectedId === c.id && selected?.id === c.id ? (
+                <ManageCreatorDrawer
+                  creator={selected}
+                  globalAutoRecord={globalAutoRecord}
+                  syncBusy={syncBusy}
+                  onToggleMonitor={(creator) => void toggleMonitor(creator)}
+                  onSetAutoRecord={(value) => void setAutoRecord(value)}
+                  onRunSync={(kind) => void runSync(kind)}
+                  onRemove={() => void removeCreator()}
                 />
-              </div>
-            </div>
+              ) : null}
+            </Fragment>
           ))}
-
-          {selected ? (
-            <div className="manage-drawer open" id="manage-drawer" aria-label="博主详情抽屉" role="region">
-              <div className="manage-drawer-collapse">
-              <div className="manage-drawer-inner is-visible">
-                <div className="inspector-head">
-                  <div className="manage-avatar lg" id="detail-avatar" aria-hidden="true">
-                    {creatorInitial(selected.display_name)}
-                    <StatusLight light={selected.status_light} abbr={selected.status_abbr} />
-                  </div>
-                  <div className="inspector-head-text">
-                    <h3 id="detail-name">{selected.display_name ?? selected.id}</h3>
-                    <p className="sub" id="detail-sub">
-                      {formatCreatorSub(selected)}
-                    </p>
-                  </div>
-                  <div className="inspector-head-actions">
-                    {selected.profile_url ? (
-                      <a className="btn" id="detail-open-profile" href={selected.profile_url} target="_blank" rel="noreferrer">
-                        打开主页
-                      </a>
-                    ) : null}
-                    <button type="button" className="btn-ghost danger" id="detail-remove" onClick={() => void removeCreator()}>
-                      移除博主
-                    </button>
-                  </div>
-                </div>
-                <div className="inspector-grid">
-                  <section className="inspector-block">
-                    <h4>监控</h4>
-                    <p className="hint">开启后参与 daemon 直播轮询与录制流水线。</p>
-                    <div className="toggle-row">
-                      <span>直播检测 + 录制流水线</span>
-                      <button
-                        type="button"
-                        className={`toggle${selected.monitor_enabled ? ' on' : ''}`}
-                        id="detail-monitor-toggle"
-                        aria-pressed={selected.monitor_enabled}
-                        aria-label="开启监控"
-                        onClick={() => void toggleMonitor(selected)}
-                      />
-                    </div>
-                  </section>
-                  <section className="inspector-block" id="detail-auto-record-section">
-                    <h4>开录策略</h4>
-                    <div className="detail-record-segments radio-group" id="detail-auto-record-group" role="radiogroup">
-                      {(
-                        [
-                          ['inherit', '继承全局', '跟随全局设置'],
-                          ['on', '始终自动', '检测到直播即开录'],
-                          ['off', '仅手动', '需在直播 Tab 点「开始录制」'],
-                        ] as const
-                      ).map(([val, label, sub]) => (
-                        <label key={val} className={`radio-opt${selected.auto_record_override === val ? ' selected' : ''}`}>
-                          <input
-                            type="radio"
-                            name="auto-record"
-                            value={val}
-                            checked={selected.auto_record_override === val}
-                            onChange={() => void setAutoRecord(val)}
-                          />
-                          <strong>{label}</strong>
-                          <span>{sub}</span>
-                        </label>
-                      ))}
-                    </div>
-                  </section>
-                  <section className="inspector-block ops">
-                    <h4>运维</h4>
-                    <div className="detail-actions">
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        id="detail-sync-profile"
-                        disabled={syncBusy != null}
-                        onClick={() => void runSync('profile')}
-                      >
-                        同步资料
-                      </button>
-                      <button
-                        type="button"
-                        className="btn-ghost"
-                        id="detail-sync-catalog"
-                        disabled={syncBusy != null}
-                        onClick={() => void runSync('catalog')}
-                      >
-                        同步作品
-                      </button>
-                      {selected.platform === 'bilibili' ? (
-                        <button
-                          type="button"
-                          className="btn-ghost"
-                          id="detail-sync-dynamics"
-                          disabled={syncBusy != null}
-                          onClick={() => void runSync('dynamics')}
-                        >
-                          同步动态（B 站）
-                        </button>
-                      ) : null}
-                    </div>
-                  </section>
-                </div>
-              </div>
-              </div>
-            </div>
-          ) : null}
         </div>
       </div>
     </div>

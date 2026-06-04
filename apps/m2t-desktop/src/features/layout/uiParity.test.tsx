@@ -30,6 +30,16 @@ describe('ui parity CSS', () => {
   it('uses bottom-center toast pattern', () => {
     expect(layoutCss).toMatch(/\.toast\.show[\s\S]*translateX\(-50%\)/);
   });
+
+  it('clips left panel overflow while toggling', () => {
+    expect(layoutCss).toContain('.app.panel-toggling .creator-list');
+    expect(layoutCss).toMatch(/\.app\.panel-toggling[\s\S]*overflow:\s*hidden/);
+  });
+
+  it('defines global scrollbar styling', () => {
+    expect(layoutCss).toMatch(/\*::-webkit-scrollbar-thumb[\s\S]*border-radius:\s*999px/);
+    expect(layoutCss).toContain('scrollbar-color: var(--scrollbar-thumb)');
+  });
 });
 
 describe('AgentComposer structure', () => {
@@ -43,9 +53,11 @@ describe('AgentComposer structure', () => {
         onSend={() => {}}
       />,
     );
-    expect(document.getElementById('agent-composer')).toBeTruthy();
+    expect(document.getElementById('agent-form')).toBeTruthy();
+    expect(document.getElementById('agent-input')).toBeTruthy();
+    expect(document.getElementById('btn-agent-send')).toBeTruthy();
     expect(screen.getByRole('button', { name: '发送' })).toBeTruthy();
-    expect(screen.getByLabelText('模型')).toBeTruthy();
+    expect(screen.getByLabelText('Agent 模型')).toBeTruthy();
     expect(screen.getByText('∞')).toBeTruthy();
     expect(screen.getByText('Agent')).toBeTruthy();
   });

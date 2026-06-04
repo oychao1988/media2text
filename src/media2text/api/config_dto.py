@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import os
+import urllib.error
+import urllib.request
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, SummarizeLlmProviderConfig
 from media2text.core.errors import ConfigError
 
 
@@ -66,6 +68,29 @@ def _mask_feishu(cfg: AppConfig) -> str | None:
     return None
 
 
+def _probe_provider_connected(p: SummarizeLlmProviderConfig) -> bool | None:
+    """Lightweight GET /models probe; None when key or base URL missing."""
+    base = (p.base_url or "").strip().rstrip("/")
+    if not base:
+        return None
+    api_key = ""
+    for env in p.api_key_envs:
+        api_key = os.environ.get(env, "").strip()
+        if api_key:
+            break
+    if not api_key:
+        return None
+    url = f"{base}/models"
+    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
+    try:
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            return 200 <= resp.status < 500
+    except urllib.error.HTTPError as exc:
+        return exc.code < 500
+    except Exception:
+        return False
+
+
 def _llm_providers_dto(cfg: AppConfig) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for p in cfg.summarize.llm.providers:
@@ -76,6 +101,7 @@ def _llm_providers_dto(cfg: AppConfig) -> list[dict[str, Any]]:
                 "api_key_envs": list(p.api_key_envs),
                 "models": list(p.models),
                 "configured": any(_env_configured(e) for e in p.api_key_envs),
+                "connected": _probe_provider_connected(p),
             }
         )
     return out

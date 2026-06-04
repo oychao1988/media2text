@@ -3,6 +3,7 @@ import { useDaemonRunning } from '../daemon/DaemonCard';
 import { creatorInitial } from '../creators/creatorUtils';
 import { StatusLight } from '../creators/StatusLight';
 import { useLayoutStore } from './useLayoutStore';
+import { userDisplayInitial } from './userDisplay';
 
 type Props = {
   creators: Creator[];
@@ -48,7 +49,7 @@ export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props
               }}
             >
               <span>{creatorInitial(creator.display_name)}</span>
-              <StatusLight light={creator.status_light} className="rail-light" />
+              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
             </div>
           );
         })}
@@ -82,7 +83,7 @@ export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props
             setUserMenuOpen(!userMenuOpen);
           }}
         >
-          O
+          {userDisplayInitial()}
         </button>
       </div>
     </div>

@@ -14,6 +14,7 @@ export function SidePanelHeader({ title, collapseLabel, side, onCollapse }: Prop
       <button
         type="button"
         className="icon-btn panel-collapse-btn"
+        id={side === 'left' ? 'collapse-left' : 'collapse-right'}
         title={collapseLabel}
         aria-label={collapseLabel}
         onClick={onCollapse}

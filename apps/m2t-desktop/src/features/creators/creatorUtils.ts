@@ -11,6 +11,15 @@ export function statusAriaLabel(light: StatusLight): string {
   return ARIA_BY_LIGHT[light];
 }
 
+/** Manage list row status line (matches finalized.html). */
+export function manageStatusText(c: {
+  monitor_enabled: boolean;
+  status_light: StatusLight;
+}): string {
+  if (!c.monitor_enabled) return '未监控';
+  return statusAriaLabel(c.status_light);
+}
+
 export function creatorInitial(name: string | null | undefined): string {
   const n = (name ?? '').trim();
   if (!n) return '?';

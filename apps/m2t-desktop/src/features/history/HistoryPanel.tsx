@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { apiGet } from '../../lib/api';
 import type { LiveGroup, LiveSessionSummary } from '../../lib/types';
 import {
@@ -55,21 +55,48 @@ function SessionTags({ session }: { session: LiveSessionSummary }) {
   );
 }
 
+type HistoryCacheEntry = {
+  sessions: LiveSessionSummary[];
+  groups: LiveGroup[];
+};
+
+function historyCacheKey(creatorId: string, filter: Filter) {
+  return `${creatorId}:${filter}`;
+}
+
 export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
+  const cacheRef = useRef(new Map<string, HistoryCacheEntry>());
   const [sessions, setSessions] = useState<LiveSessionSummary[]>([]);
   const [groups, setGroups] = useState<LiveGroup[]>([]);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
 
   useEffect(() => {
     if (!creatorId) {
       setSessions([]);
       setGroups([]);
+      setLoading(false);
+      setRefreshing(false);
       return;
     }
+
+    const key = historyCacheKey(creatorId, filter);
+    const cached = cacheRef.current.get(key);
+    if (cached) {
+      setSessions(cached.sessions);
+      setGroups(cached.groups);
+      setLoading(false);
+      setRefreshing(true);
+    } else {
+      setSessions([]);
+      setGroups([]);
+      setLoading(true);
+      setRefreshing(false);
+    }
+
     let cancelled = false;
-    setLoading(true);
     void (async () => {
       try {
         const params = new URLSearchParams();
@@ -82,15 +109,23 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
           live_groups: LiveGroup[];
         }>(`/api/creators/${creatorId}/sessions${q ? `?${q}` : ''}`, true);
         if (cancelled) return;
-        setSessions(res.sessions ?? []);
-        setGroups(res.live_groups ?? []);
+        const entry: HistoryCacheEntry = {
+          sessions: res.sessions ?? [],
+          groups: res.live_groups ?? [],
+        };
+        cacheRef.current.set(key, entry);
+        setSessions(entry.sessions);
+        setGroups(entry.groups);
       } catch {
-        if (!cancelled) {
+        if (!cancelled && !cached) {
           setSessions([]);
           setGroups([]);
         }
       } finally {
-        if (!cancelled) setLoading(false);
+        if (!cancelled) {
+          setLoading(false);
+          setRefreshing(false);
+        }
       }
     })();
     return () => {
@@ -152,7 +187,7 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
         />
       </div>
 
-      <div className="history-list" id="history-list">
+      <div className={`history-list${refreshing ? ' is-refreshing' : ''}`} id="history-list">
         {loading ? <p className="hint">加载历史…</p> : null}
         {!loading && !filtered.length ? <p className="hint">暂无匹配场次</p> : null}
         {[...byDate.entries()].map(([day, rows]) => (
@@ -204,7 +239,13 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
               ) : null}
             </div>
             {groups.map((g, i) => (
-              <div className="merged-row" key={`${g.date}-${i}`} role="group">
+              <div
+                className="merged-row"
+                key={`${g.date}-${i}`}
+                id={i === 0 ? 'merged-row' : undefined}
+                role={i === 0 ? 'button' : 'group'}
+                tabIndex={i === 0 ? 0 : undefined}
+              >
                 <div>
                   <strong>{g.summary_path?.split('/').pop() ?? g.label ?? '合并直播'}</strong>
                   <span>

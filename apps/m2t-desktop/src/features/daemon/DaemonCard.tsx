@@ -7,7 +7,7 @@ export function DaemonCard() {
   const [status, setStatus] = useState<DaemonStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(true);
   const [logLines, setLogLines] = useState<string[]>([]);
 
   const refresh = useCallback(async () => {
@@ -40,17 +40,26 @@ export function DaemonCard() {
     if (logsOpen) void loadLogs();
   }, [logsOpen, loadLogs]);
 
-  const toggleDaemon = async () => {
+  const startDaemon = async () => {
     if (busy || !status) return;
     setBusy(true);
     try {
-      if (status.running) {
-        await apiPost('/api/daemon/stop');
-        showToast('已发送停止守护进程信号', 'success');
-      } else {
-        await apiPost('/api/daemon/start');
-        showToast('守护进程已启动', 'success');
-      }
+      await apiPost('/api/daemon/start');
+      showToast('守护进程已启动', 'success');
+      await refresh();
+    } catch {
+      /* toast handled by api */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const stopDaemon = async () => {
+    if (busy || !status) return;
+    setBusy(true);
+    try {
+      await apiPost('/api/daemon/stop');
+      showToast('已发送停止守护进程信号', 'success');
       await refresh();
     } catch {
       /* toast handled by api */
@@ -67,7 +76,7 @@ export function DaemonCard() {
   }, [running, loading]);
 
   const meta = status
-    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 录制 ${status.active_recordings} · 队列 ${status.post_process.pending}`
+    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 后处理 pending ${status.post_process.pending} · running ${status.post_process.running}`
     : loading
       ? '加载中…'
       : '无法获取状态';
@@ -80,28 +89,50 @@ export function DaemonCard() {
           <strong>{running ? 'Daemon 运行中' : 'Daemon 已停止'}</strong>
         </div>
         <div className="daemon-card-actions">
+          {running ? (
+            <button
+              type="button"
+              className="icon-btn icon-btn-danger"
+              id="btn-daemon-stop"
+              title="停止 monitor watch"
+              aria-label="停止"
+              disabled={busy || loading}
+              onClick={() => void stopDaemon()}
+            >
+              ⏹
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="icon-btn"
+              title="启动 monitor watch"
+              aria-label="启动"
+              disabled={busy || loading}
+              onClick={() => void startDaemon()}
+            >
+              {busy ? '…' : '▶'}
+            </button>
+          )}
           <button
             type="button"
             className={`icon-btn daemon-log-toggle${logsOpen ? ' active' : ''}`}
-            aria-label="查看日志"
+            id="btn-daemon-log"
+            title={logsOpen ? '隐藏日志' : '显示日志'}
+            aria-label="日志"
             aria-pressed={logsOpen}
             onClick={() => setLogsOpen((v) => !v)}
           >
             ▤
           </button>
-          <button
-            type="button"
-            className={`icon-btn${running ? ' icon-btn-danger' : ''}`}
-            disabled={busy || loading}
-            aria-label={running ? '停止守护进程' : '启动守护进程'}
-            onClick={() => void toggleDaemon()}
-          >
-            {busy ? '…' : running ? '⏹' : '▶'}
-          </button>
         </div>
       </div>
       <div className="daemon-meta">{meta}</div>
-      <pre className="daemon-log-lines" hidden={!logsOpen}>
+      <pre
+        className="daemon-log-lines"
+        id="daemon-log-panel"
+        aria-label="守护进程日志"
+        hidden={!logsOpen}
+      >
         {logLines.length ? logLines.join('\n') : '（暂无日志）'}
       </pre>
     </div>

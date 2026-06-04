@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { CreatorList } from '../creators/CreatorList';
 import { CreatorListEmpty } from '../creators/CreatorListEmpty';
 import { CreatorListSkeleton } from '../creators/CreatorListSkeleton';
@@ -21,8 +21,7 @@ import { useColumnResize } from './useColumnResize';
 import { useRowResize } from './useRowResize';
 import { useLayoutStore } from './useLayoutStore';
 import { UserMenu } from './UserMenu';
-
-const USER_LABEL = '本地用户';
+import { USER_DISPLAY_NAME, userDisplayInitial } from './userDisplay';
 
 function readLoadingPreview(): boolean {
   try {
@@ -105,13 +104,30 @@ export function AppShell() {
     openCenterView('playback');
   };
 
+  const handleSelectCreator = useCallback(
+    (id: string) => {
+      const creator = creators.find((c) => c.id === id);
+      const isLive = creator != null && (creator.is_live || creator.status_light === 'green');
+      const targetView = isLive ? 'live' : 'history';
+
+      setSelectedId(id);
+      if (centerView === 'config' || centerView === 'manage' || centerView === 'playback') {
+        if (centerView === 'playback') setPlaybackSession(null);
+        openCenterView(targetView);
+      } else if (centerView === 'live' || centerView === 'history') {
+        openCenterView(targetView);
+      }
+    },
+    [centerView, creators, openCenterView, setSelectedId],
+  );
+
   return (
     <div className={appClass} id="app">
       <aside className="panel panel-left" aria-label="博主列表">
         <LeftRail
           creators={creators}
           selectedCreatorId={selectedId}
-          onSelectCreator={setSelectedId}
+          onSelectCreator={handleSelectCreator}
         />
         <div className="left-content">
           <div className="left-main">
@@ -131,7 +147,7 @@ export function AppShell() {
                 selectedId={selectedId}
                 loading={listLoading}
                 error={creatorsError}
-                onSelect={(c) => setSelectedId(c.id)}
+                onSelect={(c) => handleSelectCreator(c.id)}
                 onRetry={() => void refreshCreators()}
               />
             )}
@@ -150,10 +166,10 @@ export function AppShell() {
               onClick={() => setUserMenuOpen(!userMenuOpen)}
             >
               <div className="avatar" aria-hidden="true">
-                {USER_LABEL.charAt(0)}
+                {userDisplayInitial()}
               </div>
               <div className="user-meta">
-                <span className="user-name">{USER_LABEL}</span>
+                <span className="user-name">{USER_DISPLAY_NAME}</span>
                 <span className="user-hint">系统配置 · 监控管理</span>
               </div>
               <span className="user-chevron" aria-hidden="true">
@@ -240,7 +256,7 @@ export function AppShell() {
           <TranscriptPane
             sessionId={transcriptSessionId}
             summaryPath={summaryPath}
-            mode={centerView === 'playback' || centerView === 'history' ? 'playback' : 'live'}
+            mode={centerView === 'playback' ? 'playback' : 'live'}
           />
           <div
             className="row-resize"
@@ -253,7 +269,11 @@ export function AppShell() {
             onPointerMove={rowResize.onPointerMove}
             onPointerUp={rowResize.onPointerUp}
           />
-          <AgentPanel creatorId={selectedId} sessionId={transcriptSessionId} />
+          <AgentPanel
+            creatorId={selectedId}
+            sessionId={transcriptSessionId}
+            playbackMode={centerView === 'playback'}
+          />
         </div>
       </aside>
     </div>
