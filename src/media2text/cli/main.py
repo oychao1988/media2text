@@ -15,6 +15,7 @@ from media2text.cli import post_process as post_process_cli
 from media2text.cli import summarize as summarize_cli
 from media2text.cli import transcribe as transcribe_cli
 from media2text.cli.doctor import doctor
+from media2text.cli.serve import app_cli as serve_cli
 from media2text.core.logging import configure_logging
 
 app = typer.Typer(no_args_is_help=True, help="Douyin media capture and transcribe CLI")
@@ -31,6 +32,7 @@ app.add_typer(summarize_cli.app, name="summarize")
 app.add_typer(pipeline_cli.app, name="pipeline")
 app.add_typer(post_process_cli.app, name="post-process")
 app.add_typer(notify_cli.app, name="notify")
+app.add_typer(serve_cli, name="serve")
 app.command("doctor")(doctor)
 
 

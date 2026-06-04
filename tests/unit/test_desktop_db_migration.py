@@ -1,5 +1,5 @@
 from media2text.core.storage.db import connect
-from media2text.core.storage.repos import DesktopChatRepo, LiveSnapshotRepo
+from media2text.core.storage.repos import CreatorRepo, DesktopChatRepo, LiveSnapshotRepo
 
 
 def test_desktop_v1_tables_exist(tmp_path) -> None:
@@ -16,6 +16,25 @@ def test_desktop_v1_tables_exist(tmp_path) -> None:
     cols = {r[1] for r in conn.execute("PRAGMA table_info(creators)").fetchall()}
     assert "auto_record_override" in cols
     conn.close()
+
+
+def test_auto_record_override_survives_reconnect(tmp_path) -> None:
+    """Platform-unique migration must not reset auto_record_override on reconnect."""
+    db = tmp_path / "media2text.db"
+    conn = connect(db)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_persist",
+        profile_url="https://example.com/u",
+        platform="douyin",
+    )
+    CreatorRepo(conn).set_auto_record_override(cid, "on")
+    conn.close()
+
+    conn2 = connect(db)
+    row = CreatorRepo(conn2).get(cid)
+    assert row is not None
+    assert row.auto_record_override == "on"
+    conn2.close()
 
 
 def test_live_snapshot_and_chat_crud(tmp_path) -> None:

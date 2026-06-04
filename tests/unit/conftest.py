@@ -1,0 +1,31 @@
+import pytest
+from fastapi.testclient import TestClient
+
+from media2text.api.app import create_app
+from media2text.api.deps import get_cfg, get_db
+from media2text.api.services.health import clear_health_cache
+from media2text.core.config import AppConfig
+from media2text.core.workspace import open_db
+
+
+@pytest.fixture
+def api_client(workspace):
+    clear_health_cache()
+    cfg = AppConfig.load()
+    app = create_app()
+
+    def override_cfg() -> AppConfig:
+        return cfg
+
+    def override_db():
+        conn = open_db(cfg)
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    app.dependency_overrides[get_cfg] = override_cfg
+    app.dependency_overrides[get_db] = override_db
+    with TestClient(app) as client:
+        yield client
+    app.dependency_overrides.clear()

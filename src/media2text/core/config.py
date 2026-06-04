@@ -314,6 +314,22 @@ class AppConfig(BaseSettings):
             (root / sub).mkdir(parents=True, exist_ok=True)
         return root
 
+    def config_path(self) -> Path:
+        return Path(os.environ.get("MEDIA2TEXT_CONFIG", "config.yaml"))
+
+    def save(self, path: Path | None = None) -> Path:
+        """Persist current settings to config.yaml."""
+        target = path or self.config_path()
+        data = self.model_dump()
+        ws = data.get("workspace")
+        if isinstance(ws, Path):
+            data["workspace"] = str(ws)
+        target.write_text(
+            yaml.safe_dump(data, allow_unicode=True, sort_keys=False),
+            encoding="utf-8",
+        )
+        return target
+
 
 def _resolve_transcribe_engine_env(data: dict) -> None:
     """If transcribe.engine names an env var (e.g. TRANSCRIBE_ENGINE), use its value."""

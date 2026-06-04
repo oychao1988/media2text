@@ -1,0 +1,171 @@
+"""Shared doctor health checks for CLI and desktop API."""
+
+from __future__ import annotations
+
+import os
+import shutil
+from pathlib import Path
+
+from media2text.core.archive.health import is_index_stale, monitor_lock_pid
+from media2text.core.compliance import is_compliance_accepted
+from media2text.core.config import AppConfig
+from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
+from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
+from media2text.core.cloud.aliyundrive import load_token
+from media2text.core.summarize.factory import summarize_engine_available
+from media2text.core.summarize.openai_backend import resolve_api_key_envs
+from media2text.core.storage.repos import CreatorRepo
+
+
+def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
+    usage = shutil.disk_usage(path)
+    return usage.free >= min_gb * (1024**3)
+
+
+def _playwright_import_ok() -> bool:
+    try:
+        import playwright  # noqa: F401
+
+        return True
+    except ImportError:
+        return False
+
+
+def _playwright_browser_ok() -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return False
+    try:
+        with sync_playwright() as p:
+            exe = p.chromium.executable_path
+            return bool(exe and Path(exe).exists())
+    except Exception:
+        return False
+
+
+def build_doctor_report(cfg: AppConfig, conn) -> dict:
+    """Build doctor payload (checks + summary flags) without exiting."""
+    ws = cfg.ensure_workspace()
+    has_douyin = any(c.platform == "douyin" for c in CreatorRepo(conn).list_all())
+    has_bilibili = any(c.platform == "bilibili" for c in CreatorRepo(conn).list_all())
+
+    douyin_session_ok = douyin_session_exists(ws)
+    bilibili_session_ok = bilibili_session_exists(ws)
+
+    checks: list[dict] = [
+        {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path))},
+        {
+            "name": "playwright",
+            "ok": _playwright_import_ok(),
+            "hint": "pip install playwright（bundled slim 版需自行安装）",
+        },
+        {
+            "name": "playwright_browser",
+            "ok": _playwright_browser_ok(),
+            "hint": "playwright install chromium",
+        },
+        {"name": "disk", "ok": _disk_ok(ws)},
+    ]
+    if has_douyin or not has_bilibili:
+        checks.append(
+            {
+                "name": "session_douyin",
+                "ok": douyin_session_ok,
+                "auth_required": not douyin_session_ok,
+                "relevant": has_douyin,
+            }
+        )
+    if has_bilibili:
+        checks.append(
+            {
+                "name": "session_bilibili",
+                "ok": bilibili_session_ok,
+                "auth_required": not bilibili_session_ok,
+                "relevant": True,
+            }
+        )
+
+    ad = cfg.aliyundrive
+    if cfg.summarize.enabled:
+        sum_ok, sum_hint = summarize_engine_available(cfg)
+        checks.append(
+            {
+                "name": "summarize_llm",
+                "ok": sum_ok,
+                "relevant": True,
+                "hint": sum_hint
+                or f"export one of: {', '.join(resolve_api_key_envs(cfg.summarize.llm))}",
+            }
+        )
+
+    if cfg.live.is_streaming_pipeline():
+        dg_env = cfg.transcribe.deepgram.api_key_env
+        dg_ok = bool(os.environ.get(dg_env, "").strip())
+        try:
+            import deepgram  # noqa: F401
+
+            dg_installed = True
+        except ImportError:
+            dg_installed = False
+        checks.append(
+            {
+                "name": "streaming_stt_deepgram",
+                "ok": dg_ok and dg_installed,
+                "relevant": True,
+                "hint": (
+                    f'pip install -e ".[transcribe-deepgram]" and export {dg_env}'
+                    + (
+                        "; B 站 streaming 还需 media2text auth login --platform bilibili"
+                        if has_bilibili
+                        else ""
+                    )
+                    if not dg_ok or not dg_installed
+                    else (
+                        "B 站 streaming 需 sessions/bilibili.json + Deepgram"
+                        if has_bilibili
+                        else None
+                    )
+                ),
+            }
+        )
+
+    if ad.enabled:
+        token_path = cfg.aliyundrive_token_path()
+        aliyundrive_ok = False
+        if token_path.is_file():
+            try:
+                aliyundrive_ok = bool(load_token(token_path).get("refresh_token"))
+            except (OSError, ValueError):
+                aliyundrive_ok = False
+        checks.append(
+            {
+                "name": "session_aliyundrive",
+                "ok": aliyundrive_ok,
+                "auth_required": not aliyundrive_ok,
+                "relevant": True,
+                "hint": "media2text auth login --platform aliyundrive",
+            }
+        )
+
+    ok = all(
+        c["ok"] for c in checks if c["name"] not in ("playwright", "playwright_browser")
+    )
+    if has_douyin or not has_bilibili:
+        ok = ok and douyin_session_ok
+    if has_bilibili:
+        ok = ok and bilibili_session_ok
+    if ad.enabled:
+        ok = ok and any(c["ok"] for c in checks if c["name"] == "session_aliyundrive")
+    if cfg.summarize.enabled:
+        ok = ok and any(c["ok"] for c in checks if c["name"] == "summarize_llm")
+    if cfg.live.is_streaming_pipeline():
+        ok = ok and any(c["ok"] for c in checks if c["name"] == "streaming_stt_deepgram")
+
+    return {
+        "ok": ok,
+        "checks": checks,
+        "compliance_accepted": is_compliance_accepted(ws),
+        "index_stale": is_index_stale(conn, ws),
+        "monitor_lock_pid": monitor_lock_pid(ws),
+    }
