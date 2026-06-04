@@ -14,6 +14,10 @@ from media2text.core.storage.repos import (
     PostProcessJobRepo,
 )
 from media2text.core.live.post_process_pool import resolve_post_process_workers
+from media2text.core.live.streaming_benchmark import (
+    check_streaming_targets,
+    streaming_targets_ms,
+)
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="Live recording pipeline status and timeline")
@@ -165,7 +169,23 @@ def timeline_cmd(
 def stats_cmd(
     days: int = typer.Option(7, "--days", min=1, max=365),
     json_out: bool = typer.Option(False, "--json"),
+    check_targets: bool = typer.Option(
+        False,
+        "--check-targets",
+        help="Compare streaming P95 metrics to targets_ms; exit 1 on violation (requires --json)",
+    ),
 ) -> None:
+    if check_targets and not json_out:
+        emit(
+            {
+                "ok": False,
+                "command": "live stats",
+                "error": "check_targets_requires_json",
+            },
+            as_json=True,
+        )
+        raise typer.Exit(1)
+
     cfg = AppConfig.load()
     conn = open_db(cfg)
     events = PipelineEventRepo(conn)
@@ -175,24 +195,30 @@ def stats_cmd(
     stage_stats = events.stats_since(since_iso)
     streaming_metrics = events.streaming_metrics_since(since_iso)
     streaming_sessions = sessions.list_streaming_summary_since(since_iso)
-    emit(
-        {
-            "ok": True,
-            "command": "live stats",
-            "days": days,
-            "since": since_iso,
-            "stages": stage_stats,
-            "streaming": {
-                "sessions": streaming_sessions,
-                "metrics": streaming_metrics,
-                "targets_ms": {
-                    "s1_finalize_stt_p95": 10_000,
-                    "s2_offline_to_complete_p95": 50_000,
-                    # Placeholder pending dogfood; wired into #113 --check-targets when merged
-                    "s3_offline_to_summarize_p95": 180_000,
-                    "first_final_latency_p95": 30_000,
-                },
-            },
-        },
-        as_json=json_out,
-    )
+    targets_ms = streaming_targets_ms()
+    streaming_block: dict = {
+        "sessions": streaming_sessions,
+        "metrics": streaming_metrics,
+        "targets_ms": targets_ms,
+    }
+    gate: dict | None = None
+    if check_targets:
+        gate = check_streaming_targets(streaming_metrics, targets_ms)
+        streaming_block["target_check"] = gate
+
+    payload: dict = {
+        "ok": True,
+        "command": "live stats",
+        "days": days,
+        "since": since_iso,
+        "stages": stage_stats,
+        "streaming": streaming_block,
+    }
+    if gate is not None:
+        payload["ok"] = bool(gate["passed"])
+        if gate["violations"]:
+            payload["target_violations"] = gate["violations"]
+
+    emit(payload, as_json=json_out)
+    if gate is not None and not gate["passed"]:
+        raise typer.Exit(1)

@@ -238,10 +238,22 @@ media2text transcribe run path/to/video.mp4 --json
 |------|------|
 | **S1** `s1_finalize_stt_ms` | 下播 → transcript 封存（`streaming_stt` stage 耗时） |
 | **S2** `s2_offline_to_complete_ms` | 下播确认 → 会话 `ended_at`（finalize 完成，无 remux） |
-| **S3** `s3_offline_to_summarize_ms` | 下播确认 → `summarize` stage 完成（post_process 摘要，省录后 transcribe 后应更快） |
+| **S3** `s3_offline_to_summarize_ms` | 下播确认 → `summarize` stage 完成（post_process 摘要） |
 | 首条 final | 开播 → 首条 final 字幕（`first_final_latency_ms`） |
 
-S2 口径为 DB 中 `offline_pending` 至 `live_sessions.ended_at`，与 `recording_completed` 通知时刻可能差数秒。S3 口径为 `offline_pending` 至 `summarize` completed 的 `ended_at`（等价于 `summarize_completed` 通知前序）。`targets_ms.s3_offline_to_summarize_p95` 为占位阈值，待 dogfood 后校准；#113 合并后可通过 `--check-targets` gate。
+S2 口径为 DB 中 `offline_pending` 至 `live_sessions.ended_at`，与 `recording_completed` 通知时刻可能差数秒。S3 口径为 `offline_pending` 至 `summarize` completed 的 `ended_at`。`targets_ms.s3_offline_to_summarize_p95` 默认 180s，待 dogfood 校准。
+
+### streaming 延迟自检
+
+对比近 N 天 streaming 场次的 P95 与 `streaming.targets_ms`（S1/S2/S3/首条 final，见上表）：
+
+```bash
+media2text live stats --days 7 --json --check-targets
+```
+
+- 退出码 **0**：有样本且全部达标，或窗口内无可用样本（`target_check.insufficient_data: true`）
+- 退出码 **1**：至少一项 P95 超标；JSON 含 `target_check.violations` 与 `over_by_ms`
+- 查看某博主最近一场直播的 `pipeline_mode` / `transcribe_status`：`media2text creator show <id> --json` → `latest_live_session`
 
 Deepgram 后处理（`smart_format: false` 时）：去掉中文词间空格；`text` 按 utterance 换行（与 `segments` 一一对应），段内遇 `。！？；…` 再拆行。JSON 里 `text` 为含 `\n` 的多行字符串。
 
