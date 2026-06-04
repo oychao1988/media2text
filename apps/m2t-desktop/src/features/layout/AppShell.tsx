@@ -5,6 +5,7 @@ import { CreatorListSkeleton } from '../creators/CreatorListSkeleton';
 import { useCreators } from '../creators/CreatorsContext';
 import { DaemonCard } from '../daemon/DaemonCard';
 import { useLiveStatus } from '../live/useLiveStatus';
+import { AgentPanel } from '../agent/AgentPanel';
 import { TranscriptPane } from '../transcript/TranscriptPane';
 import type { LiveSessionSummary } from '../../lib/types';
 import { ViewConfig } from '../views/ViewConfig';
@@ -220,7 +221,7 @@ export function AppShell() {
             mode={centerView === 'history' ? 'playback' : 'live'}
           />
           <div className="right-agent-shell">
-            <p className="view-shell-note">Agent 面板（P7 #132）</p>
+            <AgentPanel creatorId={selectedId} sessionId={transcriptSessionId} />
           </div>
         </div>
       </aside>
