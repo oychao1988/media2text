@@ -287,7 +287,7 @@ transcribe:
 
 - 单元：`TranscriptWriter` merge/flush；enter payload 解析（fixture JSON）  
 - 单元：`finalize` streaming 不调用 remux（mock ffmpeg）  
-- 集成：mock Deepgram WS server + fake PCM pipe  
+- 集成：mock Deepgram WS server + fake PCM pipe — 实现见 `tests/unit/test_streaming_stt_mock_ws.py` + `tests/support/mock_deepgram_ws.py`（默认 `pytest tests/`，无网络 / 无 `DEEPGRAM_API_KEY`）
 - 回归：`pipeline_mode=legacy` 全量现有 live tests 不变  
 - **并行：** `test_post_process_summarize_upload_parallel` — upload 不阻塞于 summarize  
 
