@@ -289,6 +289,7 @@ transcribe:
 - 单元：`finalize` streaming 不调用 remux（mock ffmpeg）  
 - 集成：mock Deepgram WS server + fake PCM pipe  
 - 回归：`pipeline_mode=legacy` 全量现有 live tests 不变  
+- **Legacy 集中回归：** `tests/unit/test_live_legacy_pipeline.py`（#116）
 - **并行：** `test_post_process_summarize_upload_parallel` — upload 不阻塞于 summarize  
 
 ---
