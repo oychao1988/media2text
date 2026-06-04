@@ -4,7 +4,18 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
-from media2text.api.routes import auth, config, creators, daemon, health, live, media, sessions
+from media2text.api.routes import (
+    auth,
+    chat,
+    config,
+    creators,
+    daemon,
+    events,
+    health,
+    live,
+    media,
+    sessions,
+)
 
 
 def create_app() -> FastAPI:
@@ -18,5 +29,7 @@ def create_app() -> FastAPI:
     api.include_router(sessions.router)
     api.include_router(media.router)
     api.include_router(live.router)
+    api.include_router(chat.router)
+    api.include_router(events.router)
     app.mount("/api", api)
     return app

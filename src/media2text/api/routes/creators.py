@@ -7,6 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from media2text.api.deps import get_cfg, get_db
+from media2text.api.schemas.events import EventType, event_payload
+from media2text.api.services import live_snapshot as live_snapshot_svc
+from media2text.api.services import recording as recording_svc
+from media2text.api.services.events_hub import events_hub
 from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
@@ -216,6 +220,89 @@ def get_manifest(
     except (OSError, json.JSONDecodeError) as exc:
         raise HTTPException(status_code=500, detail="manifest read failed") from exc
     return {"ok": True, "creator_id": creator_id, "manifest": manifest}
+
+
+@router.post("/{creator_id}/recording/start")
+def post_recording_start(
+    creator_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if not CreatorRepo(conn).get(creator_id):
+        raise HTTPException(status_code=404, detail="creator not found")
+    result = recording_svc.start_recording(cfg, conn, creator_id)
+    if not result.get("ok"):
+        if result.get("not_found"):
+            raise HTTPException(status_code=404, detail=result)
+        if result.get("already_recording") or result.get("not_live"):
+            raise HTTPException(status_code=409, detail=result)
+        if result.get("auth_required"):
+            raise HTTPException(status_code=401, detail=result)
+        if result.get("platform_changed"):
+            raise HTTPException(status_code=503, detail=result)
+        raise HTTPException(status_code=400, detail=result)
+    events_hub.publish(
+        event_payload(
+            EventType.RECORDING_STARTED,
+            creator_id=creator_id,
+            session_id=result.get("session_id"),
+        )
+    )
+    events_hub.publish(
+        event_payload(EventType.CREATOR_UPDATED, creator_id=creator_id)
+    )
+    return result
+
+
+@router.post("/{creator_id}/recording/stop")
+def post_recording_stop(
+    creator_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if not CreatorRepo(conn).get(creator_id):
+        raise HTTPException(status_code=404, detail="creator not found")
+    result = recording_svc.stop_recording(cfg, conn, creator_id)
+    if not result.get("ok"):
+        if result.get("not_found"):
+            raise HTTPException(status_code=404, detail=result)
+        if result.get("not_recording"):
+            raise HTTPException(status_code=409, detail=result)
+        raise HTTPException(status_code=400, detail=result)
+    events_hub.publish(
+        event_payload(
+            EventType.RECORDING_STOPPED,
+            creator_id=creator_id,
+            session_id=result.get("session_id"),
+        )
+    )
+    events_hub.publish(
+        event_payload(EventType.CREATOR_UPDATED, creator_id=creator_id)
+    )
+    return result
+
+
+@router.post("/{creator_id}/live/refresh")
+def post_live_refresh(
+    creator_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    result = live_snapshot_svc.refresh_creator_live_snapshot(cfg, conn, creator_id)
+    if not result.get("ok"):
+        if result.get("not_found"):
+            raise HTTPException(status_code=404, detail=result)
+        if result.get("rate_limited"):
+            raise HTTPException(status_code=429, detail=result)
+        if result.get("auth_required"):
+            raise HTTPException(status_code=401, detail=result)
+        if result.get("platform_changed"):
+            raise HTTPException(status_code=503, detail=result)
+        raise HTTPException(status_code=400, detail=result)
+    events_hub.publish(
+        event_payload(EventType.CREATOR_UPDATED, creator_id=creator_id)
+    )
+    return result
 
 
 @router.post("/{creator_id}/sync-dynamics")
