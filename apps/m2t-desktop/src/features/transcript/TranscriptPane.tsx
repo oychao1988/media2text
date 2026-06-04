@@ -1,4 +1,4 @@
-import { useEffect, useReducer, useState } from 'react';
+import { useEffect, useReducer, useState, type CSSProperties } from 'react';
 import ReactMarkdown from 'react-markdown';
 import { apiGet, buildWsUrl, getApiBaseUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
@@ -7,6 +7,7 @@ import {
   formatTs,
   initialTranscriptState,
   transcriptReducer,
+  type TranscriptViewState,
 } from './transcriptReducer';
 
 type Props = {
@@ -15,11 +16,60 @@ type Props = {
   mode?: 'live' | 'playback';
 };
 
+function paneDisplay(visible: boolean): CSSProperties | undefined {
+  return visible ? undefined : { display: 'none' };
+}
+
+function TranscriptContent({
+  state,
+  sessionId,
+}: {
+  state: TranscriptViewState;
+  sessionId: string | null;
+}) {
+  return (
+    <>
+      {state.loading ? (
+        <p className="hint">加载转写…</p>
+      ) : state.waiting ? (
+        <p style={{ color: 'var(--text-dim)', fontSize: 12, marginBottom: 12 }}>
+          {sessionId
+            ? '等待转写…'
+            : '未开始录制 — 开录后此处通过 WebSocket 推送 partial 转写。'}
+        </p>
+      ) : null}
+      {state.partial && !state.waiting ? (
+        <p className="partial-hint">实时转写（partial）</p>
+      ) : null}
+      {state.segments.length
+        ? state.segments.map((seg, i) => (
+            <div className="seg" key={`${seg.start}-${i}`}>
+              <div className="ts">{formatTs(seg.start)}</div>
+              <div>{seg.text}</div>
+            </div>
+          ))
+        : state.text
+          ? (
+              <div className="seg">
+                <div className="ts">—</div>
+                <div>{state.text}</div>
+              </div>
+            )
+          : null}
+    </>
+  );
+}
+
 export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props) {
   const [tab, setTab] = useState<'transcript' | 'summary'>('transcript');
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
   const [summaryMd, setSummaryMd] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+
+  const isPlayback = mode === 'playback';
+  const showLiveTranscript = !isPlayback && tab === 'transcript';
+  const showPlaybackTranscript = isPlayback && tab === 'transcript';
+  const showSummaryPlayback = tab === 'summary';
 
   useEffect(() => {
     dispatch({ type: 'reset' });
@@ -173,48 +223,32 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
         </button>
       </div>
 
-      {state.disconnected ? (
+      {state.disconnected && showLiveTranscript ? (
         <div className="transcript-banner warn" role="status">
           转写连接已断开，正在重连…
         </div>
       ) : null}
 
       <div className="transcript-body" id="transcript-body">
-        {tab === 'transcript' ? (
-          <>
-            {state.loading ? (
-              <p className="hint">加载转写…</p>
-            ) : state.waiting ? (
-              <p style={{ color: 'var(--text-dim)', fontSize: 12, marginBottom: 12 }}>
-                {sessionId ? '等待转写…' : '未开始录制 — 开录后此处通过 WebSocket 推送 partial 转写。'}
-              </p>
-            ) : null}
-            {state.partial && !state.waiting ? (
-              <p className="partial-hint">实时转写（partial）</p>
-            ) : null}
-            {state.segments.length
-              ? state.segments.map((seg, i) => (
-                  <div className="seg" key={`${seg.start}-${i}`}>
-                    <div className="ts">{formatTs(seg.start)}</div>
-                    <div>{seg.text}</div>
-                  </div>
-                ))
-              : state.text
-                ? (
-                    <div className="seg">
-                      <div className="ts">—</div>
-                      <div>{state.text}</div>
-                    </div>
-                  )
-                : null}
-          </>
-        ) : summaryLoading ? (
-          <p className="hint">加载摘要…</p>
-        ) : summaryMd ? (
-          <ReactMarkdown>{summaryMd}</ReactMarkdown>
-        ) : (
-          <p className="hint">{summaryPath ? '暂无摘要' : '选择有摘要的场次以查看'}</p>
-        )}
+        <div id="transcript-live" style={paneDisplay(showLiveTranscript)}>
+          <TranscriptContent state={state} sessionId={sessionId} />
+        </div>
+        <div id="transcript-playback" style={paneDisplay(showPlaybackTranscript)}>
+          <TranscriptContent state={state} sessionId={sessionId} />
+        </div>
+        <div
+          id="summary-playback"
+          className="summary-preview"
+          style={paneDisplay(showSummaryPlayback)}
+        >
+          {summaryLoading ? (
+            <p className="hint">加载摘要…</p>
+          ) : summaryMd ? (
+            <ReactMarkdown>{summaryMd}</ReactMarkdown>
+          ) : (
+            <p className="hint">{summaryPath ? '暂无摘要' : '选择有摘要的场次以查看'}</p>
+          )}
+        </div>
       </div>
     </section>
   );

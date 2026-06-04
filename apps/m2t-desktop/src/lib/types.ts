@@ -85,6 +85,8 @@ export type LlmProvider = {
   api_key_envs: string[];
   models: string[];
   configured: boolean;
+  /** API reachability from GET /models probe; null = not tested (no key). */
+  connected?: boolean | null;
 };
 
 export type ConfigDto = {

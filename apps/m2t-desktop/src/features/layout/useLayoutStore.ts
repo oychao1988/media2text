@@ -50,6 +50,15 @@ function getSnapshot(): LayoutStoreState {
   return state;
 }
 
+const PANEL_TOGGLE_MS = 250;
+
+function withPanelToggle(apply: () => void) {
+  const app = document.getElementById('app');
+  app?.classList.add('panel-toggling');
+  apply();
+  window.setTimeout(() => app?.classList.remove('panel-toggling'), PANEL_TOGGLE_MS);
+}
+
 function patch(partial: Partial<LayoutStoreState>) {
   const next = { ...state, ...partial };
   const layoutChanged =
@@ -77,11 +86,18 @@ export function initLayoutStore(): void {
   applyLayoutCssVars(state);
 }
 
+/** Persist pane sizes after drag (skipped during pointermove for smoothness). */
+export function commitLayoutSizes(
+  sizes: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH'>>,
+): void {
+  patch(sizes);
+}
+
 export function useLayoutStore() {
   const snap = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 
   const setLeftCollapsed = useCallback((leftCollapsed: boolean) => {
-    patch({ leftCollapsed });
+    withPanelToggle(() => patch({ leftCollapsed }));
   }, []);
 
   const setRightCollapsed = useCallback((rightCollapsed: boolean) => {
@@ -89,7 +105,7 @@ export function useLayoutStore() {
   }, []);
 
   const expandLeftPanel = useCallback(() => {
-    patch({ leftCollapsed: false });
+    withPanelToggle(() => patch({ leftCollapsed: false }));
   }, []);
 
   const setSidebarW = useCallback((sidebarW: number) => {
@@ -100,8 +116,12 @@ export function useLayoutStore() {
     patch({ rightW });
   }, []);
 
+  const setAgentH = useCallback((agentH: number) => {
+    patch({ agentH });
+  }, []);
+
   const setCenterTab = useCallback((centerTab: CenterTab) => {
-    patch({ centerTab, centerView: centerTab });
+    patch({ centerTab, centerView: centerTab, userMenuOpen: false });
   }, []);
 
   const openCenterView = useCallback((centerView: CenterView) => {
@@ -110,6 +130,10 @@ export function useLayoutStore() {
     } else {
       patch({ centerView, userMenuOpen: false });
     }
+  }, []);
+
+  const backToHistory = useCallback(() => {
+    patch({ centerView: 'history', centerTab: 'history', userMenuOpen: false });
   }, []);
 
   const setUserMenuOpen = useCallback((userMenuOpen: boolean) => {
@@ -127,8 +151,10 @@ export function useLayoutStore() {
     expandLeftPanel,
     setSidebarW,
     setRightW,
+    setAgentH,
     setCenterTab,
     openCenterView,
+    backToHistory,
     setUserMenuOpen,
     setCreatorsLoading,
     resetLayout: () => patch({ ...DEFAULT_LAYOUT }),

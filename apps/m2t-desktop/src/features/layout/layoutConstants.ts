@@ -9,13 +9,14 @@ export const SIZE_DEFAULTS = {
 export const SIZE_LIMITS = {
   sidebar: { min: 180, max: 420 },
   right: { min: 280, max: 9999 },
+  /** JS clamp fallback; CSS uses --center-min-w (25vw). */
   center: { min: 100 },
   agent: { min: 160, max: 720 },
   transcriptMin: 100,
 } as const;
 
 export type CenterTab = 'live' | 'history';
-export type CenterView = CenterTab | 'config' | 'manage';
+export type CenterView = CenterTab | 'playback' | 'config' | 'manage';
 
 export type LayoutPersist = {
   leftCollapsed: boolean;
@@ -79,4 +80,61 @@ export function applyLayoutCssVars(layout: LayoutPersist): void {
   root.style.setProperty('--sidebar-w', `${layout.sidebarW}px`);
   root.style.setProperty('--right-w', `${layout.rightW}px`);
   root.style.setProperty('--right-agent-h', `${layout.agentH}px`);
+}
+
+function readCssPx(varName: string, fallback: number): number {
+  const v = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(varName));
+  return Number.isFinite(v) ? v : fallback;
+}
+
+/** Minimum center column width from --center-min-w (supports px or vw). */
+export function readCenterMinPx(): number {
+  if (typeof window === 'undefined') return 320;
+  const raw = getComputedStyle(document.documentElement).getPropertyValue('--center-min-w').trim();
+  if (raw.endsWith('vw')) {
+    const vw = parseFloat(raw);
+    return Number.isFinite(vw) ? Math.floor((window.innerWidth * vw) / 100) : Math.floor(window.innerWidth * 0.25);
+  }
+  const px = parseFloat(raw);
+  return Number.isFinite(px) ? px : Math.floor(window.innerWidth * 0.25);
+}
+
+function readGripPx(): number {
+  return readCssPx('--grip-w', 6);
+}
+
+/** Max sidebar width that still leaves center at least readCenterMinPx(). */
+export function maxSidebarWForViewport(rightW?: number): number {
+  const rw = rightW ?? readCssPx('--right-w', SIZE_DEFAULTS.rightW);
+  const available = window.innerWidth - readCenterMinPx() - readGripPx() * 2 - rw;
+  return Math.max(SIZE_LIMITS.sidebar.min, Math.min(SIZE_LIMITS.sidebar.max, available));
+}
+
+/** Max right width that still leaves center at least readCenterMinPx(). */
+export function maxRightWForViewport(sidebarW?: number): number {
+  const sw = sidebarW ?? readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW);
+  const available = window.innerWidth - readCenterMinPx() - readGripPx() * 2 - sw;
+  const halfMax = Math.floor(window.innerWidth * 0.5);
+  return Math.max(SIZE_LIMITS.right.min, Math.min(halfMax, SIZE_LIMITS.right.max, available));
+}
+
+/** Update pane CSS vars during drag without localStorage or React re-renders. */
+export function applyLayoutSizesTransient(
+  partial: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH'>>,
+): void {
+  const root = document.documentElement;
+  const sidebarW = partial.sidebarW ?? readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW);
+  const rightW = partial.rightW ?? readCssPx('--right-w', SIZE_DEFAULTS.rightW);
+  const agentH = partial.agentH ?? readCssPx('--right-agent-h', SIZE_DEFAULTS.agentH);
+  root.style.setProperty('--sidebar-w', `${sidebarW}px`);
+  root.style.setProperty('--right-w', `${rightW}px`);
+  root.style.setProperty('--right-agent-h', `${agentH}px`);
+}
+
+export function readLayoutSizesFromCss(): Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH'> {
+  return {
+    sidebarW: readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW),
+    rightW: readCssPx('--right-w', SIZE_DEFAULTS.rightW),
+    agentH: readCssPx('--right-agent-h', SIZE_DEFAULTS.agentH),
+  };
 }

@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { CreatorList } from '../creators/CreatorList';
 import { CreatorListEmpty } from '../creators/CreatorListEmpty';
 import { CreatorListSkeleton } from '../creators/CreatorListSkeleton';
 import { useCreators } from '../creators/CreatorsContext';
 import { DaemonCard } from '../daemon/DaemonCard';
+import { ViewPlayback } from '../history/ViewPlayback';
 import { useLiveStatus } from '../live/useLiveStatus';
 import { AgentPanel } from '../agent/AgentPanel';
 import { TranscriptPane } from '../transcript/TranscriptPane';
@@ -17,8 +18,10 @@ import { LeftRail } from './LeftRail';
 import { RightRail } from './RightRail';
 import { SidePanelHeader } from './SidePanelHeader';
 import { useColumnResize } from './useColumnResize';
+import { useRowResize } from './useRowResize';
 import { useLayoutStore } from './useLayoutStore';
 import { UserMenu } from './UserMenu';
+import { USER_DISPLAY_NAME, userDisplayInitial } from './userDisplay';
 
 function readLoadingPreview(): boolean {
   try {
@@ -52,10 +55,12 @@ export function AppShell() {
     refresh: refreshCreators,
   } = useCreators();
 
-  const [historySession, setHistorySession] = useState<LiveSessionSummary | null>(null);
+  const [playbackSession, setPlaybackSession] = useState<LiveSessionSummary | null>(null);
   const previewLoading = readLoadingPreview();
   const { activeSessionId, refresh: refreshLive } = useLiveStatus(
-    centerView === 'live' || centerView === 'history' ? selectedId : null,
+    centerView === 'live' || centerView === 'history' || centerView === 'playback'
+      ? selectedId
+      : null,
   );
 
   const badge = selected
@@ -63,6 +68,7 @@ export function AppShell() {
     : { text: '', className: '' };
 
   const resize = useColumnResize();
+  const rowResize = useRowResize();
 
   const appClass = [
     'app',
@@ -73,23 +79,47 @@ export function AppShell() {
     .filter(Boolean)
     .join(' ');
 
-  const showCreatorContext = centerView === 'live' || centerView === 'history';
-  const activeCreatorTab = centerView === 'history' ? 'history' : centerTab;
+  const showCreatorContext =
+    centerView === 'live' || centerView === 'history' || centerView === 'playback';
+  const activeCreatorTab =
+    centerView === 'playback' ? 'history' : centerView === 'history' ? 'history' : centerTab;
   const showRecordBanner = selected?.status_light === 'red';
 
   const transcriptSessionId = useMemo(() => {
-    if (centerView === 'history' && historySession) return historySession.session_id;
+    if (centerView === 'playback' && playbackSession) return playbackSession.session_id;
     if (centerView === 'live' || centerTab === 'live') return activeSessionId;
     return null;
-  }, [centerView, centerTab, historySession, activeSessionId]);
+  }, [centerView, centerTab, playbackSession, activeSessionId]);
 
   const summaryPath = useMemo(() => {
-    if (centerView === 'history' && historySession) return historySession.summary_path;
+    if (centerView === 'playback' && playbackSession) return playbackSession.summary_path;
     return null;
-  }, [centerView, historySession]);
+  }, [centerView, playbackSession]);
 
   const listLoading = previewLoading || creatorsLoading;
   const listEmpty = !listLoading && !creatorsError && (showEmptyCreators || creators.length === 0);
+
+  const handleHistorySessionSelect = (session: LiveSessionSummary) => {
+    setPlaybackSession(session);
+    openCenterView('playback');
+  };
+
+  const handleSelectCreator = useCallback(
+    (id: string) => {
+      const creator = creators.find((c) => c.id === id);
+      const isLive = creator != null && (creator.is_live || creator.status_light === 'green');
+      const targetView = isLive ? 'live' : 'history';
+
+      setSelectedId(id);
+      if (centerView === 'config' || centerView === 'manage' || centerView === 'playback') {
+        if (centerView === 'playback') setPlaybackSession(null);
+        openCenterView(targetView);
+      } else if (centerView === 'live' || centerView === 'history') {
+        openCenterView(targetView);
+      }
+    },
+    [centerView, creators, openCenterView, setSelectedId],
+  );
 
   return (
     <div className={appClass} id="app">
@@ -97,12 +127,13 @@ export function AppShell() {
         <LeftRail
           creators={creators}
           selectedCreatorId={selectedId}
-          onSelectCreator={setSelectedId}
+          onSelectCreator={handleSelectCreator}
         />
         <div className="left-content">
           <div className="left-main">
             <SidePanelHeader
               title="监控"
+              side="left"
               collapseLabel="折叠左栏"
               onCollapse={() => setLeftCollapsed(true)}
             />
@@ -116,7 +147,7 @@ export function AppShell() {
                 selectedId={selectedId}
                 loading={listLoading}
                 error={creatorsError}
-                onSelect={(c) => setSelectedId(c.id)}
+                onSelect={(c) => handleSelectCreator(c.id)}
                 onRetry={() => void refreshCreators()}
               />
             )}
@@ -135,10 +166,10 @@ export function AppShell() {
               onClick={() => setUserMenuOpen(!userMenuOpen)}
             >
               <div className="avatar" aria-hidden="true">
-                O
+                {userDisplayInitial()}
               </div>
               <div className="user-meta">
-                <span className="user-name">Oychao</span>
+                <span className="user-name">{USER_DISPLAY_NAME}</span>
                 <span className="user-hint">系统配置 · 监控管理</span>
               </div>
               <span className="user-chevron" aria-hidden="true">
@@ -168,9 +199,10 @@ export function AppShell() {
             creatorName={selected?.display_name ?? ''}
             badge={badge.text}
             badgeClass={badge.className}
+            hideTabs={centerView === 'playback'}
           />
         ) : (
-          <CenterToolbar creatorName="" badge="" badgeClass="" />
+          <CenterToolbar creatorName="" badge="" badgeClass="" hideTabs={false} />
         )}
         <div className="center-body" id="center-body">
           {centerView === 'config' ? (
@@ -180,15 +212,20 @@ export function AppShell() {
           ) : (
             <>
               <ViewLive
-                active={activeCreatorTab === 'live'}
+                active={activeCreatorTab === 'live' && centerView !== 'playback'}
                 creatorId={selectedId}
                 showRecordBanner={showRecordBanner}
                 onRecordingStarted={() => void refreshLive()}
               />
               <ViewHistory
-                active={activeCreatorTab === 'history'}
+                active={activeCreatorTab === 'history' && centerView !== 'playback'}
                 creatorId={selectedId}
-                onSessionSelect={setHistorySession}
+                onSessionSelect={handleHistorySessionSelect}
+              />
+              <ViewPlayback
+                active={centerView === 'playback'}
+                creatorName={selected?.display_name ?? ''}
+                session={playbackSession}
               />
             </>
           )}
@@ -212,17 +249,31 @@ export function AppShell() {
         <div className="right-content right-split">
           <SidePanelHeader
             title="内容"
+            side="right"
             collapseLabel="折叠右栏"
             onCollapse={() => setRightCollapsed(true)}
           />
           <TranscriptPane
             sessionId={transcriptSessionId}
             summaryPath={summaryPath}
-            mode={centerView === 'history' ? 'playback' : 'live'}
+            mode={centerView === 'playback' ? 'playback' : 'live'}
           />
-          <div className="right-agent-shell">
-            <AgentPanel creatorId={selectedId} sessionId={transcriptSessionId} />
-          </div>
+          <div
+            className="row-resize"
+            id="resize-right-split"
+            role="separator"
+            aria-orientation="horizontal"
+            aria-label="调整 Agent 区域高度"
+            tabIndex={0}
+            onPointerDown={rowResize.onPointerDown}
+            onPointerMove={rowResize.onPointerMove}
+            onPointerUp={rowResize.onPointerUp}
+          />
+          <AgentPanel
+            creatorId={selectedId}
+            sessionId={transcriptSessionId}
+            playbackMode={centerView === 'playback'}
+          />
         </div>
       </aside>
     </div>

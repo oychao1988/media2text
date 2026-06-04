@@ -2472,11 +2472,11 @@
       <div class="left-rail rail" aria-label="折叠快捷栏">
         <div class="rail-section-top">
           <button type="button" class="rail-expand-btn" id="expand-left" title="展开监控列表" aria-label="展开左栏">›</button>
-        </div>
+      </div>
         <div class="rail-scroll" role="list" aria-label="博主快捷选择">
           <div class="rail-dot" role="listitem" tabindex="0" data-creator="hexue" title="何同学 · 录制中">
             <span>何</span><span class="light green" aria-hidden="true"></span>
-          </div>
+        </div>
           <div class="rail-dot selected" role="listitem" tabindex="0" data-creator="laofanqie" title="老番茄 · 在播未录">
             <span>老</span><span class="light red" aria-hidden="true"></span>
           </div>
@@ -2620,14 +2620,14 @@
       <div class="center-view active" id="view-live">
         <div class="video-area">
           <div class="video-viewport">
-            <div class="video-frame">
-              <div class="video-overlay-top">
-                <span class="flv-badge">flv.js · /api/sessions/…/stream/proxy</span>
-              </div>
-              <div class="video-placeholder">
-                <div class="play-icon" aria-hidden="true">▶</div>
-                <p>HTTP-FLV 直播预览</p>
-                <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">平台流经 API 反向代理 · 与 ffmpeg 录制并行</p>
+          <div class="video-frame">
+            <div class="video-overlay-top">
+              <span class="flv-badge">flv.js · /api/sessions/…/stream/proxy</span>
+            </div>
+            <div class="video-placeholder">
+              <div class="play-icon" aria-hidden="true">▶</div>
+              <p>HTTP-FLV 直播预览</p>
+              <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">平台流经 API 反向代理 · 与 ffmpeg 录制并行</p>
               </div>
             </div>
           </div>
@@ -2741,13 +2741,13 @@
         <div class="video-area" style="padding-top:12px;">
           <div class="video-viewport">
             <div class="video-frame">
-              <div class="video-overlay-top">
-                <span class="flv-badge">&lt;video&gt; · GET /api/media?path=…</span>
-              </div>
-              <div class="video-placeholder">
-                <div class="play-icon" aria-hidden="true" style="border-color:var(--accent);color:var(--accent);">▶</div>
-                <p>历史录播 · MP4</p>
-                <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">Range 请求 · 本地 data/creators/…/live/</p>
+            <div class="video-overlay-top">
+              <span class="flv-badge">&lt;video&gt; · GET /api/media?path=…</span>
+            </div>
+            <div class="video-placeholder">
+              <div class="play-icon" aria-hidden="true" style="border-color:var(--accent);color:var(--accent);">▶</div>
+              <p>历史录播 · MP4</p>
+              <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">Range 请求 · 本地 data/creators/…/live/</p>
               </div>
             </div>
           </div>
@@ -2764,9 +2764,9 @@
                 <button type="button" class="seg-btn" role="tab" data-config-panel="monitor">监控</button>
                 <button type="button" class="seg-btn" role="tab" data-config-panel="live">直播</button>
                 <button type="button" class="seg-btn" role="tab" data-config-panel="ai">AI</button>
-              </div>
+        </div>
               <span class="settings-save-hint saved" id="config-save-hint">已保存</span>
-            </div>
+      </div>
             <div class="settings-head-actions">
               <button type="button" class="btn btn-sm config-head-add-provider" id="btn-add-llm-provider" hidden>添加 Provider</button>
               <button type="button" class="btn" id="btn-config-revert" disabled>撤销</button>
@@ -3180,7 +3180,7 @@
             </div>
           </div>
         </div>
-      </div>
+        </div>
       </div>
     </main>
 
@@ -4370,8 +4370,8 @@
       localStorage.setItem(
         LS_KEY,
         JSON.stringify({
-          leftCollapsed: app.classList.contains('left-collapsed'),
-          rightCollapsed: app.classList.contains('right-collapsed'),
+        leftCollapsed: app.classList.contains('left-collapsed'),
+        rightCollapsed: app.classList.contains('right-collapsed'),
           sidebarW: sizes.sidebarW,
           rightW: sizes.rightW,
           agentH: sizes.agentH,
@@ -4390,8 +4390,8 @@
       rightW: typeof s.rightW === 'number' ? s.rightW : SIZE_DEFAULTS.rightW,
       agentH: typeof s.agentH === 'number' ? s.agentH : SIZE_DEFAULTS.agentH,
     });
-    if (s.leftCollapsed) app.classList.add('left-collapsed');
-    if (s.rightCollapsed) app.classList.add('right-collapsed');
+      if (s.leftCollapsed) app.classList.add('left-collapsed');
+      if (s.rightCollapsed) app.classList.add('right-collapsed');
     syncLayoutClasses();
   }
   loadLayout();

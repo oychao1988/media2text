@@ -11,6 +11,15 @@ export function statusAriaLabel(light: StatusLight): string {
   return ARIA_BY_LIGHT[light];
 }
 
+/** Manage list row status line (matches finalized.html). */
+export function manageStatusText(c: {
+  monitor_enabled: boolean;
+  status_light: StatusLight;
+}): string {
+  if (!c.monitor_enabled) return '未监控';
+  return statusAriaLabel(c.status_light);
+}
+
 export function creatorInitial(name: string | null | undefined): string {
   const n = (name ?? '').trim();
   if (!n) return '?';
@@ -27,6 +36,16 @@ export function formatCreatorSub(c: {
   if (c.status_light === 'yellow') return `${platform} · 收尾中`;
   if (c.is_live || c.status_light === 'red') return `${platform} · 直播中`;
   return `${platform} · 离线`;
+}
+
+export function autoRecordPillLabel(
+  monitorEnabled: boolean,
+  override: 'inherit' | 'on' | 'off',
+): { text: string; className: string } {
+  if (!monitorEnabled) return { text: '—', className: 'manage-auto-pill tag-pill' };
+  if (override === 'on') return { text: '自动', className: 'manage-auto-pill tag-pill accent' };
+  if (override === 'off') return { text: '手动', className: 'manage-auto-pill tag-pill' };
+  return { text: '继承', className: 'manage-auto-pill tag-pill' };
 }
 
 export function showFlvBadge(): boolean {

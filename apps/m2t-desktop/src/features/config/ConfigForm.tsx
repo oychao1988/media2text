@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfigAiPanel, type ConfigAiPanelHandle } from './ConfigAiPanel';
 import { requestAgentReload } from '../agent/agentSidecar';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
 import { showToast } from '../../lib/toast';
@@ -14,6 +15,14 @@ const SEGMENTS: { id: Segment; label: string }[] = [
   { id: 'live', label: '直播' },
   { id: 'ai', label: 'AI' },
 ];
+
+const STT_MODELS: Record<string, string[]> = {
+  deepgram: ['nova-2', 'nova-3', 'nova-2-general'],
+  whisper: ['small', 'medium', 'large-v3'],
+  openai: ['whisper-1', 'gpt-4o-mini-transcribe'],
+};
+
+type DoctorCheck = { name: string; ok: boolean; hint?: string };
 
 function Toggle({
   id,
@@ -38,14 +47,61 @@ function Toggle({
   );
 }
 
+function doctorCheckOk(
+  checks: DoctorCheck[] | undefined,
+  name: string,
+): boolean | undefined {
+  return checks?.find((c) => c.name === name)?.ok;
+}
+
+function readonlyStatus(
+  ok: boolean | undefined,
+  okText = '正常',
+  warnText = '异常',
+  id?: string,
+) {
+  return (
+    <span id={id} className={`field-readonly${ok ? ' ok' : ' warn'}`}>
+      {ok === undefined ? '待检测' : ok ? okText : warnText}
+    </span>
+  );
+}
+
+function PlatformAuthStatus({
+  platform,
+  auth,
+  onLogin,
+}: {
+  platform: string;
+  auth: Record<string, AuthPlatformStatus>;
+  onLogin: (p: string) => void;
+}) {
+  const configured = auth[platform]?.configured;
+  return (
+    <span
+      id={`cfg-auth-status-${platform}`}
+      className={`platform-config-status${configured ? ' ok' : ' warn'}`}
+    >
+      {configured ? '已登录' : '未登录'}
+      <button type="button" className="auth-inline" onClick={() => onLogin(platform)}>
+        {configured ? '重新登录' : '登录'}
+      </button>
+    </span>
+  );
+}
+
 export function ConfigForm() {
   const [segment, setSegment] = useState<Segment>('user');
   const [saved, setSaved] = useState<ConfigDto | null>(null);
   const [draft, setDraft] = useState<ConfigDto | null>(null);
   const [auth, setAuth] = useState<Record<string, AuthPlatformStatus>>({});
-  const [doctor, setDoctor] = useState<Record<string, unknown> | null>(null);
+  const [doctor, setDoctor] = useState<{ doctor_ok?: boolean; checks?: DoctorCheck[] } | null>(
+    null,
+  );
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Set<string>>(new Set());
+  const [aiProviderEditing, setAiProviderEditing] = useState(false);
+  const aiPanelRef = useRef<ConfigAiPanelHandle>(null);
   const { restartDaemon } = useDaemonActions();
 
   const load = useCallback(async () => {
@@ -60,7 +116,9 @@ export function ConfigForm() {
 
   useEffect(() => {
     void load();
-    void apiGet<Record<string, unknown>>('/api/health', true).then(setDoctor).catch(() => setDoctor(null));
+    void apiGet<{ doctor_ok?: boolean; checks?: DoctorCheck[] }>('/api/health', true)
+      .then(setDoctor)
+      .catch(() => setDoctor(null));
   }, [load]);
 
   const dirty = useMemo(() => {
@@ -134,13 +192,30 @@ export function ConfigForm() {
 
   const runDoctor = async () => {
     try {
-      const res = await apiPost<Record<string, unknown>>('/api/doctor/run');
+      const res = await apiPost<{ doctor_ok?: boolean; checks?: DoctorCheck[] }>('/api/doctor/run');
       setDoctor(res);
       showToast('环境检测完成', 'success');
     } catch {
       /* toast */
     }
   };
+
+  const summarizeModels = useMemo(() => {
+    if (!draft) return [];
+    const p = draft.llmProviders.find((x) => x.name === draft.summarizeProviderId);
+    return p?.models ?? [];
+  }, [draft]);
+
+  const agentModelOptions = useMemo(() => {
+    if (!draft) return [];
+    const opts: { value: string; label: string }[] = [{ value: 'auto', label: '自动' }];
+    for (const p of draft.llmProviders) {
+      for (const m of p.models) {
+        opts.push({ value: m, label: `${p.name} · ${m}` });
+      }
+    }
+    return opts;
+  }, [draft]);
 
   if (!draft) {
     return (
@@ -151,13 +226,21 @@ export function ConfigForm() {
   }
 
   const errCls = (key: string) => (fieldErrors.has(key) ? ' field-error' : '');
+  const checks = doctor?.checks;
+  const ffmpegOk = doctorCheckOk(checks, 'ffmpeg');
+  const playwrightOk =
+    doctorCheckOk(checks, 'playwright_browser') ?? doctorCheckOk(checks, 'playwright');
+  const deepgramOk =
+    doctorCheckOk(checks, 'streaming_stt_deepgram') ?? draft.deepgramConfigured;
+
+  const sttModels = STT_MODELS[draft.streamingSttEngine] ?? STT_MODELS.deepgram;
 
   return (
     <div className="center-view settings-page active" id="view-config">
       <div className="settings-head">
         <div className="settings-head-inner">
           <div className="settings-head-meta">
-            <div className="config-segments" role="tablist" aria-label="配置分段">
+            <div className="config-segments" role="tablist" aria-label="配置分段" id="config-segments">
               {SEGMENTS.map((s) => (
                 <button
                   key={s.id}
@@ -171,12 +254,39 @@ export function ConfigForm() {
                 </button>
               ))}
             </div>
+            <span
+              className={`settings-save-hint${dirty ? ' dirty' : ' saved'}`}
+              id="config-save-hint"
+            >
+              {dirty ? '未保存' : '已保存'}
+            </span>
           </div>
-          <div className="settings-actions">
-            <button type="button" className="btn btn-sm" disabled={!dirty || saving} onClick={revert}>
+          <div className="settings-head-actions">
+            <button
+              type="button"
+              className="btn btn-sm config-head-add-provider"
+              id="btn-add-llm-provider"
+              hidden={segment !== 'ai' || aiProviderEditing}
+              onClick={() => aiPanelRef.current?.addProvider()}
+            >
+              添加 Provider
+            </button>
+            <button
+              type="button"
+              className="btn"
+              id="btn-config-revert"
+              disabled={!dirty || saving}
+              onClick={revert}
+            >
               撤销
             </button>
-            <button type="button" className="btn btn-primary btn-sm" disabled={!dirty || saving} onClick={() => void save()}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              id="btn-config-save"
+              disabled={!dirty || saving}
+              onClick={() => void save()}
+            >
               {saving ? '保存中…' : '保存'}
             </button>
           </div>
@@ -185,8 +295,12 @@ export function ConfigForm() {
 
       <div className="settings-scroll">
         <div className="config-panels-wrap" id="config-form">
-          {segment === 'user' ? (
-            <div className="config-panel active" id="config-panel-user" role="tabpanel">
+          <div
+            className={`config-panel${segment === 'user' ? ' active' : ''}`}
+            id="config-panel-user"
+            role="tabpanel"
+            hidden={segment !== 'user'}
+          >
               <div className="setting-card">
                 <div className="setting-card-head">
                   <h3>桌面偏好</h3>
@@ -205,6 +319,7 @@ export function ConfigForm() {
                     </select>
                   </div>
                 </div>
+                <p className="hint">切换后立即生效；保存后写入本地配置。</p>
                 <div className="toggle-row">
                   <span>通知提示音</span>
                   <Toggle
@@ -214,14 +329,23 @@ export function ConfigForm() {
                     onToggle={() => patchDraft('notifySound', !draft.notifySound)}
                   />
                 </div>
+                <p className="hint">开启后，开播、录制完成等事件会播放系统提示音。</p>
               </div>
               <div className="setting-card">
                 <div className="setting-card-head">
                   <h3>环境自检</h3>
                 </div>
                 <div className="field-row">
-                  <span className="field-label">Doctor</span>
-                  <span className="field-readonly ok">{doctor?.doctor_ok ? '正常' : '待检测'}</span>
+                  <span className="field-label">ffmpeg</span>
+                  {readonlyStatus(ffmpegOk, '正常', '未找到', 'cfg-doctor-ffmpeg')}
+                </div>
+                <div className="field-row">
+                  <span className="field-label">Playwright</span>
+                  {readonlyStatus(playwrightOk, '正常', '未安装', 'cfg-doctor-playwright')}
+                </div>
+                <div className="field-row">
+                  <span className="field-label">Deepgram 扩展</span>
+                  {readonlyStatus(deepgramOk, '已安装', '未配置', 'cfg-doctor-deepgram')}
                 </div>
                 <div className="config-actions">
                   <button type="button" className="btn btn-sm" id="btn-config-doctor" onClick={() => void runDoctor()}>
@@ -230,82 +354,181 @@ export function ConfigForm() {
                 </div>
               </div>
             </div>
-          ) : null}
 
-          {segment === 'monitor' ? (
-            <div className="config-panel active" id="config-panel-monitor" role="tabpanel">
+          <div
+            className={`config-panel${segment === 'monitor' ? ' active' : ''}`}
+            id="config-panel-monitor"
+            role="tabpanel"
+            hidden={segment !== 'monitor'}
+          >
               <div className="setting-card">
                 <div className="setting-card-head">
                   <h3>全局调度</h3>
                 </div>
-                {(
-                  [
-                    ['cfg-live-poll', 'livePollInterval', '直播检测间隔', draft.livePollInterval],
-                    ['cfg-vod-poll', 'vodPollInterval', '作品同步间隔', draft.vodPollInterval],
-                    ['cfg-vod-batch', 'maxCreatorsPerVodTick', '每轮同步博主数', draft.maxCreatorsPerVodTick],
-                    ['cfg-scan-concurrency', 'scanConcurrency', '并行扫描博主数', draft.scanConcurrency],
-                  ] as const
-                ).map(([id, key, label, val]) => (
-                  <div className={`field-row${errCls(key)}`} key={key}>
-                    <label htmlFor={id}>{label}</label>
-                    <div className="field-control">
-                      <input
-                        type="number"
-                        className="config-input"
-                        id={id}
-                        value={val}
-                        onChange={(e) => patchDraft(key, Number(e.target.value))}
-                      />
-                    </div>
+                <div className={`field-row${errCls('livePollInterval')}`}>
+                  <label htmlFor="cfg-live-poll">直播检测间隔</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      className="config-input"
+                      id="cfg-live-poll"
+                      min={5}
+                      max={120}
+                      value={draft.livePollInterval}
+                      onChange={(e) => patchDraft('livePollInterval', Number(e.target.value))}
+                    />
+                    <span className="field-unit">秒</span>
                   </div>
-                ))}
+                </div>
+                <p className="hint">守护进程按此间隔轮询各博主是否开播/下播。</p>
+                <div className={`field-row${errCls('vodPollInterval')}`}>
+                  <label htmlFor="cfg-vod-poll">作品同步间隔</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      className="config-input"
+                      id="cfg-vod-poll"
+                      min={60}
+                      max={3600}
+                      value={draft.vodPollInterval}
+                      onChange={(e) => patchDraft('vodPollInterval', Number(e.target.value))}
+                    />
+                    <span className="field-unit">秒</span>
+                  </div>
+                </div>
+                <div className={`field-row${errCls('maxCreatorsPerVodTick')}`}>
+                  <label htmlFor="cfg-vod-batch">每轮同步博主数</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      className="config-input"
+                      id="cfg-vod-batch"
+                      min={1}
+                      max={20}
+                      value={draft.maxCreatorsPerVodTick}
+                      onChange={(e) => patchDraft('maxCreatorsPerVodTick', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
+                <div className={`field-row${errCls('scanConcurrency')}`}>
+                  <label htmlFor="cfg-scan-concurrency">并行扫描博主数</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      className="config-input"
+                      id="cfg-scan-concurrency"
+                      min={1}
+                      max={16}
+                      value={draft.scanConcurrency}
+                      onChange={(e) => patchDraft('scanConcurrency', Number(e.target.value))}
+                    />
+                  </div>
+                </div>
               </div>
-              {(['douyin', 'bilibili'] as const).map((plat) => (
-                <article className="platform-config-card" data-platform={plat} key={plat}>
-                  <div className="platform-config-head">
-                    <div className={`platform-config-icon ${plat}`}>{plat === 'douyin' ? '抖' : 'B'}</div>
-                    <div className="platform-config-meta">
-                      <strong>{plat === 'douyin' ? '抖音' : '哔哩哔哩'}</strong>
-                    </div>
-                    <button
-                      type="button"
-                      className="btn btn-sm auth-inline"
-                      onClick={() => void loginPlatform(plat)}
-                    >
-                      {auth[plat]?.configured ? '已登录 · 重新登录' : `登录 ${plat}`}
-                    </button>
-                  </div>
-                </article>
-              ))}
+              <p className="platform-section-title">媒体平台</p>
+              <PlatformCard
+                plat="douyin"
+                title="抖音"
+                subtitle="直播检测、作品同步与登录态"
+                auth={auth}
+                onLogin={loginPlatform}
+                fields={[
+                  {
+                    id: 'cfg-douyin-live-poll',
+                    key: 'douyinLivePoll',
+                    label: '直播轮询',
+                    value: draft.douyinLivePoll,
+                    unit: '秒',
+                  },
+                  {
+                    id: 'cfg-douyin-poll',
+                    key: 'douyinPollInterval',
+                    label: '作品列表轮询',
+                    value: draft.douyinPollInterval,
+                    unit: '秒',
+                  },
+                ]}
+                patchDraft={patchDraft}
+                errCls={errCls}
+              />
+              <PlatformCard
+                plat="bilibili"
+                title="哔哩哔哩"
+                subtitle="直播 / 投稿 / 动态与登录态"
+                auth={auth}
+                onLogin={loginPlatform}
+                fields={[
+                  {
+                    id: 'cfg-bili-live-poll',
+                    key: 'biliLivePoll',
+                    label: '直播轮询',
+                    value: draft.biliLivePoll,
+                    unit: '秒',
+                  },
+                  {
+                    id: 'cfg-bili-archive-poll',
+                    key: 'biliArchivePoll',
+                    label: '投稿轮询',
+                    value: draft.biliArchivePoll,
+                    unit: '秒',
+                  },
+                  {
+                    id: 'cfg-bili-dynamic-poll',
+                    key: 'biliDynamicPoll',
+                    label: '动态轮询',
+                    value: draft.biliDynamicPoll,
+                    unit: '秒',
+                  },
+                ]}
+                patchDraft={patchDraft}
+                errCls={errCls}
+              />
+              <p className="config-panel-footer">
+                保存后将在下一轮监控周期生效；切换平台登录无需重启守护进程。
+              </p>
             </div>
-          ) : null}
 
-          {segment === 'live' ? (
-            <div className="config-panel active" id="config-panel-live" role="tabpanel">
+          <div
+            className={`config-panel${segment === 'live' ? ' active' : ''}`}
+            id="config-panel-live"
+            role="tabpanel"
+            hidden={segment !== 'live'}
+          >
+              <p className="config-callout warn" id="cfg-live-callout" role="note">
+                切换录制管线后需重启监控守护进程。流式模式将启用实时转写（Deepgram）。
+              </p>
               <div className="setting-card">
                 <div className="setting-card-head">
                   <h3>录制管线</h3>
                 </div>
                 <div className={`field-row${errCls('pipelineMode')}`}>
                   <label htmlFor="cfg-pipeline-mode">录制管线</label>
-                  <select
-                    id="cfg-pipeline-mode"
-                    className="config-select"
-                    value={draft.pipelineMode}
-                    onChange={(e) => patchDraft('pipelineMode', e.target.value)}
-                  >
-                    <option value="streaming">流式（实时转写）</option>
-                    <option value="legacy">传统（录后转写）</option>
-                  </select>
+                  <div className="field-control">
+                    <select
+                      id="cfg-pipeline-mode"
+                      className="config-select"
+                      value={draft.pipelineMode}
+                      onChange={(e) => patchDraft('pipelineMode', e.target.value)}
+                    >
+                      <option value="streaming">流式（实时转写，推荐）</option>
+                      <option value="legacy">传统（录后转写）</option>
+                    </select>
+                  </div>
                 </div>
                 <div className="toggle-row">
-                  <span>全局自动开录</span>
+                  <span>检测到直播后自动开录</span>
                   <Toggle
                     id="cfg-auto-record"
                     label="全局自动开录"
                     pressed={draft.autoRecord}
                     onToggle={() => patchDraft('autoRecord', !draft.autoRecord)}
                   />
+                </div>
+                <p className="hint">博主可在「监控管理」中设为继承全局、始终自动或仅手动。</p>
+              </div>
+              <div className="setting-card">
+                <div className="setting-card-head">
+                  <h3>实时转写</h3>
                 </div>
                 <div className="toggle-row">
                   <span>启用流式转写</span>
@@ -316,11 +539,182 @@ export function ConfigForm() {
                     onToggle={() => patchDraft('streamingSttEnabled', !draft.streamingSttEnabled)}
                   />
                 </div>
+                <div className={`field-row${errCls('streamingSttEngine')}`}>
+                  <label htmlFor="cfg-streaming-engine">转写引擎</label>
+                  <div className="field-control">
+                    <select
+                      id="cfg-streaming-engine"
+                      className="config-select"
+                      value={draft.streamingSttEngine}
+                      onChange={(e) => patchDraft('streamingSttEngine', e.target.value)}
+                    >
+                      <option value="deepgram">Deepgram（云端，推荐）</option>
+                      <option value="whisper">Whisper（本地，实验）</option>
+                      <option value="openai">OpenAI（云端）</option>
+                    </select>
+                  </div>
+                </div>
+                <div className={`field-row${errCls('streamingSttModel')}`}>
+                  <label htmlFor="cfg-streaming-model">模型</label>
+                  <div className="field-control">
+                    <select
+                      id="cfg-streaming-model"
+                      className="config-select"
+                      value={draft.streamingSttModel}
+                      onChange={(e) => patchDraft('streamingSttModel', e.target.value)}
+                    >
+                      {sttModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className={`field-row${errCls('flushIntervalSec')}`}>
+                  <label htmlFor="cfg-flush-interval">片段写入间隔</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      id="cfg-flush-interval"
+                      className="config-input"
+                      min={10}
+                      max={120}
+                      value={draft.flushIntervalSec}
+                      onChange={(e) => patchDraft('flushIntervalSec', Number(e.target.value))}
+                    />
+                    <span className="field-unit">秒</span>
+                  </div>
+                </div>
+                <p className="hint">流式识别每隔 N 秒将当前文本写入 transcript sidecar。</p>
+                <div className={`field-row${errCls('offlineConfirmSec')}`}>
+                  <label htmlFor="cfg-offline-confirm">下播确认等待</label>
+                  <div className="field-control">
+                    <input
+                      type="number"
+                      id="cfg-offline-confirm"
+                      className="config-input"
+                      min={15}
+                      max={180}
+                      value={draft.offlineConfirmSec}
+                      onChange={(e) => patchDraft('offlineConfirmSec', Number(e.target.value))}
+                    />
+                    <span className="field-unit">秒</span>
+                  </div>
+                </div>
                 <div className="field-row">
                   <span className="field-label">Deepgram API</span>
-                  <span className="field-readonly ok">{draft.deepgramConfigured ? '已配置' : '未配置'}</span>
+                  {readonlyStatus(
+                    draft.deepgramConfigured,
+                    '已配置',
+                    '未配置',
+                    'cfg-deepgram-status',
+                  )}
                 </div>
               </div>
+              <div className="setting-card">
+                <div className="setting-card-head">
+                  <h3>摘要生成</h3>
+                </div>
+                <div className="toggle-row">
+                  <span>启用摘要</span>
+                  <Toggle
+                    id="cfg-summarize-enabled"
+                    label="启用摘要"
+                    pressed={draft.summarizeEnabled}
+                    onToggle={() => patchDraft('summarizeEnabled', !draft.summarizeEnabled)}
+                  />
+                </div>
+                <div className={`field-row${errCls('summarizeProviderId')}`}>
+                  <label htmlFor="cfg-summarize-provider">摘要服务</label>
+                  <div className="field-control">
+                    <select
+                      id="cfg-summarize-provider"
+                      className="config-select"
+                      value={draft.summarizeProviderId}
+                      onChange={(e) => patchDraft('summarizeProviderId', e.target.value)}
+                    >
+                      {draft.llmProviders.map((p) => (
+                        <option key={p.name} value={p.name}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className={`field-row${errCls('summarizeModel')}`}>
+                  <label htmlFor="cfg-summarize-model-live">摘要模型</label>
+                  <div className="field-control">
+                    <select
+                      id="cfg-summarize-model-live"
+                      className="config-select"
+                      value={draft.summarizeModel}
+                      onChange={(e) => patchDraft('summarizeModel', e.target.value)}
+                    >
+                      {summarizeModels.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <p className="hint">摘要服务与模型来自「AI」中的 Provider。</p>
+              </div>
+              <article className="platform-config-card" data-platform="aliyundrive">
+                <div className="platform-config-head">
+                  <div className="platform-config-icon aliyundrive" aria-hidden="true">
+                    云
+                  </div>
+                  <div className="platform-config-meta">
+                    <strong>阿里云盘</strong>
+                    <span>直播 MP4 与 sidecar 备份</span>
+                  </div>
+                  <PlatformAuthStatus platform="aliyundrive" auth={auth} onLogin={loginPlatform} />
+                </div>
+                <div className="platform-config-body">
+                  <div className="toggle-row">
+                    <span>直播结束后备份到云盘</span>
+                    <Toggle
+                      id="cfg-aliyun-enabled"
+                      label="阿里云盘备份"
+                      pressed={draft.aliyunEnabled}
+                      onToggle={() => patchDraft('aliyunEnabled', !draft.aliyunEnabled)}
+                    />
+                  </div>
+                  <div className={`field-row${errCls('aliyunRootFolder')}`}>
+                    <label htmlFor="cfg-aliyun-root">云端根目录名称</label>
+                    <div className="field-control">
+                      <input
+                        type="text"
+                        className="config-input wide"
+                        id="cfg-aliyun-root"
+                        maxLength={64}
+                        value={draft.aliyunRootFolder}
+                        onChange={(e) => patchDraft('aliyunRootFolder', e.target.value)}
+                      />
+                    </div>
+                  </div>
+                  <div className="toggle-row">
+                    <span>上传成功后删除本地文件</span>
+                    <Toggle
+                      id="cfg-aliyun-delete-local"
+                      label="删除本地"
+                      pressed={draft.aliyunDeleteLocal}
+                      onToggle={() => patchDraft('aliyunDeleteLocal', !draft.aliyunDeleteLocal)}
+                    />
+                  </div>
+                  <div className="toggle-row">
+                    <span>同时上传转写与摘要</span>
+                    <Toggle
+                      id="cfg-aliyun-upload-sidecar"
+                      label="上传 sidecar"
+                      pressed={draft.aliyunUploadSidecar}
+                      onToggle={() => patchDraft('aliyunUploadSidecar', !draft.aliyunUploadSidecar)}
+                    />
+                  </div>
+                </div>
+              </article>
               <div className="setting-card">
                 <div className="setting-card-head">
                   <h3>通知</h3>
@@ -336,62 +730,147 @@ export function ConfigForm() {
                 </div>
                 <div className={`field-row${errCls('feishuWebhookUrl')}`}>
                   <label htmlFor="cfg-feishu-webhook">飞书 Webhook</label>
-                  <input
-                    type="password"
-                    className="config-input wide"
-                    id="cfg-feishu-webhook"
-                    placeholder="留空表示不修改"
-                    onChange={(e) => patchDraft('feishuWebhookUrl', e.target.value || draft.feishuWebhookUrl)}
-                  />
+                  <div className="field-control">
+                    <input
+                      type="password"
+                      className="config-input wide"
+                      id="cfg-feishu-webhook"
+                      placeholder={draft.feishuConfigured ? '留空表示不修改' : '填写即启用飞书通知'}
+                      autoComplete="off"
+                      onChange={(e) =>
+                        patchDraft('feishuWebhookUrl', e.target.value || draft.feishuWebhookUrl)
+                      }
+                    />
+                  </div>
                 </div>
+                <p className="hint">填写 Webhook 即走飞书推送；留空并保存表示不修改已保存地址。</p>
               </div>
+              <p className="config-panel-footer">
+                切换录制管线后需重启监控守护进程；其余项保存后按轮询或后处理队列生效。
+              </p>
             </div>
-          ) : null}
 
-          {segment === 'ai' ? (
-            <div className="config-panel active" id="config-panel-ai" role="tabpanel">
-              <div className="setting-card">
-                <div className="setting-card-head">
-                  <h3>LLM Providers</h3>
+          <div
+            className={`config-panel${segment === 'ai' ? ' active' : ''}`}
+            id="config-panel-ai"
+            role="tabpanel"
+            hidden={segment !== 'ai'}
+          >
+              <ConfigAiPanel
+                ref={aiPanelRef}
+                draft={draft}
+                onEditingChange={setAiProviderEditing}
+                onChange={(providers, activeId) => {
+                  patchDraft('llmProviders', providers);
+                  if (activeId != null) {
+                    patchDraft('activeProviderId', activeId);
+                    patchDraft('summarizeProviderId', activeId);
+                  }
+                }}
+              />
+              <div className="setting-card" id="config-ai-agent-card" hidden={aiProviderEditing}>
+                  <div className="setting-card-head">
+                    <h3>Agent 对话默认</h3>
+                  </div>
+                  <div className={`field-row${errCls('agentModel')}`}>
+                    <label htmlFor="cfg-agent-model">默认模型</label>
+                    <div className="field-control">
+                      <select
+                        id="cfg-agent-model"
+                        className="config-select"
+                        value={draft.agentModel}
+                        onChange={(e) => patchDraft('agentModel', e.target.value)}
+                      >
+                        {agentModelOptions.map((o) => (
+                          <option key={o.value} value={o.value}>
+                            {o.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <div className={`field-row${errCls('maxContextChars')}`}>
+                    <label htmlFor="cfg-max-context">上下文上限</label>
+                    <div className="field-control">
+                      <input
+                        type="number"
+                        id="cfg-max-context"
+                        className="config-input"
+                        min={4000}
+                        max={128000}
+                        step={1000}
+                        value={draft.maxContextChars}
+                        onChange={(e) => patchDraft('maxContextChars', Number(e.target.value))}
+                      />
+                      <span className="field-unit">字</span>
+                    </div>
+                  </div>
+                  <p className="hint">右栏对话可按场次覆盖模型；与「直播」中的摘要默认模型可不同。</p>
                 </div>
-                <ul className="provider-row-list">
-                  {draft.llmProviders.map((p) => (
-                    <li key={p.name} className="provider-row">
-                      <strong>{p.name}</strong>
-                      <span>{p.base_url}</span>
-                      <span className={p.configured ? 'tag ok' : 'tag'}>{p.configured ? '已配置' : '未配置'}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div className="setting-card" id="config-ai-agent-card">
-                <div className="setting-card-head">
-                  <h3>Agent 对话默认</h3>
-                </div>
-                <div className={`field-row${errCls('agentModel')}`}>
-                  <label htmlFor="cfg-agent-model">默认模型</label>
-                  <input
-                    id="cfg-agent-model"
-                    className="config-input"
-                    value={draft.agentModel}
-                    onChange={(e) => patchDraft('agentModel', e.target.value)}
-                  />
-                </div>
-                <div className={`field-row${errCls('maxContextChars')}`}>
-                  <label htmlFor="cfg-max-context">上下文上限</label>
-                  <input
-                    type="number"
-                    id="cfg-max-context"
-                    className="config-input"
-                    value={draft.maxContextChars}
-                    onChange={(e) => patchDraft('maxContextChars', Number(e.target.value))}
-                  />
-                </div>
-              </div>
             </div>
-          ) : null}
         </div>
       </div>
     </div>
+  );
+}
+
+type PlatformField = {
+  id: string;
+  key: keyof ConfigDto;
+  label: string;
+  value: number;
+  unit?: string;
+};
+
+function PlatformCard({
+  plat,
+  title,
+  subtitle,
+  auth,
+  onLogin,
+  fields,
+  patchDraft,
+  errCls,
+}: {
+  plat: 'douyin' | 'bilibili';
+  title: string;
+  subtitle: string;
+  auth: Record<string, AuthPlatformStatus>;
+  onLogin: (p: string) => void;
+  fields: PlatformField[];
+  patchDraft: <K extends keyof ConfigDto>(key: K, value: ConfigDto[K]) => void;
+  errCls: (key: string) => string;
+}) {
+  const icon = plat === 'douyin' ? '抖' : 'B';
+  return (
+    <article className="platform-config-card" data-platform={plat}>
+      <div className="platform-config-head">
+        <div className={`platform-config-icon ${plat}`} aria-hidden="true">
+          {icon}
+        </div>
+        <div className="platform-config-meta">
+          <strong>{title}</strong>
+          <span>{subtitle}</span>
+        </div>
+        <PlatformAuthStatus platform={plat} auth={auth} onLogin={onLogin} />
+      </div>
+      <div className="platform-config-body">
+        {fields.map((f) => (
+          <div className={`field-row${errCls(f.key)}`} key={f.key}>
+            <label htmlFor={f.id}>{f.label}</label>
+            <div className="field-control">
+              <input
+                type="number"
+                className="config-input"
+                id={f.id}
+                value={f.value}
+                onChange={(e) => patchDraft(f.key, Number(e.target.value) as ConfigDto[typeof f.key])}
+              />
+              {f.unit ? <span className="field-unit">{f.unit}</span> : null}
+            </div>
+          </div>
+        ))}
+      </div>
+    </article>
   );
 }

@@ -4,9 +4,10 @@ type Props = {
   creatorName: string;
   badge: string;
   badgeClass: string;
+  hideTabs?: boolean;
 };
 
-export function CenterToolbar({ creatorName, badge, badgeClass }: Props) {
+export function CenterToolbar({ creatorName, badge, badgeClass, hideTabs }: Props) {
   const { centerView, centerTab, setCenterTab } = useLayoutStore();
   const isSettings = centerView === 'config' || centerView === 'manage';
   const contextLabel =
@@ -34,7 +35,7 @@ export function CenterToolbar({ creatorName, badge, badgeClass }: Props) {
           </>
         ) : null}
       </div>
-      {!isSettings ? (
+      {!isSettings && !hideTabs ? (
         <div className="tabs" role="tablist" id="center-tabs" aria-label="博主视图">
           <button
             className={`tab${centerTab === 'live' ? ' active' : ''}`}

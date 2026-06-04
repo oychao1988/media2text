@@ -85,18 +85,35 @@ export function LivePlayer({
   }, [sessionId, retryKey]);
 
   const showBadge = showFlvBadge();
+  const flvHint = sessionId
+    ? `flv.js · /api/sessions/${sessionId}/stream/proxy`
+    : 'flv.js · /api/sessions/…/stream/proxy';
+
+  const showPlaceholder = !sessionId || (showRecordBanner && !loading && !streamError);
 
   return (
     <div className="video-area">
       <div className="video-viewport">
         <div className="video-frame">
-          {showBadge ? <span className="flv-badge">FLV</span> : null}
+          <div className="video-overlay-top">
+            {showBadge ? <span className="flv-badge">{flvHint}</span> : null}
+          </div>
           {loading ? (
             <div className="video-placeholder">
               <div className="app-bootstrap-spinner" aria-hidden="true" />
               <p>连接直播流…</p>
             </div>
-          ) : streamError || !sessionId ? (
+          ) : showPlaceholder ? (
+            <div className="video-placeholder">
+              <div className="play-icon" aria-hidden="true">
+                ▶
+              </div>
+              <p>HTTP-FLV 直播预览</p>
+              <p className="video-placeholder-hint">
+                平台流经 API 反向代理 · 与 ffmpeg 录制并行
+              </p>
+            </div>
+          ) : streamError ? (
             <StreamUnavailable onRetry={() => setRetryKey((k) => k + 1)} />
           ) : (
             <video ref={videoRef} className="live-video" controls muted playsInline />

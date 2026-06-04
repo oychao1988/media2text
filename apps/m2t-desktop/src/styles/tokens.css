@@ -25,10 +25,14 @@
   --right-w: 360px;
   --right-collapsed-w: 48px;
   --grip-w: 6px;
-  --center-min-w: 100px;
+  --center-min-w: 25vw;
   --right-agent-h: 320px;
   --center-max-w: 1120px;
   --center-edge-pad: 32px;
+  --scrollbar-size: 8px;
+  --scrollbar-thumb: rgba(24, 24, 27, 0.22);
+  --scrollbar-thumb-hover: rgba(24, 24, 27, 0.36);
+  --scrollbar-track: transparent;
   --radius: 8px;
   --font: 'Geist Sans', system-ui, sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, monospace;
@@ -55,6 +59,8 @@
   --send-fg: #ffffff;
   --send-bg: #ececef;
   --video-stage-bg: #0a0a0c;
+  --scrollbar-thumb: rgba(236, 236, 239, 0.18);
+  --scrollbar-thumb-hover: rgba(236, 236, 239, 0.32);
 }
 
 @media (prefers-reduced-motion: reduce) {

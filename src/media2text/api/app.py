@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastapi import FastAPI
 
+from media2text.api.cors import install_desktop_cors
 from media2text.api.routes import (
     auth,
     chat,
@@ -20,6 +21,7 @@ from media2text.api.routes import (
 
 def create_app() -> FastAPI:
     app = FastAPI(title="media2text-desktop-api", version="0.1.0")
+    install_desktop_cors(app)
     api = FastAPI()
     api.include_router(health.router)
     api.include_router(config.router)

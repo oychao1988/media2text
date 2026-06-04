@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 import { apiGet } from '../../lib/api';
@@ -33,15 +34,18 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
     if (forceEmpty) {
       setCreators([]);
       setLoading(false);
       setError(null);
+      hasLoadedRef.current = true;
       return;
     }
-    setLoading(true);
+    const initial = !hasLoadedRef.current;
+    if (initial) setLoading(true);
     setError(null);
     try {
       const res = await apiGet<{ ok: boolean; creators: Creator[] }>('/api/creators', true);
@@ -54,6 +58,7 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载博主列表失败');
     } finally {
+      hasLoadedRef.current = true;
       setLoading(false);
     }
   }, [forceEmpty]);

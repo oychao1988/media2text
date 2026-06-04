@@ -2,25 +2,26 @@ import { useSyncExternalStore } from 'react';
 import { dismissToast, getToastsSnapshot, subscribeToasts } from '../lib/toast';
 
 export function ToastHost() {
-  const items = useSyncExternalStore(subscribeToasts, getToastsSnapshot, () => []);
+  const item = useSyncExternalStore(subscribeToasts, getToastsSnapshot, () => null);
 
-  if (!items.length) return null;
+  if (!item) return null;
 
   return (
-    <div className="toast-host" role="status" aria-live="polite">
-      {items.map((t) => (
-        <div key={t.id} className={`toast toast-${t.kind}`}>
-          <span>{t.message}</span>
-          <button
-            type="button"
-            className="toast-dismiss"
-            aria-label="关闭"
-            onClick={() => dismissToast(t.id)}
-          >
-            ×
-          </button>
-        </div>
-      ))}
+    <div
+      className={`toast toast-${item.kind} show`}
+      role="status"
+      aria-live="polite"
+      id="toast"
+    >
+      <span>{item.message}</span>
+      <button
+        type="button"
+        className="toast-dismiss"
+        aria-label="关闭"
+        onClick={() => dismissToast(item.id)}
+      >
+        ×
+      </button>
     </div>
   );
 }

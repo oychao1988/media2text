@@ -42,6 +42,33 @@ def test_clear_feishu_webhook() -> None:
     assert cfg.notify.feishu.webhook_url == ""
 
 
+def test_llm_providers_dto_includes_connected(monkeypatch) -> None:
+    cfg = AppConfig.model_validate(
+        {
+            "summarize": {
+                "llm": {
+                    "providers": [
+                        {
+                            "name": "nvidia",
+                            "base_url": "https://example.com/v1",
+                            "api_key_envs": ["NVIDIA_API_KEY"],
+                            "models": ["m1"],
+                        }
+                    ]
+                }
+            }
+        }
+    )
+    monkeypatch.setenv("NVIDIA_API_KEY", "test-key")
+    monkeypatch.setattr(
+        "media2text.api.config_dto._probe_provider_connected",
+        lambda _p: True,
+    )
+    dto = config_to_dto(cfg)
+    assert dto["llmProviders"][0]["connected"] is True
+    assert dto["llmProviders"][0]["configured"] is True
+
+
 def test_patch_restart_hints() -> None:
     cfg = AppConfig.model_validate({"live": {"pipeline_mode": "legacy"}})
     daemon, agent = apply_dto_patch(

@@ -4,6 +4,7 @@ import { AppBootstrap } from './features/layout/AppBootstrap';
 import { AppShell } from './features/layout/AppShell';
 import { initLayoutStore, useLayoutStore } from './features/layout/useLayoutStore';
 import { CreatorsProvider } from './features/creators/CreatorsContext';
+import { installDesktopInputGuards } from './lib/desktopInputGuards';
 import { initThemeFromStorage } from './lib/theme';
 
 function readEmptyListPreview(): boolean {
@@ -28,6 +29,7 @@ export function App() {
   useEffect(() => {
     initThemeFromStorage();
     initLayoutStore();
+    return installDesktopInputGuards();
   }, []);
 
   return (
