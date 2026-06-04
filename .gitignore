@@ -22,3 +22,5 @@ config.yaml
 midscene_run/
 *.log
 node_modules/
+apps/m2t-desktop/dist/
+apps/m2t-desktop/src-tauri/target/
