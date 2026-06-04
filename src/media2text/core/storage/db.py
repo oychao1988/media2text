@@ -272,6 +272,55 @@ def _migrate_live_sessions_v4(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_desktop_v1(conn: sqlite3.Connection) -> None:
+    creator_cols = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
+    if "auto_record_override" not in creator_cols:
+        conn.execute(
+            "ALTER TABLE creators ADD COLUMN auto_record_override TEXT NOT NULL DEFAULT 'inherit'"
+        )
+
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS creator_live_snapshots (
+          creator_id TEXT PRIMARY KEY,
+          is_live INTEGER NOT NULL DEFAULT 0,
+          room_id TEXT,
+          title TEXT,
+          checked_at TEXT NOT NULL,
+          FOREIGN KEY (creator_id) REFERENCES creators(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS desktop_chat_threads (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL,
+          session_id TEXT,
+          title TEXT,
+          provider_name TEXT,
+          model TEXT DEFAULT 'auto',
+          context_mode TEXT DEFAULT 'both',
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (creator_id) REFERENCES creators(id),
+          FOREIGN KEY (session_id) REFERENCES live_sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dct_session ON desktop_chat_threads(session_id);
+
+        CREATE TABLE IF NOT EXISTS desktop_chat_messages (
+          id TEXT PRIMARY KEY,
+          thread_id TEXT NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT NOT NULL,
+          thinking_text TEXT,
+          duration_ms INTEGER,
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (thread_id) REFERENCES desktop_chat_threads(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_dcm_thread ON desktop_chat_messages(thread_id, created_at);
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -283,6 +332,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_live_sessions_v2(conn)
         _migrate_live_sessions_v3(conn)
         _migrate_live_sessions_v4(conn)
+        _migrate_desktop_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

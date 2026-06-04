@@ -16,6 +16,40 @@ class CreatorRow:
     follower_count: int | None
     profile_synced_at: str | None
     created_at: str
+    auto_record_override: str = "inherit"
+
+
+@dataclass
+class CreatorLiveSnapshotRow:
+    creator_id: str
+    is_live: int
+    room_id: str | None
+    title: str | None
+    checked_at: str
+
+
+@dataclass
+class DesktopChatThreadRow:
+    id: str
+    creator_id: str
+    session_id: str | None
+    title: str | None
+    provider_name: str | None
+    model: str
+    context_mode: str
+    created_at: str
+    updated_at: str
+
+
+@dataclass
+class DesktopChatMessageRow:
+    id: str
+    thread_id: str
+    role: str
+    content: str
+    thinking_text: str | None
+    duration_ms: int | None
+    created_at: str
 
 
 @dataclass

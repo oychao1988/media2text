@@ -12,6 +12,7 @@ from media2text.core.errors import ConfigError
 
 class DouyinPlatformConfig(BaseModel):
     poll_interval_sec: int = 60
+    live_poll_interval_sec: int = 0
     download_concurrency: int = 3
     max_sync_pages: int = 0
 
@@ -61,6 +62,7 @@ class StreamingSttConfig(BaseModel):
 
 class LiveConfig(BaseModel):
     pipeline_mode: str = "legacy"  # legacy | streaming
+    auto_record: bool = True
     remux_on_complete: bool | None = None
     transcribe_on_complete: bool = False
     streaming_stt: StreamingSttConfig = Field(default_factory=StreamingSttConfig)
@@ -167,6 +169,8 @@ class SummarizeLlmConfig(BaseModel):
     providers: list[SummarizeLlmProviderConfig] = Field(
         default_factory=_default_summarize_providers
     )
+    default_provider: str | None = None
+    default_model: str | None = None
     temperature: float = 0.2
     top_p: float = 0.95
     max_output_tokens: int = 4096
@@ -244,6 +248,17 @@ class NotifyFeishuConfig(BaseModel):
     timeout_sec: float = 10.0
 
 
+class DesktopChatConfig(BaseModel):
+    default_model: str = "auto"
+    max_context_chars: int = 24000
+
+
+class DesktopConfig(BaseModel):
+    api_port: int = 8765
+    theme: str = "light"
+    chat: DesktopChatConfig = Field(default_factory=DesktopChatConfig)
+
+
 class NotifyConfig(BaseModel):
     enabled: bool = False
     sound: bool = True
@@ -273,6 +288,7 @@ class AppConfig(BaseSettings):
     workspace: Path = Path("./data")
     platforms: PlatformsConfig = Field(default_factory=PlatformsConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
+    desktop: DesktopConfig = Field(default_factory=DesktopConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
     summarize: SummarizeConfig = Field(default_factory=SummarizeConfig)
