@@ -2,7 +2,12 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { Creator } from '../../lib/types';
-import { creatorInitial, formatCreatorSub, statusAriaLabel } from '../creators/creatorUtils';
+import {
+  autoRecordPillLabel,
+  creatorInitial,
+  formatCreatorSub,
+  statusAriaLabel,
+} from '../creators/creatorUtils';
 import { StatusLight } from '../creators/StatusLight';
 import { useCreators } from '../creators/CreatorsContext';
 
@@ -189,6 +194,12 @@ export function ManagePage() {
                   {syncBusy?.startsWith(`${c.id}:`) ? <span className="tag">同步中</span> : null}
                 </div>
               </div>
+              <div className="manage-row-pills">
+                {(() => {
+                  const pill = autoRecordPillLabel(c.monitor_enabled, c.auto_record_override);
+                  return <span className={pill.className}>{pill.text}</span>;
+                })()}
+              </div>
               <div className="manage-row-monitor">
                 <span className="manage-row-monitor-label">监控</span>
                 <button
@@ -207,6 +218,7 @@ export function ManagePage() {
 
           {selected ? (
             <div className="manage-drawer open" id="manage-drawer" aria-label="博主详情抽屉" role="region">
+              <div className="manage-drawer-collapse">
               <div className="manage-drawer-inner is-visible">
                 <div className="inspector-head">
                   <div className="manage-avatar lg" id="detail-avatar" aria-hidden="true">
@@ -233,6 +245,7 @@ export function ManagePage() {
                 <div className="inspector-grid">
                   <section className="inspector-block">
                     <h4>监控</h4>
+                    <p className="hint">开启后参与 daemon 直播轮询与录制流水线。</p>
                     <div className="toggle-row">
                       <span>直播检测 + 录制流水线</span>
                       <button
@@ -250,11 +263,11 @@ export function ManagePage() {
                     <div className="detail-record-segments radio-group" id="detail-auto-record-group" role="radiogroup">
                       {(
                         [
-                          ['inherit', '继承全局'],
-                          ['on', '始终自动'],
-                          ['off', '仅手动'],
+                          ['inherit', '继承全局', '跟随全局设置'],
+                          ['on', '始终自动', '检测到直播即开录'],
+                          ['off', '仅手动', '需在直播 Tab 点「开始录制」'],
                         ] as const
-                      ).map(([val, label]) => (
+                      ).map(([val, label, sub]) => (
                         <label key={val} className={`radio-opt${selected.auto_record_override === val ? ' selected' : ''}`}>
                           <input
                             type="radio"
@@ -264,6 +277,7 @@ export function ManagePage() {
                             onChange={() => void setAutoRecord(val)}
                           />
                           <strong>{label}</strong>
+                          <span>{sub}</span>
                         </label>
                       ))}
                     </div>
@@ -303,6 +317,7 @@ export function ManagePage() {
                     </div>
                   </section>
                 </div>
+              </div>
               </div>
             </div>
           ) : null}

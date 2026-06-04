@@ -6,37 +6,51 @@ export type ToastItem = {
   kind: ToastKind;
 };
 
-type Listener = (items: ToastItem[]) => void;
+type Listener = (item: ToastItem | null) => void;
 
 let nextId = 1;
-let items: ToastItem[] = [];
+let current: ToastItem | null = null;
+let hideTimer: number | undefined;
 const listeners = new Set<Listener>();
 
 function emit() {
-  listeners.forEach((l) => l([...items]));
+  listeners.forEach((l) => l(current));
 }
 
-export function getToastsSnapshot(): ToastItem[] {
-  return items;
+export function getToastsSnapshot(): ToastItem | null {
+  return current;
 }
 
 export function subscribeToasts(listener: Listener): () => void {
   listeners.add(listener);
-  listener([...items]);
+  listener(current);
   return () => listeners.delete(listener);
 }
 
 export function showToast(message: string, kind: ToastKind = 'info', durationMs = 4500): void {
+  if (hideTimer !== undefined) {
+    window.clearTimeout(hideTimer);
+    hideTimer = undefined;
+  }
   const id = nextId++;
-  items = [...items, { id, message, kind }];
+  current = { id, message, kind };
   emit();
-  window.setTimeout(() => {
-    items = items.filter((t) => t.id !== id);
-    emit();
+  hideTimer = window.setTimeout(() => {
+    if (current?.id === id) {
+      current = null;
+      emit();
+    }
+    hideTimer = undefined;
   }, durationMs);
 }
 
 export function dismissToast(id: number): void {
-  items = items.filter((t) => t.id !== id);
-  emit();
+  if (current?.id === id) {
+    if (hideTimer !== undefined) {
+      window.clearTimeout(hideTimer);
+      hideTimer = undefined;
+    }
+    current = null;
+    emit();
+  }
 }

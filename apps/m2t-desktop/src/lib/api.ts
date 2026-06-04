@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
 import { showToast } from './toast';
+import { resolveApiBaseUrl } from './tauriBridge';
 
 let cachedBaseUrl: string | null = null;
 
@@ -33,9 +33,12 @@ function extractErrorMessage(body: unknown, status: number): string {
 
 export async function getApiBaseUrl(): Promise<string> {
   if (cachedBaseUrl) return cachedBaseUrl;
-  const url = (await invoke<string>('get_api_base_url')).trim();
-  if (!url) throw new ApiError('未获取到 API 地址', 0);
-  cachedBaseUrl = url.replace(/\/$/, '');
+  try {
+    cachedBaseUrl = await resolveApiBaseUrl();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : '未获取到 API 地址';
+    throw new ApiError(msg, 0);
+  }
   return cachedBaseUrl;
 }
 

@@ -171,8 +171,11 @@ export function ConfigForm() {
                 </button>
               ))}
             </div>
+            <span className={`settings-save-hint${dirty ? '' : ' saved'}`} id="config-save-hint">
+              {dirty ? '未保存' : '已保存'}
+            </span>
           </div>
-          <div className="settings-actions">
+          <div className="settings-head-actions settings-actions">
             <button type="button" className="btn btn-sm" disabled={!dirty || saving} onClick={revert}>
               撤销
             </button>

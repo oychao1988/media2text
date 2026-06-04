@@ -67,7 +67,7 @@ export function DaemonCard() {
   }, [running, loading]);
 
   const meta = status
-    ? `PID ${status.pid ?? '—'} · 录制 ${status.active_recordings} · 队列 ${status.post_process.pending}`
+    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 录制 ${status.active_recordings} · 队列 ${status.post_process.pending}`
     : loading
       ? '加载中…'
       : '无法获取状态';
@@ -87,7 +87,7 @@ export function DaemonCard() {
             aria-pressed={logsOpen}
             onClick={() => setLogsOpen((v) => !v)}
           >
-            📋
+            ▤
           </button>
           <button
             type="button"

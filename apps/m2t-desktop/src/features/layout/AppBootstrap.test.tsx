@@ -3,22 +3,26 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppBootstrap } from './AppBootstrap';
 
-const invokeMock = vi.fn();
+const resolveApiBaseUrlMock = vi.fn();
+const runningInTauriMock = vi.fn(() => true);
 const fetchMock = vi.fn();
 
-vi.mock('@tauri-apps/api/core', () => ({
-  invoke: (...args: unknown[]) => invokeMock(...args),
+vi.mock('../../lib/tauriBridge', () => ({
+  resolveApiBaseUrl: (...args: unknown[]) => resolveApiBaseUrlMock(...args),
+  runningInTauri: () => runningInTauriMock(),
+  browserDevHint: () => 'browser-hint',
 }));
 
 describe('AppBootstrap', () => {
   beforeEach(() => {
-    invokeMock.mockReset();
+    resolveApiBaseUrlMock.mockReset();
+    runningInTauriMock.mockReturnValue(true);
     fetchMock.mockReset();
     vi.stubGlobal('fetch', fetchMock);
   });
 
   it('shows loading then ready when health succeeds', async () => {
-    invokeMock.mockResolvedValue('http://127.0.0.1:8765');
+    resolveApiBaseUrlMock.mockResolvedValue('http://127.0.0.1:8765');
     fetchMock.mockResolvedValue({ ok: true, status: 200 });
 
     render(
@@ -32,7 +36,7 @@ describe('AppBootstrap', () => {
     await waitFor(() => {
       expect(screen.getByTestId('shell')).toBeInTheDocument();
     });
-    expect(invokeMock).toHaveBeenCalledWith('get_api_base_url');
+    expect(resolveApiBaseUrlMock).toHaveBeenCalled();
     expect(fetchMock).toHaveBeenCalledWith(
       'http://127.0.0.1:8765/api/health',
       expect.objectContaining({ method: 'GET' }),
@@ -40,7 +44,7 @@ describe('AppBootstrap', () => {
   });
 
   it('shows error and retries after health failure', async () => {
-    invokeMock.mockResolvedValue('http://127.0.0.1:8765');
+    resolveApiBaseUrlMock.mockResolvedValue('http://127.0.0.1:8765');
     fetchMock.mockResolvedValue({ ok: false, status: 503 });
 
     render(
@@ -62,8 +66,8 @@ describe('AppBootstrap', () => {
     });
   });
 
-  it('shows error when invoke returns empty base url', async () => {
-    invokeMock.mockResolvedValue('');
+  it('shows error when api base url is empty', async () => {
+    resolveApiBaseUrlMock.mockRejectedValue(new Error('未获取到 API 地址'));
 
     render(
       <AppBootstrap>

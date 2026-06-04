@@ -16,7 +16,11 @@ export async function pollApiHealth(
       if (res.ok) return;
       lastError = `健康检查 HTTP ${res.status}`;
     } catch (err) {
-      lastError = err instanceof Error ? err.message : String(err);
+      const raw = err instanceof Error ? err.message : String(err);
+      lastError =
+        raw === 'Load failed' || raw === 'Failed to fetch'
+          ? '无法连接本地 API（若为桌面窗口，请确认 sidecar 已启动；开发模式需 API 开启 CORS）'
+          : raw;
     }
     await new Promise((r) => setTimeout(r, intervalMs));
   }

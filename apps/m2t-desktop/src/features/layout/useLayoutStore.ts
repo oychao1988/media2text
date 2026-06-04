@@ -100,8 +100,12 @@ export function useLayoutStore() {
     patch({ rightW });
   }, []);
 
+  const setAgentH = useCallback((agentH: number) => {
+    patch({ agentH });
+  }, []);
+
   const setCenterTab = useCallback((centerTab: CenterTab) => {
-    patch({ centerTab, centerView: centerTab });
+    patch({ centerTab, centerView: centerTab, userMenuOpen: false });
   }, []);
 
   const openCenterView = useCallback((centerView: CenterView) => {
@@ -110,6 +114,10 @@ export function useLayoutStore() {
     } else {
       patch({ centerView, userMenuOpen: false });
     }
+  }, []);
+
+  const backToHistory = useCallback(() => {
+    patch({ centerView: 'history', centerTab: 'history', userMenuOpen: false });
   }, []);
 
   const setUserMenuOpen = useCallback((userMenuOpen: boolean) => {
@@ -127,8 +135,10 @@ export function useLayoutStore() {
     expandLeftPanel,
     setSidebarW,
     setRightW,
+    setAgentH,
     setCenterTab,
     openCenterView,
+    backToHistory,
     setUserMenuOpen,
     setCreatorsLoading,
     resetLayout: () => patch({ ...DEFAULT_LAYOUT }),

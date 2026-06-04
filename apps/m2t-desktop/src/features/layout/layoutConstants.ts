@@ -15,7 +15,7 @@ export const SIZE_LIMITS = {
 } as const;
 
 export type CenterTab = 'live' | 'history';
-export type CenterView = CenterTab | 'config' | 'manage';
+export type CenterView = CenterTab | 'playback' | 'config' | 'manage';
 
 export type LayoutPersist = {
   leftCollapsed: boolean;

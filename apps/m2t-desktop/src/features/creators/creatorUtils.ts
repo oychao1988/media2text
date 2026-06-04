@@ -29,6 +29,16 @@ export function formatCreatorSub(c: {
   return `${platform} · 离线`;
 }
 
+export function autoRecordPillLabel(
+  monitorEnabled: boolean,
+  override: 'inherit' | 'on' | 'off',
+): { text: string; className: string } {
+  if (!monitorEnabled) return { text: '—', className: 'manage-auto-pill tag-pill' };
+  if (override === 'on') return { text: '自动', className: 'manage-auto-pill tag-pill accent' };
+  if (override === 'off') return { text: '手动', className: 'manage-auto-pill tag-pill' };
+  return { text: '继承', className: 'manage-auto-pill tag-pill' };
+}
+
 export function showFlvBadge(): boolean {
   if (import.meta.env.DEV) return true;
   try {

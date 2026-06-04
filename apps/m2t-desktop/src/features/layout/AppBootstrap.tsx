@@ -1,5 +1,5 @@
-import { invoke } from '@tauri-apps/api/core';
 import { type ReactNode, useCallback, useEffect, useState } from 'react';
+import { browserDevHint, resolveApiBaseUrl, runningInTauri } from '../../lib/tauriBridge';
 import { pollApiHealth, type BootstrapPhase } from './bootstrapHealth';
 
 type Props = {
@@ -14,10 +14,7 @@ export function AppBootstrap({ children }: Props) {
     setPhase('loading');
     setErrorMessage('');
     try {
-      const baseUrl = await invoke<string>('get_api_base_url');
-      if (!baseUrl?.trim()) {
-        throw new Error('未获取到 API 地址');
-      }
+      const baseUrl = await resolveApiBaseUrl();
       await pollApiHealth(
         baseUrl,
         import.meta.env.MODE === 'test' ? { maxAttempts: 3, intervalMs: 0 } : undefined,
@@ -50,6 +47,9 @@ export function AppBootstrap({ children }: Props) {
       <div className="app-bootstrap app-bootstrap--error" role="alert">
         <div className="app-bootstrap-card">
           <p className="app-bootstrap-title">服务启动失败</p>
+          {!runningInTauri() ? (
+            <p className="app-bootstrap-hint app-bootstrap-hint--warn">{browserDevHint()}</p>
+          ) : null}
           <p className="app-bootstrap-hint">{errorMessage || '未知错误'}</p>
           <button type="button" className="btn btn-primary" onClick={() => void runBootstrap()}>
             重试
