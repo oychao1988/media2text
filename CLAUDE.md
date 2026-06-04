@@ -249,3 +249,5 @@ transcribe:
 ```
 
 完整字段见 [config.example.yaml](config.example.yaml)。
+
+**Streaming STT 规格与 gap issue：** [docs/superpowers/specs/2026-06-03-live-streaming-stt-design.md](docs/superpowers/specs/2026-06-03-live-streaming-stt-design.md)；跟进项 [#111–#117](docs/issues/README.md#streaming-stt--spec-差距跟进建议顺序)。
