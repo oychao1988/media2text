@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { requestAgentReload } from '../agent/agentSidecar';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { AuthPlatformStatus, ConfigDto } from '../../lib/types';
@@ -105,7 +106,8 @@ export function ConfigForm() {
         if (window.confirm('是否立即重启守护进程？')) void restartDaemon();
       }
       if (res.requires_agent_reload?.length) {
-        showToast('Agent 配置已更新（P7 将自动 reload）', 'info');
+        showToast('Agent 配置已更新，当前轮次结束后将重载', 'info');
+        requestAgentReload();
       }
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {

@@ -1,0 +1,4 @@
+{
+  "defaultSkills": ["media2text"],
+  "skillsDirs": ["../../packages/agent-skills"]
+}
