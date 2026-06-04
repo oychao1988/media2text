@@ -1,20 +1,50 @@
-import { MOCK_CREATORS, type MockCreator } from './mockCreators';
+import type { Creator } from '../../lib/types';
+import {
+  creatorInitial,
+  formatCreatorSub,
+} from './creatorUtils';
+import { StatusLight } from './StatusLight';
 
 type Props = {
-  selectedId: string;
-  onSelect: (creator: MockCreator) => void;
+  creators: Creator[];
+  selectedId: string | null;
+  loading?: boolean;
+  error?: string | null;
+  onSelect: (creator: Creator) => void;
+  onRetry?: () => void;
 };
 
-export function CreatorList({ selectedId, onSelect }: Props) {
+export function CreatorList({
+  creators,
+  selectedId,
+  loading,
+  error,
+  onSelect,
+  onRetry,
+}: Props) {
+  if (loading) return null;
+  if (error) {
+    return (
+      <div className="creator-list-error" role="alert">
+        <p>{error}</p>
+        {onRetry ? (
+          <button type="button" className="btn btn-sm" onClick={onRetry}>
+            重试
+          </button>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
     <nav className="creator-list" id="creator-list" aria-label="已监控博主">
-      {MOCK_CREATORS.map((creator) => {
+      {creators.map((creator) => {
         const selected = creator.id === selectedId;
-        const live = creator.light === 'red' || creator.light === 'green';
+        const live = creator.is_live || creator.status_light === 'green';
         return (
           <div
             key={creator.id}
-            className={`creator-item${selected ? ' selected' : ''}`}
+            className={`creator-item${selected ? ' selected' : ''}${creator.profile_stale ? ' stale' : ''}`}
             tabIndex={0}
             role="button"
             aria-current={selected ? 'true' : undefined}
@@ -28,18 +58,12 @@ export function CreatorList({ selectedId, onSelect }: Props) {
             }}
           >
             <div className={`avatar-wrap${live ? ' is-live' : ''}`}>
-              <div className="avatar">{creator.initial}</div>
-              <span
-                className={`light ${creator.light}`}
-                data-abbr={creator.abbr}
-                title={creator.ariaLabel}
-                aria-label={creator.ariaLabel}
-                role="img"
-              />
+              <div className="avatar">{creatorInitial(creator.display_name)}</div>
+              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
             </div>
             <div className="creator-info">
-              <div className="creator-name">{creator.name}</div>
-              <div className="creator-sub">{creator.sub}</div>
+              <div className="creator-name">{creator.display_name ?? creator.unique_id ?? creator.id}</div>
+              <div className="creator-sub">{formatCreatorSub(creator)}</div>
             </div>
           </div>
         );
