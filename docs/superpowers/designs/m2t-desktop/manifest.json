@@ -1,0 +1,42 @@
+{
+  "screen": "m2t-desktop-monitor",
+  "date": "2026-06-04",
+  "mode": "plan-driven",
+  "source_plan": "docs/superpowers/specs/2026-06-04-m2t-desktop-design.md",
+  "ui_design": "docs/superpowers/specs/2026-06-04-m2t-desktop-ui-design.md",
+  "ui_review": "docs/superpowers/specs/2026-06-04-m2t-desktop-ui-review.md",
+  "config_ia": "docs/superpowers/specs/2026-06-04-m2t-desktop-config-manage-ia.md",
+  "html_file": "docs/superpowers/designs/m2t-desktop/finalized.html",
+  "html_is_source_of_truth": true,
+  "pretext_file": "docs/superpowers/designs/m2t-desktop/pretext.js",
+  "framework": "vanilla",
+  "pretext_tier": "simple-layout + card-grid + session-list",
+  "features": [
+    "live-red-state",
+    "live-avatar-breathe-ring",
+    "history-sessions",
+    "playback-vod",
+    "live-groups",
+    "agent-context-switch",
+    "agent-cursor-composer",
+    "agent-context-attach-buttons",
+    "collapsible-panels",
+    "column-resize-persist",
+    "right-panel-half-viewport-max",
+    "light-dark-theme",
+    "video-viewport-16-9",
+    "config-editable-form",
+    "config-patch-api",
+    "manage-inline-drawer",
+    "creator-auto-record-override",
+    "daemon-log-panel",
+    "auth-login-buttons",
+    "responsive-breakpoints",
+    "prototype-interactions"
+  ],
+  "localStorage_keys": {
+    "layout": "m2t-desktop-layout",
+    "theme": "m2t-desktop-theme"
+  },
+  "preview": "cd docs/superpowers/designs/m2t-desktop && python3 -m http.server 8766"
+}

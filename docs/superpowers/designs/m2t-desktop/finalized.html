@@ -1,0 +1,5318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>media2text — 监控控制台</title>
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('m2t-desktop-theme');
+        document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
+      } catch (_) {
+        document.documentElement.setAttribute('data-theme', 'light');
+      }
+    })();
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root,
+    [data-theme="light"] {
+      --bg-app: #f4f4f5;
+      --bg-panel: #ffffff;
+      --bg-elevated: #ececee;
+      --bg-hover: #e4e4e7;
+      --border: #d4d4d8;
+      --border-subtle: #e4e4e7;
+      --text: #18181b;
+      --text-muted: #52525b;
+      --text-dim: #a1a1aa;
+      --accent: #2563eb;
+      --accent-hover: #1d4ed8;
+      --green: #16a34a;
+      --yellow: #ca8a04;
+      --red: #dc2626;
+      --gray: #71717a;
+      --composer-bg: #ffffff;
+      --composer-border: #e4e4e7;
+      --send-fg: #ffffff;
+      --send-bg: #27272a;
+      --video-stage-bg: #0a0a0c;
+      --sidebar-w: 240px;
+      --sidebar-collapsed-w: 56px;
+      --right-w: 360px;
+      --right-collapsed-w: 48px;
+      --grip-w: 6px;
+      --center-min-w: 100px;
+      --right-agent-h: 320px;
+      --center-max-w: 1120px;
+      --center-edge-pad: 32px;
+      --radius: 8px;
+      --font: 'Geist', system-ui, sans-serif;
+      --mono: 'JetBrains Mono', ui-monospace, monospace;
+    }
+
+    [data-theme="dark"] {
+      --bg-app: #121214;
+      --bg-panel: #1c1c21;
+      --bg-elevated: #25252d;
+      --bg-hover: #2e2e38;
+      --border: #3f3f48;
+      --border-subtle: #2a2a32;
+      --text: #ececef;
+      --text-muted: #9898a4;
+      --text-dim: #6b6b76;
+      --accent: #3b82f6;
+      --accent-hover: #2563eb;
+      --green: #22c55e;
+      --yellow: #eab308;
+      --red: #ef4444;
+      --gray: #71717a;
+      --composer-bg: #25252d;
+      --composer-border: #3f3f48;
+      --send-fg: #ffffff;
+      --send-bg: #ececef;
+      --video-stage-bg: #0a0a0c;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      font-family: var(--font);
+      font-size: 13px;
+      color: var(--text);
+      background: var(--bg-app);
+      overflow: hidden;
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation: none !important; transition: none !important; }
+    }
+
+    .creator-list,
+    .history-list,
+    .manage-list-scroll,
+    .settings-scroll,
+    .transcript-body,
+    .chat-scroll,
+    .timeline-scroll {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border) transparent;
+    }
+    .creator-list::-webkit-scrollbar,
+    .history-list::-webkit-scrollbar,
+    .manage-list-scroll::-webkit-scrollbar,
+    .settings-scroll::-webkit-scrollbar,
+    .transcript-body::-webkit-scrollbar,
+    .chat-scroll::-webkit-scrollbar,
+    .timeline-scroll::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .creator-list::-webkit-scrollbar-track,
+    .history-list::-webkit-scrollbar-track,
+    .manage-list-scroll::-webkit-scrollbar-track,
+    .settings-scroll::-webkit-scrollbar-track,
+    .transcript-body::-webkit-scrollbar-track,
+    .chat-scroll::-webkit-scrollbar-track,
+    .timeline-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .creator-list::-webkit-scrollbar-thumb,
+    .history-list::-webkit-scrollbar-thumb,
+    .manage-list-scroll::-webkit-scrollbar-thumb,
+    .settings-scroll::-webkit-scrollbar-thumb,
+    .transcript-body::-webkit-scrollbar-thumb,
+    .chat-scroll::-webkit-scrollbar-thumb,
+    .timeline-scroll::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 99px;
+      border: 2px solid transparent;
+      background-clip: padding-box;
+    }
+    .creator-list::-webkit-scrollbar-thumb:hover,
+    .history-list::-webkit-scrollbar-thumb:hover,
+    .manage-list-scroll::-webkit-scrollbar-thumb:hover,
+    .settings-scroll::-webkit-scrollbar-thumb:hover,
+    .transcript-body::-webkit-scrollbar-thumb:hover,
+    .chat-scroll::-webkit-scrollbar-thumb:hover,
+    .timeline-scroll::-webkit-scrollbar-thumb:hover {
+      background: var(--text-dim);
+    }
+
+    .app {
+      display: grid;
+      grid-template-columns:
+        var(--sidebar-w) var(--grip-w) minmax(var(--center-min-w), 1fr) var(--grip-w) var(--right-w);
+      grid-template-rows: 1fr;
+      height: 100vh;
+      transition: grid-template-columns 0.2s ease;
+    }
+    /* 固定列位：拖动手柄 display:none 时会脱离自动流，导致中栏挤进 0px 列 */
+    .panel-left { grid-column: 1; grid-row: 1; }
+    .col-resize-left { grid-column: 2; grid-row: 1; }
+    .center { grid-column: 3; grid-row: 1; }
+    .col-resize-right { grid-column: 4; grid-row: 1; }
+    .panel-right { grid-column: 5; grid-row: 1; }
+    .app.is-resizing { transition: none; }
+    .app.left-collapsed {
+      grid-template-columns:
+        var(--sidebar-collapsed-w) 0px minmax(0, 1fr) var(--grip-w) var(--right-w);
+    }
+    .app.right-collapsed {
+      grid-template-columns:
+        var(--sidebar-w) var(--grip-w) minmax(0, 1fr) 0px var(--right-collapsed-w);
+    }
+    .app.both-collapsed {
+      grid-template-columns:
+        var(--sidebar-collapsed-w) 0px minmax(0, 1fr) 0px var(--right-collapsed-w);
+    }
+    .app.left-collapsed .col-resize-left,
+    .app.right-collapsed .col-resize-right {
+      display: none;
+      width: 0 !important;
+      min-width: 0 !important;
+      padding: 0;
+      border: none;
+      pointer-events: none;
+    }
+
+    .col-resize {
+      position: relative;
+      z-index: 6;
+      min-width: 0;
+      cursor: col-resize;
+      touch-action: none;
+      background: transparent;
+    }
+    .col-resize::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -5px;
+      right: -5px;
+    }
+    .col-resize::after {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 50%;
+      width: 1px;
+      transform: translateX(-50%);
+      background: var(--border-subtle);
+      pointer-events: none;
+      transition: background 0.15s ease, width 0.15s ease;
+    }
+    .col-resize:hover::after,
+    .col-resize.is-dragging::after {
+      width: 2px;
+      background: rgba(59, 130, 246, 0.55);
+    }
+    .col-resize:hover,
+    .col-resize.is-dragging {
+      background: rgba(59, 130, 246, 0.06);
+    }
+
+    body.resize-col-active,
+    body.resize-col-active * {
+      cursor: col-resize !important;
+      user-select: none !important;
+    }
+    body.resize-row-active,
+    body.resize-row-active * {
+      cursor: row-resize !important;
+      user-select: none !important;
+    }
+    .app.both-collapsed .center {
+      width: 100%;
+      min-width: 0;
+      max-width: none;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    .app.both-collapsed .center-toolbar,
+    .app.both-collapsed .center-body {
+      width: 100%;
+      max-width: none;
+      margin: 0;
+      box-sizing: border-box;
+    }
+    .app.both-collapsed .video-area {
+      width: 100%;
+      padding: 12px 16px;
+      align-items: center;
+      justify-content: center;
+    }
+    .app.left-collapsed .center,
+    .app.right-collapsed .center {
+      min-width: 0;
+    }
+
+    .panel-left {
+      display: flex;
+      flex-direction: row;
+      min-width: 0;
+      min-height: 0;
+      height: 100%;
+      overflow: hidden;
+      position: relative;
+    }
+
+    /* Shared panel */
+    .panel {
+      background: var(--bg-panel);
+      border-right: 1px solid var(--border-subtle);
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+    }
+    .panel-right {
+      border-right: none;
+      border-left: 1px solid var(--border-subtle);
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-shrink: 0;
+      gap: 8px;
+    }
+
+    /* 左右栏统一标题栏（与中栏 toolbar 同高） */
+    .side-panel-header {
+      height: 44px;
+      min-height: 44px;
+      padding: 0 10px 0 12px;
+      background: var(--bg-panel);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .side-panel-title {
+      margin: 0;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+      line-height: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .panel-collapse-btn {
+      width: 28px;
+      height: 28px;
+      flex-shrink: 0;
+      font-size: 16px;
+      line-height: 1;
+      color: var(--text-dim);
+    }
+    .panel-collapse-btn:hover {
+      color: var(--text);
+      background: var(--bg-hover);
+    }
+
+    .icon-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .icon-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .icon-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    /* Left: Daemon (above user bar) */
+    .left-daemon-wrap {
+      flex-shrink: 0;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+    }
+    .daemon-card {
+      margin: 0;
+      padding: 10px 12px;
+      background: var(--bg-panel);
+      border: none;
+      border-radius: 0;
+    }
+    .daemon-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+    .daemon-status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+    }
+    .status-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-dot.live { background: var(--green); box-shadow: 0 0 8px rgba(34,197,94,0.5); }
+    .app.daemon-stopped .status-dot.live {
+      background: var(--gray);
+      box-shadow: none;
+    }
+    .daemon-status strong { font-size: 13px; font-weight: 600; }
+    .daemon-card-actions {
+      display: flex;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .icon-btn-danger { color: #fca5a5; }
+    .icon-btn-danger:hover {
+      background: rgba(239,68,68,0.12);
+      color: #fecaca;
+    }
+    .daemon-log-toggle.active {
+      background: rgba(59,130,246,0.14);
+      color: var(--accent);
+    }
+    .daemon-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      line-height: 1.5;
+    }
+    .daemon-log-lines {
+      margin: 8px 0 0;
+      padding: 8px 10px;
+      background: var(--bg-app);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      font-family: var(--mono);
+      font-size: 10px;
+      line-height: 1.45;
+      color: var(--text-dim);
+      white-space: pre;
+      overflow: hidden;
+      max-height: calc(1.45em * 5 + 16px);
+    }
+    .daemon-log-lines[hidden] { display: none !important; }
+    .btn {
+      padding: 6px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-hover);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .btn:hover { background: #36363f; }
+    .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    .btn-primary {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-sm {
+      padding: 4px 10px;
+      font-size: 11px;
+    }
+    .btn-danger {
+      background: transparent;
+      border-color: #7f1d1d;
+      color: #fca5a5;
+    }
+    .btn-danger:hover { background: rgba(239,68,68,0.12); }
+    .btn-record {
+      background: var(--red);
+      border-color: var(--red);
+      color: #fff;
+      font-weight: 600;
+      padding: 8px 16px;
+    }
+    .btn-record:hover { background: #dc2626; }
+
+    /* Left user bar + menu */
+    .left-user-wrap {
+      position: relative;
+      flex-shrink: 0;
+      padding: 8px;
+      border-top: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+    }
+    .left-user-bar {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      cursor: pointer;
+      font-family: var(--font);
+      text-align: left;
+      color: inherit;
+    }
+    .left-user-bar:hover { background: var(--bg-hover); border-color: var(--border); }
+    .left-user-bar[aria-expanded="true"] {
+      background: rgba(59,130,246,0.1);
+      border-color: rgba(59,130,246,0.35);
+    }
+    .left-user-bar .avatar { width: 32px; height: 32px; font-size: 13px; }
+    .user-meta { flex: 1; min-width: 0; }
+    .user-name {
+      display: block;
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .user-hint {
+      display: block;
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+    .user-chevron {
+      font-size: 10px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+      transition: transform 0.15s ease;
+    }
+    .left-user-bar[aria-expanded="true"] .user-chevron { transform: rotate(180deg); }
+    .user-menu {
+      position: fixed;
+      z-index: 110;
+      min-width: 200px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(0,0,0,0.45);
+      padding: 6px;
+      display: none;
+    }
+    .user-menu.open { display: block; }
+    .user-menu-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 13px;
+      font-family: var(--font);
+      cursor: pointer;
+      text-align: left;
+    }
+    .user-menu-item:hover { background: var(--bg-hover); }
+    .user-menu-item.active { background: rgba(59,130,246,0.15); color: #93c5fd; }
+    .user-menu-icon {
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      flex-shrink: 0;
+    }
+    .user-menu-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 90;
+      display: none;
+    }
+    .user-menu-backdrop.open { display: block; }
+
+    .rail-user-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+      margin-top: 4px;
+    }
+    .rail-user-btn:hover { background: var(--bg-hover); color: var(--text); }
+
+    /* Creator list */
+    .creator-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 4px 8px 8px;
+      min-height: 0;
+    }
+    .creator-list-empty {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 24px 16px;
+      text-align: center;
+      min-height: 120px;
+    }
+    .creator-list-empty[hidden] { display: none !important; }
+    .creator-list-empty .empty-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .creator-list-empty .empty-hint {
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+    .creator-item {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: var(--radius);
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .creator-item:hover { background: var(--bg-hover); }
+    .creator-item.selected {
+      background: rgba(59,130,246,0.12);
+      border-color: rgba(59,130,246,0.35);
+    }
+    .creator-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+    .avatar-wrap { position: relative; flex-shrink: 0; }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+    }
+    .light {
+      position: absolute;
+      bottom: -1px;
+      right: -1px;
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      border: 2px solid var(--bg-panel);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1;
+    }
+    .light::after {
+      content: attr(data-abbr);
+    }
+    .light.green { background: var(--green); }
+    .light.yellow { background: var(--yellow); }
+    .light.red { background: var(--red); box-shadow: 0 0 6px rgba(239,68,68,0.6); }
+    .light.gray { background: var(--gray); }
+
+    @keyframes avatar-live-breathe {
+      0%, 100% { transform: scale(1); }
+      50% { transform: scale(0.88); }
+    }
+
+    /* 直播中：红色固定外环 + 头像在环内呼吸缩放 */
+    .avatar-wrap.is-live {
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .avatar-wrap.is-live::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid var(--red);
+      box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.15), 0 0 10px rgba(239, 68, 68, 0.28);
+      pointer-events: none;
+    }
+    .avatar-wrap.is-live .avatar {
+      animation: avatar-live-breathe 2.6s ease-in-out infinite;
+      transform-origin: center center;
+      border-color: transparent;
+      background: var(--bg-panel);
+    }
+    .avatar-wrap.is-live .light {
+      z-index: 2;
+    }
+
+    .creator-info { min-width: 0; flex: 1; }
+    .creator-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .creator-sub {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 2px;
+    }
+
+    /* Center — grid-column 见 .app 规则 */
+    .center {
+      background: var(--bg-app);
+      border-right: none;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      overflow: hidden;
+    }
+
+    .center-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: nowrap;
+      gap: 8px;
+      min-width: 0;
+      height: 44px;
+      min-height: 44px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      flex-shrink: 0;
+      -webkit-app-region: drag;
+      overflow: hidden;
+      box-sizing: border-box;
+    }
+    .center-toolbar .tabs,
+    .center-toolbar .center-toolbar-left,
+    .center-toolbar button,
+    .center-toolbar .badge {
+      -webkit-app-region: no-drag;
+    }
+    .center-toolbar-left {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+      flex: 1;
+    }
+    .center-title {
+      font-size: 14px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .center-toolbar .tabs { flex-shrink: 0; }
+    .badge {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .badge-live { background: rgba(239,68,68,0.15); color: #fca5a5; border: 1px solid rgba(239,68,68,0.3); }
+    .badge-recording { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+
+    .tabs { display: flex; gap: 2px; }
+    .tab {
+      padding: 5px 12px;
+      border-radius: 6px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .tab.active { background: var(--bg-elevated); color: var(--text); font-weight: 500; }
+    .tab:hover:not(.active) { color: var(--text); }
+
+    .video-area {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 16px 24px;
+      min-height: 0;
+      min-width: 0;
+      width: 100%;
+      position: relative;
+      overflow: auto;
+    }
+    /* 16:9 视窗：尺寸由视窗高度推导，避免固定 320×180 在窄栏中被压扁 */
+    .video-viewport {
+      --video-max-h: calc(100vh - 220px);
+      aspect-ratio: 16 / 9;
+      width: min(100%, 960px, calc(var(--video-max-h) * 16 / 9));
+      max-height: var(--video-max-h);
+      flex-shrink: 0;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--video-stage-bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      position: relative;
+    }
+    .video-frame {
+      width: 100%;
+      max-width: 100%;
+      height: 100%;
+      max-height: 100%;
+      background: var(--video-stage-bg);
+      overflow: hidden;
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    /* 直播竖屏流：在 16:9 视窗内居中，高度优先 */
+    #view-live .video-frame,
+    #view-playback .video-frame {
+      aspect-ratio: 9 / 16;
+      width: auto;
+      height: 100%;
+      max-height: 100%;
+      max-width: 100%;
+      border: none;
+      border-radius: 0;
+    }
+    #view-playback .video-viewport {
+      border-color: rgba(59, 130, 246, 0.3);
+    }
+    .video-placeholder {
+      text-align: center;
+      color: var(--text-dim);
+    }
+    .video-placeholder .play-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 50%;
+      border: 2px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 16px;
+      font-size: 24px;
+      color: var(--text-muted);
+    }
+    .video-overlay-top {
+      position: absolute;
+      top: 12px;
+      left: 12px;
+      right: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .flv-badge {
+      display: none;
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 4px 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 4px;
+      color: #a5b4fc;
+    }
+    body[data-ui-debug="1"] .flv-badge { display: inline; }
+    .record-banner {
+      margin-top: 20px;
+      padding: 16px 20px;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.25);
+      border-radius: var(--radius);
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      max-width: 960px;
+      width: 100%;
+    }
+    .record-banner-text { flex: 1; }
+    .record-banner-text strong { display: block; font-size: 14px; margin-bottom: 4px; color: #fca5a5; }
+    .record-banner-text span { font-size: 12px; color: var(--text-muted); }
+
+    /* Right: transcript */
+    .right-split {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+    .transcript-pane {
+      flex: 1 1 0;
+      min-height: 100px;
+      display: flex;
+      flex-direction: column;
+    }
+    .row-resize {
+      flex: 0 0 var(--grip-w);
+      height: var(--grip-w);
+      cursor: row-resize;
+      touch-action: none;
+      position: relative;
+      background: transparent;
+      border-top: 1px solid var(--border-subtle);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .row-resize::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: -5px;
+      bottom: -5px;
+    }
+    .row-resize::after {
+      content: '';
+      position: absolute;
+      left: 12px;
+      right: 12px;
+      top: 50%;
+      height: 1px;
+      transform: translateY(-50%);
+      background: var(--border-subtle);
+      pointer-events: none;
+      transition: background 0.15s ease, height 0.15s ease;
+    }
+    .row-resize:hover::after,
+    .row-resize.is-dragging::after {
+      height: 2px;
+      background: rgba(59, 130, 246, 0.55);
+    }
+    .row-resize:hover,
+    .row-resize.is-dragging {
+      background: rgba(59, 130, 246, 0.06);
+    }
+    .tab-row {
+      display: flex;
+      gap: 2px;
+      padding: 8px 12px 0;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .transcript-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      font-size: 13px;
+      line-height: 1.55;
+    }
+    .transcript-body .seg {
+      margin-bottom: 10px;
+      padding-left: 8px;
+      border-left: 2px solid var(--border);
+    }
+    .transcript-body .ts {
+      font-family: var(--mono);
+      font-size: 10px;
+      color: var(--accent);
+      margin-bottom: 2px;
+    }
+    .transcript-body .partial-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px dashed var(--border-subtle);
+    }
+
+    /* Agent chat */
+    .agent-pane {
+      flex: 0 0 var(--right-agent-h);
+      min-height: 160px;
+      max-height: calc(100% - 120px);
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-app);
+      min-width: 0;
+    }
+    .agent-header {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .agent-header span { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .model-pill {
+      font-family: var(--mono);
+      font-size: 10px;
+      padding: 2px 8px;
+      background: var(--bg-elevated);
+      border-radius: 4px;
+      color: var(--text-dim);
+    }
+
+    .chat-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    .msg { max-width: 100%; }
+    .msg-user {
+      align-self: flex-end;
+      background: var(--accent);
+      color: #fff;
+      padding: 8px 12px;
+      border-radius: 12px 12px 4px 12px;
+      font-size: 13px;
+      max-width: 85%;
+    }
+    .msg-assistant {
+      font-size: 13px;
+      line-height: 1.5;
+      color: var(--text);
+    }
+    .msg-assistant .thinking {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-style: italic;
+      margin-bottom: 6px;
+      padding: 6px 8px;
+      background: var(--bg-elevated);
+      border-radius: 6px;
+      border-left: 2px solid var(--border);
+    }
+    .tool-card {
+      margin-top: 8px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+      font-size: 12px;
+    }
+    .tool-card-header {
+      padding: 6px 10px;
+      background: var(--bg-elevated);
+      font-family: var(--mono);
+      font-size: 11px;
+      color: #a5b4fc;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .tool-card-body {
+      padding: 8px 10px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      max-height: 80px;
+      overflow: hidden;
+    }
+
+    .composer {
+      margin: 0 10px 10px;
+      border-top: none;
+      flex-shrink: 0;
+    }
+    .agent-composer {
+      display: flex;
+      flex-direction: column;
+      border: 1px solid var(--composer-border);
+      border-radius: 10px;
+      background: var(--composer-bg);
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+    }
+    [data-theme="dark"] .agent-composer {
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+    }
+    .agent-composer-input {
+      width: 100%;
+      resize: none;
+      min-height: 40px;
+      max-height: 120px;
+      padding: 12px 14px 6px;
+      border: none;
+      background: transparent;
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    .agent-composer-input:focus { outline: none; }
+    .agent-composer-input::placeholder { color: var(--text-dim); }
+    .agent-composer-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 4px 8px 8px;
+      min-width: 0;
+    }
+    .agent-composer-left {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+    .agent-mode-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      font-family: var(--font);
+      white-space: nowrap;
+    }
+    .agent-mode-pill:hover { background: var(--bg-hover); }
+    .agent-mode-icon {
+      font-size: 14px;
+      line-height: 1;
+      color: var(--text-muted);
+    }
+    .agent-mode-chevron {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-left: 2px;
+    }
+    .agent-model-wrap {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      min-width: 0;
+      max-width: min(160px, 42%);
+    }
+    .agent-model-select {
+      appearance: none;
+      -webkit-appearance: none;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-family: var(--font);
+      font-weight: 500;
+      padding: 4px 20px 4px 2px;
+      cursor: pointer;
+      min-width: 0;
+      max-width: 100%;
+      text-overflow: ellipsis;
+    }
+    .agent-model-select:hover { color: var(--text); }
+    .agent-model-select:focus {
+      outline: none;
+      color: var(--text);
+    }
+    .agent-model-wrap::after {
+      content: '▾';
+      position: absolute;
+      right: 2px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 10px;
+      color: var(--text-dim);
+      pointer-events: none;
+    }
+    .agent-composer-actions {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      flex-shrink: 0;
+    }
+    .agent-icon-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      padding: 0;
+    }
+    .agent-icon-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .agent-send-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 50%;
+      background: var(--send-bg);
+      color: var(--send-fg);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      margin-left: 2px;
+      flex-shrink: 0;
+    }
+    .agent-send-btn:hover { opacity: 0.88; }
+    .agent-send-btn svg {
+      width: 14px;
+      height: 14px;
+      display: block;
+    }
+    [data-theme="dark"] .agent-send-btn {
+      color: #121214;
+    }
+
+    /* Collapsed rails */
+    .rail {
+      display: none;
+      flex-direction: column;
+      align-items: stretch;
+      flex-shrink: 0;
+      background: var(--bg-panel);
+    }
+
+    .left-rail {
+      width: var(--sidebar-collapsed-w);
+      border-right: 1px solid var(--border-subtle);
+      padding: 6px 0;
+      gap: 0;
+      min-height: 0;
+    }
+    .app.left-collapsed .left-rail {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+    .app.left-collapsed .left-content { display: none !important; }
+
+    .right-rail {
+      width: var(--right-collapsed-w);
+      border-left: 1px solid var(--border-subtle);
+      padding: 8px 0;
+      align-items: center;
+    }
+    .app.right-collapsed .right-rail { display: flex; }
+    .app.right-collapsed .right-content { display: none !important; }
+
+    .left-content {
+      flex: 1;
+      min-width: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .left-main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .rail-section-top,
+    .rail-section-bottom {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 6px;
+      padding: 0 6px;
+      flex-shrink: 0;
+    }
+    .rail-section-bottom {
+      padding-top: 8px;
+      padding-bottom: 6px;
+      border-top: 1px solid var(--border-subtle);
+      margin-top: auto;
+      gap: 8px;
+    }
+
+    .rail-expand-btn {
+      width: 44px;
+      height: 32px;
+      border: none;
+      border-radius: 6px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font);
+    }
+    .rail-expand-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .rail-expand-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+    .rail-daemon {
+      width: 44px;
+      height: 44px;
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+    }
+    .rail-daemon:hover { background: var(--bg-hover); border-color: var(--border); }
+    .rail-daemon-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--gray);
+    }
+    .rail-daemon-dot.live {
+      background: var(--green);
+      box-shadow: 0 0 8px rgba(34,197,94,0.45);
+    }
+    .app.daemon-stopped .rail-daemon-dot.live {
+      background: var(--gray);
+      box-shadow: none;
+    }
+
+    .rail-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
+      padding: 8px 6px;
+      width: 100%;
+    }
+    .rail-scroll::-webkit-scrollbar { width: 4px; }
+    .rail-scroll::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    .rail-dot {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 1px solid transparent;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .rail-dot:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .rail-dot.selected {
+      background: rgba(59, 130, 246, 0.14);
+      border-color: rgba(59, 130, 246, 0.45);
+      color: var(--text);
+      box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.28);
+    }
+    .rail-dot .light {
+      width: 10px;
+      height: 10px;
+      bottom: 0;
+      right: 0;
+      border-width: 2px;
+      z-index: 2;
+    }
+    .rail-dot.is-live::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 2px solid var(--red);
+      box-shadow: 0 0 0 1px rgba(239, 68, 68, 0.15), 0 0 10px rgba(239, 68, 68, 0.28);
+      pointer-events: none;
+    }
+    .rail-dot.is-live > span:first-child {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background: var(--bg-panel);
+      animation: avatar-live-breathe 2.6s ease-in-out infinite;
+      transform-origin: center center;
+    }
+
+    .rail-mini-btn {
+      width: 44px;
+      height: 28px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 10px;
+      font-weight: 600;
+      cursor: pointer;
+      font-family: var(--font);
+      letter-spacing: 0.02em;
+    }
+    .rail-mini-btn:hover { background: var(--bg-hover); color: var(--text); }
+    .rail-mini-btn.danger {
+      color: #fca5a5;
+      border-color: rgba(127,29,29,0.6);
+    }
+    .rail-mini-btn.danger:hover { background: rgba(239,68,68,0.12); }
+
+    .right-rail .rail-expand-btn { transform: scaleX(-1); }
+
+    [data-pretext] { overflow: hidden; }
+
+    /* Center body: single active view (avoid stacked views) */
+    .center-body {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+    }
+    .center-view {
+      display: none;
+      flex-direction: column;
+      position: absolute;
+      inset: 0;
+      overflow: hidden;
+    }
+    .center-view.active { display: flex; flex-direction: column; }
+
+    .history-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+    .chip {
+      padding: 4px 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .chip.active { background: var(--bg-elevated); color: var(--text); border-color: var(--accent); }
+    .chip:hover:not(.active) { background: var(--bg-hover); }
+    .history-search {
+      margin-left: auto;
+      padding: 5px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-app);
+      color: var(--text);
+      font-size: 12px;
+      width: 160px;
+      font-family: var(--font);
+    }
+    .history-search:focus { outline: 2px solid var(--accent); }
+
+    .history-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px 12px 16px;
+    }
+    .history-group {
+      margin-bottom: 16px;
+    }
+    .history-group-title {
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      padding: 8px 8px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .history-group-title .merge-badge {
+      font-size: 10px;
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: rgba(167,139,250,0.15);
+      color: #c4b5fd;
+      text-transform: none;
+      letter-spacing: 0;
+    }
+    .session-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid transparent;
+      cursor: pointer;
+      margin-bottom: 4px;
+    }
+    .session-row:hover { background: var(--bg-hover); }
+    .session-row.selected {
+      background: rgba(59,130,246,0.1);
+      border-color: rgba(59,130,246,0.35);
+    }
+    .session-row .dot-col {
+      width: 8px;
+      flex-shrink: 0;
+    }
+    .session-row .dot-col .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+    .session-row.selected .dot-col .dot { background: var(--accent); }
+    .session-main { flex: 1; min-width: 0; }
+    .session-time {
+      font-size: 13px;
+      font-weight: 500;
+      font-family: var(--mono);
+    }
+    .session-meta {
+      font-size: 11px;
+      color: var(--text-dim);
+      margin-top: 3px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    .tag {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      background: var(--bg-elevated);
+    }
+    .tag.ok { color: #86efac; }
+    .tag.miss { color: var(--text-dim); opacity: 0.7; }
+    .tag.fail { color: #fca5a5; }
+    .tag.cloud { color: #93c5fd; }
+    .session-size {
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .merged-row {
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px dashed var(--border);
+      background: rgba(167,139,250,0.06);
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .merged-row strong { font-size: 12px; color: #c4b5fd; }
+    .merged-row span { font-size: 11px; color: var(--text-dim); }
+
+    .breadcrumb-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      flex-shrink: 0;
+      font-size: 12px;
+    }
+    .breadcrumb-bar button {
+      border: none;
+      background: none;
+      color: var(--accent);
+      cursor: pointer;
+      font-size: 12px;
+      font-family: var(--font);
+      padding: 0;
+    }
+    .breadcrumb-bar button:hover { text-decoration: underline; }
+    .breadcrumb-bar .sep { color: var(--text-dim); }
+    .breadcrumb-bar .current { color: var(--text-muted); font-family: var(--mono); }
+
+    .playback-meta {
+      display: flex;
+      gap: 16px;
+      padding: 8px 16px 0;
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-shrink: 0;
+    }
+    .playback-meta span { font-family: var(--mono); }
+
+    .summary-preview h3 {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text);
+    }
+    .summary-preview p {
+      font-size: 13px;
+      line-height: 1.55;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+    .summary-preview ul {
+      margin-left: 16px;
+      color: var(--text-muted);
+      font-size: 13px;
+      line-height: 1.5;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      padding: 10px 16px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      font-size: 12px;
+      color: var(--text);
+      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+      z-index: 9999;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      max-width: min(90vw, 420px);
+      text-align: center;
+    }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    .session-row.hidden { display: none; }
+    .history-group.hidden { display: none; }
+
+    .video-placeholder { cursor: pointer; }
+    .video-placeholder:hover .play-icon { color: var(--accent); }
+
+    .chip.active { background: rgba(59,130,246,0.2); border-color: rgba(59,130,246,0.5); color: var(--text); }
+
+    .session-row.disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .session-row.disabled:hover { background: transparent; }
+
+    .daemon-card.stopped .status-dot { background: var(--gray); box-shadow: none; }
+    .daemon-card.stopped strong::after { content: '（已停止）'; color: var(--text-dim); font-weight: 400; }
+
+    .record-banner.hidden { display: none; }
+    .badge-recording { background: rgba(34,197,94,0.15); color: #86efac; border: 1px solid rgba(34,197,94,0.3); }
+
+    .center-toolbar.context-settings .center-title,
+    .center-toolbar.context-settings #center-badge { display: none; }
+    .center-toolbar.context-settings .center-context-label {
+      display: inline;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .center-context-label { display: none; }
+
+    /* Settings (配置) */
+    .settings-page { flex: 1; min-height: 0; }
+    .settings-head {
+      display: flex;
+      justify-content: center;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+    .settings-head-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .settings-save-hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      font-weight: 500;
+    }
+    .settings-save-hint.dirty { color: #fde047; }
+    .settings-save-hint.saved { color: #86efac; }
+    .settings-save-hint.error { color: #fca5a5; }
+    .config-callout {
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 10px 12px;
+      margin-bottom: 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-subtle);
+    }
+    .config-callout.warn {
+      background: rgba(234, 179, 8, 0.08);
+      border-color: rgba(234, 179, 8, 0.35);
+      color: #fde68a;
+    }
+    .config-callout.info {
+      background: rgba(59, 130, 246, 0.08);
+      border-color: rgba(59, 130, 246, 0.3);
+      color: #bfdbfe;
+    }
+    .settings-head-inner {
+      width: 100%;
+      max-width: 640px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .config-panels-wrap {
+      width: 100%;
+      max-width: 640px;
+      margin: 0 auto;
+    }
+    .platform-config-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      margin-bottom: 12px;
+      overflow: hidden;
+    }
+    .platform-config-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+    }
+    .platform-config-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 13px;
+      font-weight: 700;
+      flex-shrink: 0;
+      border: 1px solid var(--border-subtle);
+    }
+    .platform-config-icon.douyin { background: rgba(239, 68, 68, 0.12); color: #fca5a5; }
+    .platform-config-icon.bilibili { background: rgba(59, 130, 246, 0.12); color: #93c5fd; }
+    .platform-config-meta { flex: 1; min-width: 0; }
+    .platform-config-meta strong {
+      display: block;
+      font-size: 13px;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .platform-config-meta span {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .platform-config-status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+    }
+    .platform-config-status.ok {
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(34, 197, 94, 0.08);
+    }
+    .platform-config-status.warn {
+      color: #fde047;
+      border-color: rgba(234, 179, 8, 0.35);
+      background: rgba(234, 179, 8, 0.08);
+    }
+    .platform-config-body { padding: 10px 14px 12px; }
+    .platform-config-body .field-row { padding: 7px 0; }
+    .platform-config-status .auth-inline {
+      margin-left: 4px;
+      padding: 0;
+      border: none;
+      background: none;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: var(--font);
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+    .platform-config-status .auth-inline:hover { color: var(--text); }
+    .platform-config-status .btn { margin: 0; }
+    .config-head-add-provider[hidden] { display: none !important; }
+    .provider-row-list { display: flex; flex-direction: column; gap: 8px; }
+    .provider-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 14px;
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      transition: border-color 0.15s ease, background 0.15s ease;
+    }
+    .provider-row:hover { background: var(--bg-hover); }
+    .provider-row-drag {
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1;
+      letter-spacing: -2px;
+      cursor: grab;
+      user-select: none;
+      flex-shrink: 0;
+    }
+    .provider-row-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+      font-weight: 700;
+      flex-shrink: 0;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+    }
+    .provider-row-body { flex: 1; min-width: 0; }
+    .provider-row-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+    .provider-row-url {
+      font-size: 11px;
+      color: var(--accent);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .provider-row-status {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .provider-row-status.ok {
+      color: #86efac;
+      border-color: rgba(34, 197, 94, 0.35);
+      background: rgba(34, 197, 94, 0.08);
+    }
+    .provider-row-status.warn {
+      color: #fde047;
+      border-color: rgba(234, 179, 8, 0.35);
+      background: rgba(234, 179, 8, 0.08);
+    }
+    .provider-row-status.dim {
+      color: var(--text-dim);
+      background: var(--bg-elevated);
+    }
+    #config-ai-agent-card {
+      margin-top: 20px;
+    }
+    .provider-row-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex-shrink: 0;
+    }
+    .provider-icon-btn {
+      width: 32px;
+      height: 32px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: var(--font);
+      font-size: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .provider-icon-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .provider-detail-head {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+      max-width: 640px;
+      width: 100%;
+    }
+    .provider-detail-head .btn-ghost {
+      font-size: 12px;
+      padding: 6px 10px;
+    }
+    .provider-detail-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .provider-models {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 11px;
+      margin-top: 8px;
+    }
+    .provider-models th {
+      text-align: left;
+      color: var(--text-dim);
+      font-weight: 600;
+      padding: 4px 6px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .provider-models td {
+      padding: 6px;
+      border-bottom: 1px solid var(--border-subtle);
+      vertical-align: middle;
+    }
+    .provider-models tr:last-child td { border-bottom: none; }
+    .provider-models .config-input { width: 100%; max-width: none; }
+    .provider-models .config-select { max-width: none; width: 100%; }
+    .provider-model-actions { display: flex; gap: 6px; margin-top: 8px; }
+    .config-panel-footer {
+      font-size: 11px;
+      color: var(--text-dim);
+      padding: 4px 4px 12px;
+      line-height: 1.45;
+    }
+    .setting-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .setting-card-head h3 { margin-bottom: 0; }
+    .field-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 12px;
+    }
+    .field-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .field-row:first-of-type { padding-top: 0; }
+    .field-row > label,
+    .field-row > span.field-label {
+      color: var(--text-muted);
+      flex: 1;
+      min-width: 0;
+    }
+    .field-control {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .field-unit {
+      font-size: 11px;
+      color: var(--text-dim);
+      min-width: 1.5em;
+    }
+    .config-input,
+    .config-select {
+      font-family: var(--font);
+      font-size: 12px;
+      color: var(--text);
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 5px 8px;
+      min-width: 0;
+    }
+    .config-input:focus-visible,
+    .config-select:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+      border-color: var(--accent);
+    }
+    .config-input[type="number"] { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+    .config-input[type="url"],
+    .config-input[type="password"],
+    .config-input[type="text"].wide,
+    textarea.config-input.wide { width: min(220px, 42vw); font-size: 11px; }
+    .config-select { max-width: 200px; cursor: pointer; }
+    .field-readonly {
+      font-size: 12px;
+      color: var(--text);
+      text-align: right;
+    }
+    .field-readonly.ok { color: #86efac; }
+    .field-readonly.warn { color: #fde047; }
+    .config-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    .config-segments {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      padding: 3px;
+      background: var(--bg-elevated);
+      border-radius: var(--radius);
+      border: 1px solid var(--border-subtle);
+    }
+    .config-segments .seg-btn {
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 12px;
+      font-weight: 500;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: var(--font);
+    }
+    .config-segments .seg-btn:hover { color: var(--text); background: var(--bg-hover); }
+    .config-segments .seg-btn.active {
+      background: rgba(59,130,246,0.2);
+      color: var(--text);
+      box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+    }
+    .settings-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+    .settings-scroll {
+      flex: 1;
+      overflow-y: auto;
+      padding: 16px;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .config-panel { display: none; }
+    .config-panel.active { display: block; }
+    .setting-card {
+      background: var(--bg-panel);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      margin-bottom: 12px;
+    }
+    .setting-card h3 {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 10px;
+      letter-spacing: 0.02em;
+    }
+    .setting-card .hint {
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.45;
+      margin-top: 8px;
+    }
+    .kv-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      font-size: 12px;
+    }
+    .kv-row:last-child { border-bottom: none; padding-bottom: 0; }
+    .kv-row:first-of-type { padding-top: 0; }
+    .kv-label { color: var(--text-muted); flex-shrink: 0; }
+    .kv-value {
+      color: var(--text);
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11px;
+      word-break: break-all;
+    }
+    .kv-value.plain { font-family: var(--font); font-size: 12px; }
+    .auth-badges { display: flex; flex-wrap: wrap; gap: 8px; }
+    .auth-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-elevated);
+    }
+    .auth-badge.ok { border-color: rgba(34,197,94,0.35); color: #86efac; }
+    .auth-badge.warn { border-color: rgba(234,179,8,0.35); color: #fde047; }
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 6px 0;
+    }
+    .toggle-row span { font-size: 12px; color: var(--text-muted); }
+    .toggle {
+      width: 40px;
+      height: 22px;
+      border-radius: 11px;
+      background: var(--border);
+      border: none;
+      cursor: pointer;
+      position: relative;
+      flex-shrink: 0;
+      transition: background 0.15s ease;
+    }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      background: #fff;
+      transition: transform 0.15s ease;
+    }
+    .toggle.on { background: var(--accent); }
+    .toggle.on::after { transform: translateX(18px); }
+    .tag-pill {
+      display: inline-block;
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      background: var(--bg-elevated);
+      color: var(--text-muted);
+      border: 1px solid var(--border-subtle);
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    .tag-pill.accent { background: rgba(59,130,246,0.15); color: #93c5fd; border-color: rgba(59,130,246,0.3); }
+
+    /* Manage (监控管理) — 列表 + 行下内联抽屉 */
+    .manage-top {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border-subtle);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+      background: var(--bg-panel);
+    }
+    .manage-top-left { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+    .manage-stats {
+      margin: 0;
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .manage-stats strong { color: var(--text); font-weight: 600; }
+    .manage-filters { display: flex; gap: 6px; flex-wrap: wrap; }
+    .manage-add {
+      display: flex;
+      gap: 8px;
+      flex: 1;
+      min-width: 280px;
+      max-width: 520px;
+    }
+    .manage-add input {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: var(--bg-elevated);
+      color: var(--text);
+      font-size: 12px;
+      font-family: var(--font);
+    }
+    .manage-add input::placeholder { color: var(--text-dim); }
+    .manage-body {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .manage-list-scroll {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .manage-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 12px;
+      border-radius: var(--radius);
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      cursor: pointer;
+      transition: border-color 0.12s ease, background 0.12s ease;
+    }
+    .manage-row:hover { background: var(--bg-hover); border-color: var(--border); }
+    .manage-row.selected {
+      border-color: rgba(59,130,246,0.5);
+      background: rgba(59,130,246,0.08);
+      box-shadow: 0 0 0 1px rgba(59,130,246,0.15);
+    }
+    .manage-row.hidden { display: none; }
+    .manage-row.dimmed { opacity: 0.6; }
+    .manage-row.dimmed:not(.selected) { border-style: dashed; }
+    .manage-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 2px solid var(--border-subtle);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+      color: var(--text-muted);
+      position: relative;
+      flex-shrink: 0;
+    }
+    .manage-avatar.lg { width: 48px; height: 48px; font-size: 16px; }
+    .manage-avatar .light { width: 10px; height: 10px; bottom: -1px; right: -1px; }
+    .manage-row-info { flex: 1; min-width: 0; }
+    .manage-row-name {
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .manage-row-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 3px;
+      font-size: 11px;
+      color: var(--text-dim);
+      flex-wrap: wrap;
+    }
+    .platform-tag { font-family: var(--mono); font-size: 10px; }
+    .manage-status-text { color: var(--text-muted); }
+    .manage-row-pills {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .manage-row-monitor {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-shrink: 0;
+      padding-left: 12px;
+      border-left: 1px solid var(--border-subtle);
+    }
+    .manage-row-monitor-label {
+      font-size: 11px;
+      color: var(--text-dim);
+    }
+    .manage-drawer {
+      display: grid;
+      grid-template-rows: 0fr;
+      margin: 0 0 4px 0;
+      border: 1px solid transparent;
+      border-radius: var(--radius);
+      background: var(--bg-elevated);
+      box-shadow: none;
+      overflow: hidden;
+      opacity: 0;
+      transition:
+        grid-template-rows 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+        opacity 0.24s ease,
+        margin 0.32s cubic-bezier(0.32, 0.72, 0, 1),
+        border-color 0.2s ease,
+        box-shadow 0.28s ease;
+    }
+    .manage-drawer.open {
+      grid-template-rows: 1fr;
+      margin: 0 0 8px 0;
+      opacity: 1;
+      border-color: rgba(59,130,246,0.4);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.28);
+    }
+    .manage-drawer-collapse { min-height: 0; overflow: hidden; }
+    .manage-drawer-inner {
+      padding: 14px 16px 16px;
+      border-top: 2px solid rgba(59,130,246,0.35);
+      opacity: 0;
+      transform: translateY(-6px);
+      transition:
+        opacity 0.22s ease 0.06s,
+        transform 0.32s cubic-bezier(0.32, 0.72, 0, 1) 0.04s;
+    }
+    .manage-drawer.open .manage-drawer-inner.is-visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+    .manage-row.selected { border-bottom-left-radius: 4px; border-bottom-right-radius: 4px; }
+    .manage-row.selected + .manage-drawer.open { margin-top: -4px; }
+    .inspector-head {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 14px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .inspector-head-text { flex: 1; min-width: 0; }
+    .inspector-head h3 {
+      font-size: 16px;
+      font-weight: 600;
+      margin: 0 0 4px;
+    }
+    .inspector-head .sub {
+      margin: 0;
+      font-size: 11px;
+      color: var(--text-dim);
+      font-family: var(--mono);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .inspector-head-actions {
+      display: flex;
+      gap: 8px;
+      flex-shrink: 0;
+    }
+    .inspector-grid {
+      display: grid;
+      grid-template-columns: minmax(200px, 1fr) minmax(280px, 1.4fr) minmax(180px, auto);
+      gap: 16px 20px;
+      align-items: start;
+    }
+    .inspector-block h4 {
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin: 0 0 8px;
+    }
+    .inspector-block .hint {
+      margin: 8px 0 0;
+      font-size: 11px;
+      color: var(--text-dim);
+      line-height: 1.45;
+    }
+    .detail-record-segments {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 6px;
+    }
+    .detail-record-segments .radio-opt {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 4px;
+      padding: 8px 10px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      cursor: pointer;
+      font-size: 11px;
+      color: var(--text-muted);
+      margin: 0;
+    }
+    .detail-record-segments .radio-opt:hover { background: var(--bg-hover); }
+    .detail-record-segments .radio-opt.selected {
+      border-color: rgba(59,130,246,0.45);
+      background: rgba(59,130,246,0.1);
+      color: var(--text);
+    }
+    .detail-record-segments .radio-opt input {
+      position: absolute;
+      opacity: 0;
+      pointer-events: none;
+    }
+    .detail-record-segments .radio-opt strong {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .detail-record-segments .radio-opt span {
+      font-size: 10px;
+      color: var(--text-dim);
+      line-height: 1.35;
+    }
+    .detail-actions {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .btn-ghost {
+      padding: 8px 12px;
+      font-size: 11px;
+      border-radius: 6px;
+      border: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      color: var(--text-muted);
+      cursor: pointer;
+      font-family: var(--font);
+      text-align: left;
+    }
+    .btn-ghost:hover { background: var(--bg-hover); color: var(--text); }
+    .btn-ghost.danger {
+      color: #fca5a5;
+      border-color: rgba(127,29,29,0.5);
+      background: transparent;
+    }
+    .btn-ghost.danger:hover { background: rgba(239,68,68,0.1); }
+
+    @media (max-width: 1100px) {
+      .inspector-grid { grid-template-columns: 1fr 1fr; }
+      .inspector-block.ops { grid-column: 1 / -1; }
+    }
+    @media (max-width: 900px) {
+      .manage-top { flex-direction: column; align-items: stretch; }
+      .manage-add { max-width: none; }
+      .inspector-grid { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 1024px) {
+      :root { --sidebar-w: 200px; --right-w: 300px; }
+    }
+    @media (max-width: 768px) {
+      .app {
+        grid-template-columns:
+          var(--sidebar-collapsed-w) 0px minmax(0, 1fr) 0px var(--right-collapsed-w);
+      }
+      .col-resize { display: none !important; }
+      .left-content, .right-content { display: none !important; }
+      .left-rail, .right-rail { display: flex; }
+    }
+  </style>
+</head>
+<body>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <div class="app" id="app">
+    <!-- LEFT SIDEBAR -->
+    <aside class="panel panel-left" aria-label="博主列表">
+      <div class="left-rail rail" aria-label="折叠快捷栏">
+        <div class="rail-section-top">
+          <button type="button" class="rail-expand-btn" id="expand-left" title="展开监控列表" aria-label="展开左栏">›</button>
+        </div>
+        <div class="rail-scroll" role="list" aria-label="博主快捷选择">
+          <div class="rail-dot" role="listitem" tabindex="0" data-creator="hexue" title="何同学 · 录制中">
+            <span>何</span><span class="light green" aria-hidden="true"></span>
+          </div>
+          <div class="rail-dot selected" role="listitem" tabindex="0" data-creator="laofanqie" title="老番茄 · 在播未录">
+            <span>老</span><span class="light red" aria-hidden="true"></span>
+          </div>
+          <div class="rail-dot" role="listitem" tabindex="0" data-creator="yingshi" title="影视飓风 · 收尾中">
+            <span>飓</span><span class="light yellow" aria-hidden="true"></span>
+          </div>
+          <div class="rail-dot" role="listitem" tabindex="0" data-creator="liyongle" title="李永乐老师 · 离线">
+            <span>李</span><span class="light gray" aria-hidden="true"></span>
+          </div>
+        </div>
+        <div class="rail-section-bottom">
+          <button type="button" class="rail-daemon" id="rail-daemon" title="Daemon 运行中 · 点击展开侧栏" aria-label="Daemon 状态">
+            <span class="rail-daemon-dot live" id="rail-daemon-dot" aria-hidden="true"></span>
+          </button>
+          <button type="button" class="rail-user-btn" id="rail-user-menu" title="用户菜单 · 系统配置 / 监控管理" aria-label="用户菜单" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu">O</button>
+        </div>
+      </div>
+      <div class="left-content">
+        <div class="left-main">
+        <header class="panel-header side-panel-header">
+          <h2 class="side-panel-title">监控</h2>
+          <button class="icon-btn panel-collapse-btn" type="button" id="collapse-left" title="折叠为快捷栏" aria-label="折叠左栏">‹</button>
+        </header>
+        <div class="creator-list-empty" id="creator-list-empty" hidden>
+          <p class="empty-title">暂无监控博主</p>
+          <p class="empty-hint">在监控管理中添加博主并开启监控</p>
+          <button type="button" class="btn btn-primary" id="btn-empty-add-creator">添加博主</button>
+        </div>
+        <nav class="creator-list" id="creator-list" aria-label="已监控博主">
+          <div class="creator-item" tabindex="0" role="button" data-creator="hexue" data-name="何同学" data-sub="douyin · 录制 01:24:08" data-light="green" data-badge="🟢 录制中" data-badge-class="badge-recording" data-default-view="live">
+            <div class="avatar-wrap">
+              <div class="avatar">何</div>
+              <span class="light green" data-abbr="录" title="录制中" aria-label="录制中" role="img"></span>
+            </div>
+            <div class="creator-info">
+              <div class="creator-name">何同学</div>
+              <div class="creator-sub">douyin · 录制 01:24:08</div>
+            </div>
+          </div>
+          <div class="creator-item selected" tabindex="0" role="button" aria-current="true" data-creator="laofanqie" data-name="老番茄" data-sub="bilibili · 直播中" data-light="red" data-badge="🔴 在播未录" data-badge-class="badge-live" data-default-view="live">
+            <div class="avatar-wrap">
+              <div class="avatar">老</div>
+              <span class="light red" data-abbr="播" title="在播未录" aria-label="在播未录" role="img"></span>
+            </div>
+            <div class="creator-info">
+              <div class="creator-name">老番茄</div>
+              <div class="creator-sub">bilibili · 直播中</div>
+            </div>
+          </div>
+          <div class="creator-item" tabindex="0" role="button" data-creator="yingshi" data-name="影视飓风" data-sub="bilibili · STT 降级" data-light="yellow" data-badge="🟡 收尾中" data-badge-class="badge-live" data-default-view="live">
+            <div class="avatar-wrap">
+              <div class="avatar">飓</div>
+              <span class="light yellow" data-abbr="收" title="收尾中" aria-label="收尾中" role="img"></span>
+            </div>
+            <div class="creator-info">
+              <div class="creator-name">影视飓风</div>
+              <div class="creator-sub">bilibili · STT 降级</div>
+            </div>
+          </div>
+          <div class="creator-item" tabindex="0" role="button" data-creator="liyongle" data-name="李永乐老师" data-sub="douyin · 离线" data-light="gray" data-badge="⚫ 离线" data-badge-class="" data-default-view="history">
+            <div class="avatar-wrap">
+              <div class="avatar">李</div>
+              <span class="light gray" data-abbr="离" title="离线" aria-label="离线" role="img"></span>
+            </div>
+            <div class="creator-info">
+              <div class="creator-name">李永乐老师</div>
+              <div class="creator-sub">douyin · 离线</div>
+            </div>
+          </div>
+        </nav>
+        </div>
+        <div class="left-daemon-wrap">
+          <div class="daemon-card" id="daemon-card">
+            <div class="daemon-card-head">
+              <div class="daemon-status">
+                <span class="status-dot live" aria-hidden="true"></span>
+                <strong>Daemon 运行中</strong>
+              </div>
+              <div class="daemon-card-actions">
+                <button type="button" class="icon-btn icon-btn-danger" id="btn-daemon-stop" title="停止 monitor watch" aria-label="停止">⏹</button>
+                <button type="button" class="icon-btn daemon-log-toggle active" id="btn-daemon-log" title="隐藏日志" aria-label="日志" aria-pressed="true">▤</button>
+              </div>
+            </div>
+            <div class="daemon-meta">PID 48291 · LiveTick 10s · 后处理 pending 2 · running 1</div>
+            <pre class="daemon-log-lines" id="daemon-log-panel" aria-label="守护进程日志">[10:42:01] LiveTick scan 4 creators
+[10:42:11] laofanqie live=true recording=false
+[10:42:21] post_process claim job #1284
+[10:42:31] hexue finalize streaming OK
+[10:42:41] manifest refresh creator hexue</pre>
+          </div>
+        </div>
+        <div class="left-user-wrap">
+          <button type="button" class="left-user-bar" id="user-menu-trigger" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu">
+            <div class="avatar" aria-hidden="true">O</div>
+            <div class="user-meta">
+              <span class="user-name">Oychao</span>
+              <span class="user-hint">系统配置 · 监控管理</span>
+            </div>
+            <span class="user-chevron" aria-hidden="true">▲</span>
+          </button>
+        </div>
+      </div>
+      <div class="user-menu-backdrop" id="user-menu-backdrop" aria-hidden="true"></div>
+      <div class="user-menu" id="user-menu" role="menu" aria-label="功能菜单" hidden>
+        <button type="button" class="user-menu-item" role="menuitem" data-open-view="config">
+          <span class="user-menu-icon" aria-hidden="true">⚙</span>
+          <span>系统配置</span>
+        </button>
+        <button type="button" class="user-menu-item" role="menuitem" data-open-view="manage">
+          <span class="user-menu-icon" aria-hidden="true">☰</span>
+          <span>监控管理</span>
+        </button>
+      </div>
+    </aside>
+
+    <div
+      class="col-resize col-resize-left"
+      id="resize-left"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整左栏宽度"
+      tabindex="0"
+    ></div>
+
+    <!-- CENTER -->
+    <main class="center" aria-label="主展示区">
+      <div class="center-toolbar" id="center-toolbar">
+        <div class="center-toolbar-left">
+          <span class="center-context-label" id="center-context-label"></span>
+          <span class="center-title" id="center-title">老番茄</span>
+          <span class="badge badge-live" id="center-badge">🔴 在播未录</span>
+        </div>
+        <div class="tabs" role="tablist" id="center-tabs" aria-label="博主视图">
+          <button class="tab active" role="tab" aria-selected="true" type="button" data-view="live">直播</button>
+          <button class="tab" role="tab" type="button" data-view="history">历史</button>
+        </div>
+      </div>
+
+      <div class="center-body" id="center-body">
+      <!-- LIVE: 在播未录 -->
+      <div class="center-view active" id="view-live">
+        <div class="video-area">
+          <div class="video-viewport">
+            <div class="video-frame">
+              <div class="video-overlay-top">
+                <span class="flv-badge">flv.js · /api/sessions/…/stream/proxy</span>
+              </div>
+              <div class="video-placeholder">
+                <div class="play-icon" aria-hidden="true">▶</div>
+                <p>HTTP-FLV 直播预览</p>
+                <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">平台流经 API 反向代理 · 与 ffmpeg 录制并行</p>
+              </div>
+            </div>
+          </div>
+          <div class="record-banner" id="record-banner">
+            <div class="record-banner-text">
+              <strong>平台正在直播，尚未开始录制</strong>
+              <span>可预览画面（可选）；监控开启且开录策略允许时 daemon 会自动录制。手动开录见「开始录制」。</span>
+            </div>
+            <button class="btn btn-record" type="button" id="btn-start-record">开始录制</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- HISTORY: 场次列表 -->
+      <div class="center-view" id="view-history">
+        <div class="history-toolbar">
+          <button class="chip active" type="button" data-filter="all">全部</button>
+          <button class="chip" type="button" data-filter="transcript">仅有转写</button>
+          <button class="chip" type="button" data-filter="summary">仅有摘要</button>
+          <input class="history-search" type="search" id="history-search" placeholder="搜索日期…" aria-label="搜索历史场次" />
+        </div>
+        <div class="history-list" id="history-list">
+          <div class="history-group">
+            <div class="history-group-title">
+              2026-06-03
+              <span class="merge-badge">合并组 · 3 段</span>
+            </div>
+            <div class="merged-row" id="merged-row" role="button" tabindex="0">
+              <div>
+                <strong>20260603_merged.summary.md</strong>
+                <span> · 跨日断流合并 · session_ids: a1,b2,c3</span>
+              </div>
+              <button class="btn" type="button" id="btn-open-merged" style="font-size:11px;padding:4px 10px;">打开摘要</button>
+            </div>
+          </div>
+          <div class="history-group">
+            <div class="history-group-title">2026-06-02</div>
+            <div class="session-row selected" tabindex="0" role="button" data-session="s-20260602-2104" data-label="2026-06-02 21:04" data-time="21:04 – 23:22" data-meta="2h 18m · 1.2 GB" data-has-transcript="1" data-has-summary="1">
+              <div class="dot-col"><span class="dot"></span></div>
+              <div class="session-main">
+                <div class="session-time">21:04 – 23:22</div>
+                <div class="session-meta">
+                  <span>2h 18m</span>
+                  <span class="tag ok">completed</span>
+                  <span class="tag ok">✓ 转写</span>
+                  <span class="tag ok">✓ 摘要</span>
+                  <span class="tag">streaming</span>
+                </div>
+              </div>
+              <div class="session-size">1.2 GB</div>
+            </div>
+            <div class="session-row" tabindex="0" role="button" data-session="s-20260602-1910" data-label="2026-06-02 19:10" data-time="19:10 – 19:45" data-meta="35m · 480 MB" data-has-transcript="1" data-has-summary="0">
+              <div class="dot-col"><span class="dot"></span></div>
+              <div class="session-main">
+                <div class="session-time">19:10 – 19:45</div>
+                <div class="session-meta">
+                  <span>35m</span>
+                  <span class="tag ok">completed</span>
+                  <span class="tag ok">✓ 转写</span>
+                  <span class="tag miss">无摘要</span>
+                </div>
+              </div>
+              <div class="session-size">480 MB</div>
+            </div>
+          </div>
+          <div class="history-group">
+            <div class="history-group-title">2026-05-28</div>
+            <div class="session-row disabled" tabindex="0" role="button" data-session="s-20260528-1402" data-label="2026-05-28 14:02" data-failed="1" data-has-transcript="0" data-has-summary="0" title="录制失败，无媒体文件">
+              <div class="dot-col"><span class="dot"></span></div>
+              <div class="session-main">
+                <div class="session-time">14:02 – 14:08</div>
+                <div class="session-meta">
+                  <span>6m</span>
+                  <span class="tag fail">failed</span>
+                  <span class="tag miss">无媒体</span>
+                </div>
+              </div>
+              <div class="session-size">—</div>
+            </div>
+            <div class="session-row" tabindex="0" role="button" data-session="s-20260528-0900" data-label="2026-05-28 09:00" data-time="09:00 – 11:32" data-meta="2h 32m · 云端" data-has-transcript="1" data-has-summary="0" data-cloud="1">
+              <div class="dot-col"><span class="dot"></span></div>
+              <div class="session-main">
+                <div class="session-time">09:00 – 11:32</div>
+                <div class="session-meta">
+                  <span>2h 32m</span>
+                  <span class="tag ok">completed</span>
+                  <span class="tag ok">✓ 转写</span>
+                  <span class="tag cloud">☁ 仅云端</span>
+                </div>
+              </div>
+              <div class="session-size">云端</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- PLAYBACK: 历史录播 -->
+      <div class="center-view" id="view-playback">
+        <div class="breadcrumb-bar">
+          <button type="button" id="back-to-history">← 返回列表</button>
+          <span class="sep">›</span>
+          <span>老番茄</span>
+          <span class="sep">›</span>
+          <span class="current" id="playback-breadcrumb">2026-06-02 21:04</span>
+        </div>
+        <div class="playback-meta" id="playback-meta">
+          <span>session s-20260602-2104</span>
+          <span>2h 18m · 1.2 GB</span>
+          <span>live/20260602_210412.mp4</span>
+        </div>
+        <div class="video-area" style="padding-top:12px;">
+          <div class="video-viewport">
+            <div class="video-frame">
+              <div class="video-overlay-top">
+                <span class="flv-badge">&lt;video&gt; · GET /api/media?path=…</span>
+              </div>
+              <div class="video-placeholder">
+                <div class="play-icon" aria-hidden="true" style="border-color:var(--accent);color:var(--accent);">▶</div>
+                <p>历史录播 · MP4</p>
+                <p style="font-size:11px;margin-top:6px;color:var(--text-dim)">Range 请求 · 本地 data/creators/…/live/</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CONFIG -->
+      <div class="center-view settings-page" id="view-config">
+        <div class="settings-head">
+          <div class="settings-head-inner">
+            <div class="settings-head-meta">
+              <div class="config-segments" role="tablist" aria-label="配置分段" id="config-segments">
+                <button type="button" class="seg-btn active" role="tab" aria-selected="true" data-config-panel="user">环境</button>
+                <button type="button" class="seg-btn" role="tab" data-config-panel="monitor">监控</button>
+                <button type="button" class="seg-btn" role="tab" data-config-panel="live">直播</button>
+                <button type="button" class="seg-btn" role="tab" data-config-panel="ai">AI</button>
+              </div>
+              <span class="settings-save-hint saved" id="config-save-hint">已保存</span>
+            </div>
+            <div class="settings-head-actions">
+              <button type="button" class="btn btn-sm config-head-add-provider" id="btn-add-llm-provider" hidden>添加 Provider</button>
+              <button type="button" class="btn" id="btn-config-revert" disabled>撤销</button>
+              <button type="button" class="btn btn-primary" id="btn-config-save" disabled>保存</button>
+            </div>
+          </div>
+        </div>
+        <div class="settings-scroll">
+          <div class="config-panels-wrap" id="config-form">
+          <div class="config-panel active" id="config-panel-user" role="tabpanel">
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>桌面偏好</h3></div>
+              <div class="field-row">
+                <label for="cfg-theme">界面主题</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-theme" data-cfg="theme">
+                    <option value="light">亮色</option>
+                    <option value="dark">暗色</option>
+                  </select>
+                </div>
+              </div>
+              <p class="hint">切换后立即生效；保存后写入本地配置（实现期对应桌面端主题偏好）。</p>
+              <div class="toggle-row">
+                <span>通知提示音</span>
+                <button type="button" class="toggle on" id="cfg-notify-sound" data-cfg-toggle="notifySound" aria-pressed="true" aria-label="通知提示音"></button>
+              </div>
+              <p class="hint">开启后，开播、录制完成等事件会播放系统提示音（与「直播」分段中的通知总开关配合）。</p>
+            </div>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>环境自检</h3></div>
+              <div class="field-row"><span class="field-label">ffmpeg</span><span class="field-readonly ok" id="cfg-doctor-ffmpeg">正常</span></div>
+              <div class="field-row"><span class="field-label">Playwright</span><span class="field-readonly ok" id="cfg-doctor-playwright">正常</span></div>
+              <div class="field-row"><span class="field-label">Deepgram 扩展</span><span class="field-readonly ok" id="cfg-doctor-deepgram">已安装</span></div>
+              <div class="config-actions">
+                <button type="button" class="btn btn-sm" id="btn-config-doctor">重新检测</button>
+              </div>
+            </div>
+          </div>
+          <div class="config-panel" id="config-panel-monitor" role="tabpanel" hidden>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>全局调度</h3></div>
+              <div class="field-row">
+                <label for="cfg-live-poll">直播检测间隔</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-live-poll" data-cfg="livePollInterval" min="5" max="120" /><span class="field-unit">秒</span></div>
+              </div>
+              <p class="hint">守护进程按此间隔轮询各博主是否开播/下播（实现上对应 `live.live_poll_interval_sec`）。</p>
+              <div class="field-row">
+                <label for="cfg-vod-poll">作品同步间隔</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-vod-poll" data-cfg="vodPollInterval" min="60" max="3600" /><span class="field-unit">秒</span></div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-vod-batch">每轮同步博主数</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-vod-batch" data-cfg="maxCreatorsPerVodTick" min="1" max="20" /></div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-scan-concurrency">并行扫描博主数</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-scan-concurrency" data-cfg="scanConcurrency" min="1" max="16" /></div>
+              </div>
+            </div>
+            <p class="setting-card-head" style="margin:4px 0 8px;font-size:12px;font-weight:600;color:var(--text);">媒体平台</p>
+            <article class="platform-config-card" data-platform="douyin">
+              <div class="platform-config-head">
+                <div class="platform-config-icon douyin" aria-hidden="true">抖</div>
+                <div class="platform-config-meta">
+                  <strong>抖音</strong>
+                  <span>直播检测、作品同步与登录态</span>
+                </div>
+                <span class="platform-config-status ok" id="cfg-auth-status-douyin" data-auth-platform="douyin"></span>
+              </div>
+              <div class="platform-config-body">
+                <div class="field-row">
+                  <label for="cfg-douyin-live-poll">直播轮询</label>
+                  <div class="field-control"><input type="number" class="config-input" id="cfg-douyin-live-poll" data-cfg="douyinLivePoll" min="5" max="120" /><span class="field-unit">秒</span></div>
+                </div>
+                <div class="field-row">
+                  <label for="cfg-douyin-poll">作品列表轮询</label>
+                  <div class="field-control"><input type="number" class="config-input" id="cfg-douyin-poll" data-cfg="douyinPollInterval" min="30" max="600" /><span class="field-unit">秒</span></div>
+                </div>
+              </div>
+            </article>
+            <article class="platform-config-card" data-platform="bilibili">
+              <div class="platform-config-head">
+                <div class="platform-config-icon bilibili" aria-hidden="true">B</div>
+                <div class="platform-config-meta">
+                  <strong>哔哩哔哩</strong>
+                  <span>直播 / 投稿 / 动态与登录态</span>
+                </div>
+                <span class="platform-config-status ok" id="cfg-auth-status-bilibili" data-auth-platform="bilibili"></span>
+              </div>
+              <div class="platform-config-body">
+                <div class="field-row">
+                  <label for="cfg-bili-live-poll">直播轮询</label>
+                  <div class="field-control"><input type="number" class="config-input" id="cfg-bili-live-poll" data-cfg="biliLivePoll" min="5" max="120" /><span class="field-unit">秒</span></div>
+                </div>
+                <div class="field-row">
+                  <label for="cfg-bili-archive-poll">投稿轮询</label>
+                  <div class="field-control"><input type="number" class="config-input" id="cfg-bili-archive-poll" data-cfg="biliArchivePoll" min="60" max="3600" /><span class="field-unit">秒</span></div>
+                </div>
+                <div class="field-row">
+                  <label for="cfg-bili-dynamic-poll">动态轮询</label>
+                  <div class="field-control"><input type="number" class="config-input" id="cfg-bili-dynamic-poll" data-cfg="biliDynamicPoll" min="60" max="3600" /><span class="field-unit">秒</span></div>
+                </div>
+              </div>
+            </article>
+            <p class="config-panel-footer">保存后将在下一轮监控周期生效；切换平台登录无需重启守护进程。</p>
+          </div>
+          <div class="config-panel" id="config-panel-live" role="tabpanel" hidden>
+            <p class="config-callout warn" id="cfg-live-callout" role="note">切换录制管线后需重启监控守护进程。流式模式将启用实时转写（Deepgram）。</p>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>录制管线</h3></div>
+              <div class="field-row">
+                <label for="cfg-pipeline-mode">录制管线</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-pipeline-mode" data-cfg="pipelineMode">
+                    <option value="streaming">流式（实时转写，推荐）</option>
+                    <option value="legacy">传统（录后转写）</option>
+                  </select>
+                </div>
+              </div>
+              <div class="toggle-row">
+                <span>检测到直播后自动开录</span>
+                <button type="button" class="toggle on" id="cfg-auto-record" data-cfg-toggle="autoRecord" aria-pressed="true" aria-label="全局自动开录"></button>
+              </div>
+              <p class="hint">博主可在「监控管理」中设为继承全局、始终自动或仅手动。</p>
+            </div>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>实时转写</h3></div>
+              <div class="toggle-row">
+                <span>启用流式转写</span>
+                <button type="button" class="toggle on" id="cfg-streaming-stt" data-cfg-toggle="streamingSttEnabled" aria-pressed="true"></button>
+              </div>
+              <div class="field-row">
+                <label for="cfg-streaming-engine">转写引擎</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-streaming-engine" data-cfg="streamingSttEngine">
+                    <option value="deepgram">Deepgram（云端，推荐）</option>
+                    <option value="whisper">Whisper（本地，实验）</option>
+                    <option value="openai">OpenAI（云端）</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-streaming-model">模型</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-streaming-model" data-cfg="streamingSttModel"></select>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-flush-interval">片段写入间隔</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-flush-interval" data-cfg="flushIntervalSec" min="10" max="120" /><span class="field-unit">秒</span></div>
+              </div>
+              <p class="hint">流式识别每隔 N 秒将当前文本写入 transcript sidecar，便于预览与断线续写（`streaming_stt.flush_interval_sec`）。</p>
+              <div class="field-row">
+                <label for="cfg-offline-confirm">下播确认等待</label>
+                <div class="field-control"><input type="number" class="config-input" id="cfg-offline-confirm" data-cfg="offlineConfirmSec" min="15" max="180" /><span class="field-unit">秒</span></div>
+              </div>
+              <div class="field-row"><span class="field-label">Deepgram API</span><span class="field-readonly ok" id="cfg-deepgram-status">已配置</span></div>
+            </div>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>摘要生成</h3></div>
+              <div class="toggle-row">
+                <span>启用摘要</span>
+                <button type="button" class="toggle on" id="cfg-summarize-enabled" data-cfg-toggle="summarizeEnabled" aria-pressed="true"></button>
+              </div>
+              <div class="field-row">
+                <label for="cfg-summarize-provider">摘要服务</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-summarize-provider" data-cfg="summarizeProviderId"></select>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-summarize-model-live">摘要模型</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-summarize-model-live" data-cfg="summarizeModel"></select>
+                </div>
+              </div>
+              <p class="hint">摘要服务与模型来自「AI」中的 Provider（类型为 LLM 的模型）。</p>
+            </div>
+            <article class="platform-config-card" data-platform="aliyundrive">
+              <div class="platform-config-head">
+                <div class="platform-config-icon" style="background:rgba(234,179,8,0.12);color:#fde047;" aria-hidden="true">云</div>
+                <div class="platform-config-meta">
+                  <strong>阿里云盘</strong>
+                  <span>直播 MP4 与 sidecar 备份</span>
+                </div>
+                <span class="platform-config-status ok" id="cfg-auth-status-aliyundrive" data-auth-platform="aliyundrive"></span>
+              </div>
+              <div class="platform-config-body">
+                <div class="toggle-row">
+                  <span>直播结束后备份到云盘</span>
+                  <button type="button" class="toggle on" id="cfg-aliyun-enabled" data-cfg-toggle="aliyunEnabled" aria-pressed="true"></button>
+                </div>
+                <div class="field-row">
+                  <label for="cfg-aliyun-root">云端根目录名称</label>
+                  <div class="field-control">
+                    <input type="text" class="config-input wide" id="cfg-aliyun-root" data-cfg="aliyunRootFolder" maxlength="64" />
+                  </div>
+                </div>
+                <div class="toggle-row">
+                  <span>上传成功后删除本地文件</span>
+                  <button type="button" class="toggle" id="cfg-aliyun-delete-local" data-cfg-toggle="aliyunDeleteLocal" aria-pressed="false"></button>
+                </div>
+                <div class="toggle-row">
+                  <span>同时上传转写与摘要</span>
+                  <button type="button" class="toggle on" id="cfg-aliyun-upload-sidecar" data-cfg-toggle="aliyunUploadSidecar" aria-pressed="true"></button>
+                </div>
+              </div>
+            </article>
+            <div class="setting-card">
+              <div class="setting-card-head"><h3>通知</h3></div>
+              <div class="toggle-row">
+                <span>启用通知</span>
+                <button type="button" class="toggle on" id="cfg-notify-enabled" data-cfg-toggle="notifyEnabled" aria-pressed="true"></button>
+              </div>
+              <div class="field-row">
+                <label for="cfg-feishu-webhook">飞书 Webhook</label>
+                <div class="field-control">
+                  <input type="password" class="config-input wide" id="cfg-feishu-webhook" data-cfg="feishuWebhookUrl" placeholder="填写即启用飞书通知" autocomplete="off" />
+                </div>
+              </div>
+              <p class="hint">填写 Webhook 即走飞书推送；留空表示不修改已保存地址，清空并保存则关闭飞书。</p>
+            </div>
+            <p class="config-panel-footer">切换录制管线后需重启监控守护进程；其余项保存后按轮询或后处理队列生效。</p>
+          </div>
+          <div class="config-panel" id="config-panel-ai" role="tabpanel" hidden>
+            <div id="config-ai-list-view">
+              <p class="hint" style="margin:0 0 10px;">OpenAI 兼容端点；模型类型 LLM 用于摘要/Agent，STT 用于转写。</p>
+              <div id="llm-providers-list" class="provider-row-list" aria-live="polite"></div>
+            </div>
+            <div id="config-ai-detail-view" hidden>
+              <div class="provider-detail-head">
+                <button type="button" class="btn-ghost" id="btn-provider-back">← 返回列表</button>
+                <span class="provider-detail-title" id="provider-detail-title">编辑 Provider</span>
+              </div>
+              <div class="setting-card" id="provider-detail-form"></div>
+            </div>
+            <div class="setting-card" id="config-ai-agent-card">
+              <div class="setting-card-head"><h3>Agent 对话默认</h3></div>
+              <div class="field-row">
+                <label for="cfg-agent-model">默认模型</label>
+                <div class="field-control">
+                  <select class="config-select" id="cfg-agent-model" data-cfg="agentModel">
+                    <option value="auto">自动</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field-row">
+                <label for="cfg-max-context">上下文上限</label>
+                <div class="field-control">
+                  <input type="number" class="config-input" id="cfg-max-context" data-cfg="maxContextChars" min="4000" max="128000" step="1000" />
+                  <span class="field-unit">字</span>
+                </div>
+              </div>
+              <p class="hint">右栏对话可按场次覆盖模型；与「直播」中的摘要默认模型可不同。</p>
+            </div>
+          </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- MANAGE -->
+      <div class="center-view manage-page" id="view-manage">
+        <header class="manage-top">
+          <div class="manage-top-left">
+            <p class="manage-stats" id="manage-stats">已登记 <strong>5</strong> · 监控中 <strong>4</strong></p>
+            <div class="manage-filters" role="group" aria-label="列表筛选">
+              <button type="button" class="chip active" data-manage-filter="all">全部 (5)</button>
+              <button type="button" class="chip" data-manage-filter="on">已监控 (4)</button>
+              <button type="button" class="chip" data-manage-filter="off">未监控 (1)</button>
+            </div>
+          </div>
+          <div class="manage-add">
+            <input type="url" id="manage-add-url" placeholder="粘贴博主主页 URL（抖音 / B 站）" aria-label="博主 URL" />
+            <button type="button" class="btn btn-primary" id="btn-add-creator">添加博主</button>
+          </div>
+        </header>
+        <div class="manage-body">
+          <div class="manage-list-scroll" id="manage-list" role="list" aria-label="已登记博主">
+            <div class="manage-row selected" role="listitem" tabindex="0" data-creator="hexue" data-monitor="1" data-auto-record="inherit" data-in-sidebar="1"
+                data-name="何同学" data-platform="douyin" data-sub="MS4wLjABAAAA…" data-light="green" data-status="录制中">
+              <div class="manage-avatar" aria-hidden="true">何<span class="light green"></span></div>
+              <div class="manage-row-info">
+                <div class="manage-row-name">何同学</div>
+                <div class="manage-row-meta">
+                  <span class="platform-tag">douyin</span>
+                  <span class="manage-status-text">录制中</span>
+                </div>
+              </div>
+              <div class="manage-row-pills">
+                <span class="manage-auto-pill tag-pill">继承</span>
+              </div>
+              <div class="manage-row-monitor">
+                <span class="manage-row-monitor-label">监控</span>
+                <button type="button" class="toggle on manage-monitor-toggle" aria-label="监控开关"></button>
+              </div>
+            </div>
+            <div class="manage-drawer open" id="manage-drawer" aria-label="博主详情抽屉" role="region">
+              <div class="manage-drawer-collapse">
+              <div class="manage-drawer-inner is-visible">
+                <div class="inspector-head">
+                  <div class="manage-avatar lg" id="detail-avatar" aria-hidden="true">何<span class="light green"></span></div>
+                  <div class="inspector-head-text">
+                    <h3 id="detail-name">何同学</h3>
+                    <p class="sub" id="detail-sub">douyin · MS4wLjABAAAA…</p>
+                  </div>
+                  <div class="inspector-head-actions">
+                    <button type="button" class="btn" id="detail-open-profile">打开主页</button>
+                    <button type="button" class="btn-ghost danger" id="detail-remove">移除博主</button>
+                  </div>
+                </div>
+                <div class="inspector-grid">
+                  <section class="inspector-block">
+                    <h4>监控</h4>
+                    <div class="toggle-row">
+                      <span>直播检测 + 录制流水线</span>
+                      <button type="button" class="toggle on" id="detail-monitor-toggle" aria-pressed="true" aria-label="开启监控"></button>
+                    </div>
+                    <p class="hint">开启后由 daemon 自动处理；中栏「直播」预览可选，不影响后台录制。</p>
+                  </section>
+                  <section class="inspector-block" id="detail-auto-record-section">
+                    <h4>开录策略</h4>
+                    <div class="detail-record-segments radio-group" id="detail-auto-record-group" role="radiogroup" aria-label="开录策略">
+                      <label class="radio-opt selected"><input type="radio" name="auto-record" value="inherit" checked /><strong>继承全局</strong><span>跟随全局设置（当前：开）</span></label>
+                      <label class="radio-opt"><input type="radio" name="auto-record" value="on" /><strong>始终自动</strong><span>检测到直播即开录</span></label>
+                      <label class="radio-opt"><input type="radio" name="auto-record" value="off" /><strong>仅手动</strong><span>需在直播 Tab 点「开始录制」</span></label>
+                    </div>
+                  </section>
+                  <section class="inspector-block ops">
+                    <h4>运维</h4>
+                    <div class="detail-actions">
+                      <button type="button" class="btn-ghost" id="detail-sync-profile">同步资料</button>
+                      <button type="button" class="btn-ghost" id="detail-sync-catalog">同步作品</button>
+                      <button type="button" class="btn-ghost" id="detail-sync-dynamics" style="display:none;">同步动态（B 站）</button>
+                    </div>
+                  </section>
+                </div>
+              </div>
+              </div>
+            </div>
+            <div class="manage-row" role="listitem" tabindex="0" data-creator="laofanqie" data-monitor="1" data-auto-record="on" data-in-sidebar="1"
+                data-name="老番茄" data-platform="bilibili" data-sub="mid:546195" data-light="red" data-status="在播未录">
+              <div class="manage-avatar" aria-hidden="true">老<span class="light red"></span></div>
+              <div class="manage-row-info">
+                <div class="manage-row-name">老番茄</div>
+                <div class="manage-row-meta">
+                  <span class="platform-tag">bilibili</span>
+                  <span class="manage-status-text">在播未录</span>
+                </div>
+              </div>
+              <div class="manage-row-pills">
+                <span class="manage-auto-pill tag-pill accent">自动</span>
+              </div>
+              <div class="manage-row-monitor">
+                <span class="manage-row-monitor-label">监控</span>
+                <button type="button" class="toggle on manage-monitor-toggle" aria-label="监控开关"></button>
+              </div>
+            </div>
+            <div class="manage-row" role="listitem" tabindex="0" data-creator="yingshi" data-monitor="1" data-auto-record="inherit" data-in-sidebar="1"
+                data-name="影视飓风" data-platform="bilibili" data-sub="mid:946974" data-light="yellow" data-status="收尾中">
+              <div class="manage-avatar" aria-hidden="true">飓<span class="light yellow"></span></div>
+              <div class="manage-row-info">
+                <div class="manage-row-name">影视飓风</div>
+                <div class="manage-row-meta">
+                  <span class="platform-tag">bilibili</span>
+                  <span class="manage-status-text">收尾中</span>
+                </div>
+              </div>
+              <div class="manage-row-pills">
+                <span class="manage-auto-pill tag-pill">继承</span>
+              </div>
+              <div class="manage-row-monitor">
+                <span class="manage-row-monitor-label">监控</span>
+                <button type="button" class="toggle on manage-monitor-toggle" aria-label="监控开关"></button>
+              </div>
+            </div>
+            <div class="manage-row" role="listitem" tabindex="0" data-creator="liyongle" data-monitor="1" data-auto-record="off" data-in-sidebar="1"
+                data-name="李永乐老师" data-platform="douyin" data-sub="MS4wLjAB…" data-light="gray" data-status="离线">
+              <div class="manage-avatar" aria-hidden="true">李<span class="light gray"></span></div>
+              <div class="manage-row-info">
+                <div class="manage-row-name">李永乐老师</div>
+                <div class="manage-row-meta">
+                  <span class="platform-tag">douyin</span>
+                  <span class="manage-status-text">离线</span>
+                </div>
+              </div>
+              <div class="manage-row-pills">
+                <span class="manage-auto-pill tag-pill">手动</span>
+              </div>
+              <div class="manage-row-monitor">
+                <span class="manage-row-monitor-label">监控</span>
+                <button type="button" class="toggle on manage-monitor-toggle" aria-label="监控开关"></button>
+              </div>
+            </div>
+            <div class="manage-row dimmed" role="listitem" tabindex="0" data-creator="kepu" data-monitor="0" data-auto-record="inherit" data-in-sidebar="0"
+                data-name="科普小王子" data-platform="bilibili" data-sub="mid:12345678" data-light="gray" data-status="未监控">
+              <div class="manage-avatar" aria-hidden="true">科<span class="light gray"></span></div>
+              <div class="manage-row-info">
+                <div class="manage-row-name">科普小王子</div>
+                <div class="manage-row-meta">
+                  <span class="platform-tag">bilibili</span>
+                  <span class="manage-status-text">未监控</span>
+                </div>
+              </div>
+              <div class="manage-row-pills">
+                <span class="manage-auto-pill tag-pill">—</span>
+              </div>
+              <div class="manage-row-monitor">
+                <span class="manage-row-monitor-label">监控</span>
+                <button type="button" class="toggle manage-monitor-toggle" aria-label="监控开关"></button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+    </main>
+
+    <div
+      class="col-resize col-resize-right"
+      id="resize-right"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="调整右栏宽度"
+      tabindex="0"
+    ></div>
+
+    <!-- RIGHT -->
+    <aside class="panel panel-right" aria-label="转写与 Agent">
+      <div class="right-rail rail" aria-label="折叠快捷栏">
+        <button type="button" class="rail-expand-btn" id="expand-right" title="展开转写与 Agent" aria-label="展开右栏">‹</button>
+      </div>
+      <div class="right-content right-split">
+        <header class="panel-header side-panel-header">
+          <h2 class="side-panel-title">内容</h2>
+          <button class="icon-btn panel-collapse-btn" type="button" id="collapse-right" title="折叠右栏" aria-label="折叠右栏">›</button>
+        </header>
+        <section class="transcript-pane" aria-label="转写">
+          <div class="tab-row" role="tablist">
+            <button class="tab active" role="tab" aria-selected="true" type="button" data-right-tab="transcript">转写</button>
+            <button class="tab" role="tab" type="button" data-right-tab="summary">摘要</button>
+            <button class="btn" type="button" id="btn-copy-transcript" style="margin-left:auto;padding:4px 8px;font-size:11px;">复制</button>
+          </div>
+          <div class="transcript-body" id="transcript-body">
+            <!-- live state -->
+            <div id="transcript-live">
+              <p style="color:var(--text-dim);font-size:12px;margin-bottom:12px;" data-pretext>未开始录制 — 开录后此处通过 WebSocket 推送 partial 转写。</p>
+              <div class="seg">
+                <div class="ts">—</div>
+                <div data-pretext>等待录制开始…</div>
+              </div>
+            </div>
+            <!-- playback state (hidden by default) -->
+            <div id="transcript-playback" style="display:none;">
+              <div class="seg">
+                <div class="ts">00:12:04</div>
+                <div data-pretext>今天主要聊一下新游戏的开发进度，还有粉丝问的那个 DLC 会不会上…</div>
+              </div>
+              <div class="seg">
+                <div class="ts">00:12:38</div>
+                <div data-pretext>说实话这个版本我们改了很多底层的东西，性能应该会比上一作好不少。</div>
+              </div>
+              <div class="seg">
+                <div class="ts">00:13:02</div>
+                <div data-pretext>然后有观众问联机模式，联机这块我们还在调，预计下个月能给大家看个 demo。</div>
+              </div>
+              <p class="partial-hint" data-pretext>final · 20260602_210412.transcript.md · 只读</p>
+            </div>
+            <div id="summary-playback" class="summary-preview" style="display:none;">
+              <h3 data-pretext>直播摘要</h3>
+              <p data-pretext>本场以新游戏开发进度与 DLC 计划为主线，提及性能优化与联机 demo 时间表。</p>
+              <ul>
+                <li data-pretext>底层重构带来性能提升</li>
+                <li data-pretext>联机模式 demo 预计下月</li>
+                <li data-pretext>粉丝 Q&amp;A：DLC 时间未定</li>
+              </ul>
+            </div>
+          </div>
+        </section>
+        <div
+          class="row-resize"
+          id="resize-right-split"
+          role="separator"
+          aria-orientation="horizontal"
+          aria-label="调整转写与 Agent 区域高度"
+          tabindex="0"
+        ></div>
+        <section class="agent-pane" aria-label="AI Agent">
+          <div class="agent-header">
+            <span>Agent</span>
+            <span class="model-pill">nvidia · auto</span>
+          </div>
+          <div class="chat-scroll" id="chat-scroll">
+            <div id="chat-live">
+              <div class="msg msg-user" data-pretext>这场直播大概讲了什么？帮我看看有没有提到新产品。</div>
+              <div class="msg msg-assistant">
+                <div class="thinking" data-pretext>需要先读取当前 session 的转写…</div>
+                <div data-pretext>老番茄尚未开始录制，我没有可用的转写文件。你可以点击中栏的「开始录制」，或切到「历史」查看往期场次。</div>
+                <div class="tool-card">
+                  <div class="tool-card-header">⚙ m2t_get_live_status</div>
+                  <div class="tool-card-body" data-pretext>{ "creators": [{ "display_name": "老番茄", "light": "red", "is_live": true, "recording": false }] }</div>
+                </div>
+              </div>
+            </div>
+            <div id="chat-playback" style="display:none;">
+              <div class="msg msg-user" data-pretext>6 月 2 日那场有没有提到联机模式的时间？</div>
+              <div class="msg msg-assistant">
+                <div data-pretext>有。在 00:13:02 左右提到联机还在调整，预计下个月可以看 demo。</div>
+                <div class="tool-card">
+                  <div class="tool-card-header">⚙ m2t_read_transcript</div>
+                  <div class="tool-card-body" data-pretext>session s-20260602-2104 · segments matched: 1</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <form class="composer agent-composer" id="agent-form">
+            <textarea
+              class="agent-composer-input"
+              rows="1"
+              id="agent-input"
+              placeholder="继续提问…"
+              aria-label="Agent 输入"
+            ></textarea>
+            <div class="agent-composer-toolbar">
+              <div class="agent-composer-left">
+                <button type="button" class="agent-mode-pill" id="agent-mode-pill" title="Agent 模式">
+                  <span class="agent-mode-icon" aria-hidden="true">∞</span>
+                  <span>Agent</span>
+                  <span class="agent-mode-chevron" aria-hidden="true">▾</span>
+                </button>
+                <label class="agent-model-wrap" title="选择模型">
+                  <select class="agent-model-select" id="agent-model-select" aria-label="Agent 模型">
+                    <option value="auto">Auto</option>
+                  </select>
+                </label>
+              </div>
+              <div class="agent-composer-actions">
+                <button type="button" class="agent-icon-btn" id="agent-ctx-btn" title="上下文" aria-label="上下文">◎</button>
+                <button type="button" class="agent-icon-btn" id="agent-attach-btn" title="附件" aria-label="附件">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                    <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                    <circle cx="8.5" cy="10.5" r="1.5"></circle>
+                    <path d="M21 16l-5.5-5.5a2 2 0 0 0-3 0L3 20"></path>
+                  </svg>
+                </button>
+                <button class="agent-send-btn" type="submit" id="btn-agent-send" title="发送" aria-label="发送">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M12 19V5"></path>
+                    <path d="M6 11l6-6 6 6"></path>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </form>
+        </section>
+      </div>
+    </aside>
+  </div>
+
+  <script>
+(function () {
+  'use strict';
+
+  const app = document.getElementById('app');
+  const toastEl = document.getElementById('toast');
+  if (location.search.indexOf('debug=1') >= 0) document.body.dataset.uiDebug = '1';
+  if (location.search.indexOf('empty-list=1') >= 0) {
+    document.getElementById('creator-list')?.setAttribute('hidden', '');
+    document.getElementById('creator-list-empty')?.removeAttribute('hidden');
+  }
+  const LS_KEY = 'm2t-desktop-layout';
+  const THEME_KEY = 'm2t-desktop-theme';
+  const SIZE_DEFAULTS = { sidebarW: 240, rightW: 360, agentH: 320 };
+  const SIZE_LIMITS = {
+    sidebar: { min: 180, max: 420 },
+    right: { min: 280, max: 9999 },
+    center: { min: 100 },
+    agent: { min: 160, max: 720 },
+    transcriptMin: 100,
+  };
+  let toastTimer = null;
+  let playbackMode = false;
+  let historyFilter = 'all';
+  let daemonRunning = true;
+  let recording = false;
+
+  const views = {
+    config: document.getElementById('view-config'),
+    manage: document.getElementById('view-manage'),
+    live: document.getElementById('view-live'),
+    history: document.getElementById('view-history'),
+    playback: document.getElementById('view-playback'),
+  };
+  const centerTabs = document.getElementById('center-tabs');
+  const centerToolbar = document.getElementById('center-toolbar');
+  const centerContextLabel = document.getElementById('center-context-label');
+  const centerTitle = document.getElementById('center-title');
+  const centerBadge = document.getElementById('center-badge');
+  let manageFilter = 'all';
+  let globalAutoRecord = true;
+
+  const CONFIG_DEFAULTS = {
+    theme: 'light',
+    notifySound: true,
+    authDouyin: true,
+    authBilibili: true,
+    authAliyun: true,
+    llmProviders: [
+      {
+        id: 'nvidia',
+        name: 'nvidia',
+        baseUrl: 'https://integrate.api.nvidia.com/v1',
+        apiKey: '',
+        connected: true,
+        models: [
+          { id: 'deepseek-ai/deepseek-v4-pro', kind: 'llm' },
+          { id: 'z-ai/glm-5.1', kind: 'llm' },
+        ],
+      },
+      {
+        id: 'deepseek',
+        name: 'DeepSeek',
+        baseUrl: 'https://api.deepseek.com/v1',
+        apiKey: '',
+        connected: false,
+        models: [{ id: 'deepseek-chat', kind: 'llm' }],
+      },
+    ],
+    activeProviderId: 'nvidia',
+    agentModel: 'deepseek-ai/deepseek-v4-pro',
+    maxContextChars: 24000,
+    streamingSttModel: 'nova-3',
+    summarizeProviderId: 'nvidia',
+    livePollInterval: 20,
+    vodPollInterval: 300,
+    maxCreatorsPerVodTick: 2,
+    scanConcurrency: 4,
+    douyinLivePoll: 10,
+    douyinPollInterval: 60,
+    biliLivePoll: 10,
+    biliArchivePoll: 300,
+    biliDynamicPoll: 120,
+    pipelineMode: 'streaming',
+    autoRecord: true,
+    streamingSttEnabled: true,
+    streamingSttEngine: 'deepgram',
+    flushIntervalSec: 30,
+    offlineConfirmSec: 45,
+    summarizeEnabled: true,
+    summarizeModel: 'deepseek-ai/deepseek-v4-pro',
+    aliyunEnabled: true,
+    aliyunRootFolder: 'media2text',
+    aliyunDeleteLocal: false,
+    aliyunUploadSidecar: true,
+    notifyEnabled: true,
+    feishuWebhookUrl: '',
+  };
+  let configSaved = JSON.parse(JSON.stringify(CONFIG_DEFAULTS));
+  let configDraft = JSON.parse(JSON.stringify(CONFIG_DEFAULTS));
+  let configDirty = false;
+  let configEditingProviderIndex = -1;
+  let configActivePanel = 'user';
+
+  const STT_MODELS_BY_ENGINE = {
+    deepgram: ['nova-3', 'nova-2', 'enhanced'],
+    whisper: ['small', 'medium', 'large-v3'],
+    openai: ['whisper-1', 'gpt-4o-transcribe'],
+  };
+
+  function cloneConfig(src) {
+    return JSON.parse(JSON.stringify(src));
+  }
+
+  function setToggleUi(el, on) {
+    if (!el) return;
+    el.classList.toggle('on', !!on);
+    el.setAttribute('aria-pressed', on ? 'true' : 'false');
+  }
+
+  function readToggle(el) {
+    return el && el.classList.contains('on');
+  }
+
+  function applyConfigDraftToForm() {
+    const d = configDraft;
+    const form = document.getElementById('config-form');
+    if (!form) return;
+    form.querySelectorAll('[data-cfg]').forEach(function (el) {
+      const key = el.dataset.cfg;
+      if (!key || !(key in d)) return;
+      const val = d[key];
+      if (el.type === 'checkbox') el.checked = !!val;
+      else el.value = val == null ? '' : String(val);
+    });
+    form.querySelectorAll('[data-cfg-toggle]').forEach(function (el) {
+      const key = el.dataset.cfgToggle;
+      if (key && key in d) setToggleUi(el, d[key]);
+    });
+    syncConfigLiveConstraints();
+    syncConfigStreamingModelSelect();
+    syncConfigSummarizeSelects();
+    syncConfigAuthStatus();
+    if (configEditingProviderIndex >= 0) renderProviderDetailForm();
+    else renderLlmProviderList();
+    syncConfigModelSelects();
+    syncConfigHeadActions();
+  }
+
+  function syncConfigHeadActions() {
+    const addBtn = document.getElementById('btn-add-llm-provider');
+    if (!addBtn) return;
+    const onAi = configActivePanel === 'ai';
+    addBtn.hidden = !onAi || configEditingProviderIndex >= 0;
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function collectLlmModelsByKind(kind) {
+    const out = [];
+    (configDraft.llmProviders || []).forEach(function (p) {
+      (p.models || []).forEach(function (m) {
+        const id = (m.id || '').trim();
+        if (!id) return;
+        if ((m.kind || 'llm') === kind) out.push(id);
+      });
+    });
+    return out;
+  }
+
+  function renderPlatformAuthSlot(el, platform, loggedIn) {
+    if (!el) return;
+    const names = { douyin: '抖音', bilibili: 'B 站', aliyundrive: '阿里云盘' };
+    if (loggedIn) {
+      el.className = 'platform-config-status ok';
+      el.innerHTML =
+        '<span class="light green" style="position:static;display:inline-block;vertical-align:middle;margin:0;"></span>已登录' +
+        '<button type="button" class="auth-inline" data-auth-login="' +
+        platform +
+        '">重新登录</button>';
+    } else {
+      el.className = 'platform-config-status warn';
+      el.innerHTML =
+        '<button type="button" class="btn btn-sm" data-auth-login="' +
+        platform +
+        '">登录' +
+        (platform === 'aliyundrive' ? ' ' + (names[platform] || '') : '') +
+        '</button>';
+    }
+  }
+
+  function providerInitials(name) {
+    const n = (name || '').trim();
+    if (!n) return '?';
+    if (/[\u4e00-\u9fff]/.test(n[0])) return n[0];
+    const parts = n.split(/[\s_-]+/).filter(Boolean);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return n.slice(0, 2).toUpperCase();
+  }
+
+  function showProviderList() {
+    if (configEditingProviderIndex >= 0) readProviderDetailFromDom();
+    configEditingProviderIndex = -1;
+    const list = document.getElementById('config-ai-list-view');
+    const detail = document.getElementById('config-ai-detail-view');
+    const agent = document.getElementById('config-ai-agent-card');
+    if (list) list.hidden = false;
+    if (detail) detail.hidden = true;
+    if (agent) agent.hidden = false;
+    renderLlmProviderList();
+    syncConfigHeadActions();
+  }
+
+  function openProviderDetail(pi) {
+    configEditingProviderIndex = pi;
+    const list = document.getElementById('config-ai-list-view');
+    const detail = document.getElementById('config-ai-detail-view');
+    const agent = document.getElementById('config-ai-agent-card');
+    if (list) list.hidden = true;
+    if (detail) detail.hidden = false;
+    if (agent) agent.hidden = true;
+    renderProviderDetailForm();
+    syncConfigHeadActions();
+  }
+
+  function renderLlmProviderList() {
+    const root = document.getElementById('llm-providers-list');
+    if (!root) return;
+    const providers = configDraft.llmProviders || [];
+    if (!providers.length) {
+      root.innerHTML = '<p class="hint">暂无 Provider，点击顶栏「添加 Provider」。</p>';
+      return;
+    }
+    root.innerHTML = providers
+      .map(function (p, pi) {
+        const conn = p.connected;
+        const connLabel =
+          conn === true ? '已连通' : conn === false ? '未连通' : '未检测';
+        const connClass =
+          conn === true ? 'ok' : conn === false ? 'warn' : 'dim';
+        return (
+          '<article class="provider-row" data-provider-index="' +
+          pi +
+          '">' +
+          '<span class="provider-row-drag" aria-hidden="true" title="排序（实现期）">⋮⋮</span>' +
+          '<div class="provider-row-icon" aria-hidden="true">' +
+          escapeHtml(providerInitials(p.name)) +
+          '</div>' +
+          '<div class="provider-row-body">' +
+          '<div class="provider-row-name">' +
+          escapeHtml(p.name || '未命名') +
+          '</div>' +
+          '<div class="provider-row-url">' +
+          escapeHtml(p.baseUrl || '未配置 Base URL') +
+          '</div></div>' +
+          '<span class="provider-row-status ' +
+          connClass +
+          '" title="API 连通性（实现期探测）">' +
+          connLabel +
+          '</span>' +
+          '<div class="provider-row-actions">' +
+          '<button type="button" class="provider-icon-btn btn-edit-provider" data-provider-index="' +
+          pi +
+          '" title="编辑">✎</button>' +
+          '<button type="button" class="provider-icon-btn btn-copy-provider" data-provider-index="' +
+          pi +
+          '" title="复制">⧉</button>' +
+          '<button type="button" class="provider-icon-btn btn-remove-provider" data-provider-index="' +
+          pi +
+          '" title="删除">🗑</button>' +
+          '</div></article>'
+        );
+      })
+      .join('');
+  }
+
+  function renderProviderDetailForm() {
+    const form = document.getElementById('provider-detail-form');
+    const title = document.getElementById('provider-detail-title');
+    const pi = configEditingProviderIndex;
+    const p = (configDraft.llmProviders || [])[pi];
+    if (!form || !p) return;
+    if (title) title.textContent = '编辑 · ' + (p.name || '未命名');
+    const models = p.models && p.models.length ? p.models : [{ id: '', kind: 'llm' }];
+    const modelRows = models
+      .map(function (m, mi) {
+        return (
+          '<tr data-model-index="' +
+          mi +
+          '"><td><input type="text" class="config-input provider-model-id" value="' +
+          escapeHtml(m.id || '') +
+          '" placeholder="模型 ID" /></td>' +
+          '<td><select class="config-select provider-model-kind">' +
+          '<option value="llm"' +
+          (m.kind === 'llm' ? ' selected' : '') +
+          '>LLM</option>' +
+          '<option value="stt"' +
+          (m.kind === 'stt' ? ' selected' : '') +
+          '>STT</option></select></td>' +
+          '<td style="width:56px;text-align:right;">' +
+          '<button type="button" class="btn-ghost btn-remove-model" data-model-index="' +
+          mi +
+          '">删除</button></td></tr>'
+        );
+      })
+      .join('');
+    form.innerHTML =
+      '<div class="field-row"><label>名称</label><div class="field-control">' +
+      '<input type="text" class="config-input wide provider-name" value="' +
+      escapeHtml(p.name || '') +
+      '" /></div></div>' +
+      '<div class="field-row"><label>Base URL</label><div class="field-control">' +
+      '<input type="url" class="config-input wide provider-base-url" value="' +
+      escapeHtml(p.baseUrl || '') +
+      '" placeholder="https://…/v1" /></div></div>' +
+      '<div class="field-row"><label>API Key</label><div class="field-control">' +
+      '<input type="password" class="config-input wide provider-api-key" value="" placeholder="留空表示不修改" autocomplete="off" /></div></div>' +
+      '<div class="toggle-row"><span>设为默认 Provider</span>' +
+      '<button type="button" class="toggle' +
+      (p.id === configDraft.activeProviderId ? ' on' : '') +
+      '" id="cfg-provider-active" aria-pressed="' +
+      (p.id === configDraft.activeProviderId ? 'true' : 'false') +
+      '"></button></div>' +
+      '<p class="hint" style="margin:8px 0;">模型列表</p>' +
+      '<table class="provider-models"><thead><tr><th>模型</th><th>类型</th><th></th></tr></thead><tbody>' +
+      modelRows +
+      '</tbody></table>' +
+      '<div class="provider-model-actions">' +
+      '<button type="button" class="btn btn-sm" id="btn-detail-add-model">添加模型</button></div>';
+  }
+
+  function readProviderDetailFromDom() {
+    const pi = configEditingProviderIndex;
+    if (pi < 0) return;
+    const form = document.getElementById('provider-detail-form');
+    const prev = (configDraft.llmProviders || [])[pi] || {};
+    const savedKey = ((configSaved.llmProviders || [])[pi] || {}).apiKey || '';
+    if (!form) return;
+    const nameEl = form.querySelector('.provider-name');
+    const urlEl = form.querySelector('.provider-base-url');
+    const keyEl = form.querySelector('.provider-api-key');
+    let apiKey = prev.apiKey || savedKey;
+    const typed = keyEl && keyEl.value ? keyEl.value.trim() : '';
+    if (typed) apiKey = typed;
+    const models = [];
+    form.querySelectorAll('.provider-models tbody tr').forEach(function (row) {
+      const idEl = row.querySelector('.provider-model-id');
+      const kindEl = row.querySelector('.provider-model-kind');
+      models.push({
+        id: idEl ? idEl.value.trim() : '',
+        kind: kindEl ? kindEl.value : 'llm',
+      });
+    });
+    configDraft.llmProviders[pi] = {
+      id: prev.id || 'p_' + pi,
+      name: nameEl ? nameEl.value.trim() : '',
+      baseUrl: urlEl ? urlEl.value.trim() : '',
+      apiKey: apiKey,
+      connected: prev.connected,
+      models: models.length ? models : [{ id: '', kind: 'llm' }],
+    };
+    const activeToggle = document.getElementById('cfg-provider-active');
+    if (activeToggle && activeToggle.classList.contains('on') && configDraft.llmProviders[pi].id) {
+      configDraft.activeProviderId = configDraft.llmProviders[pi].id;
+    }
+  }
+
+  function readLlmProvidersFromDom() {
+    if (configEditingProviderIndex >= 0) readProviderDetailFromDom();
+  }
+
+  function readConfigFormToDraft() {
+    const form = document.getElementById('config-form');
+    if (!form) return;
+    form.querySelectorAll('[data-cfg]').forEach(function (el) {
+      const key = el.dataset.cfg;
+      if (!key || !(key in configDraft)) return;
+      if (el.type === 'number') configDraft[key] = Number(el.value);
+      else configDraft[key] = el.value;
+    });
+    form.querySelectorAll('[data-cfg-toggle]').forEach(function (el) {
+      const key = el.dataset.cfgToggle;
+      if (key && key in configDraft) configDraft[key] = readToggle(el);
+    });
+  }
+
+  function configJsonEqual(a, b) {
+    return JSON.stringify(a) === JSON.stringify(b);
+  }
+
+  function setConfigDirty(dirty) {
+    configDirty = dirty;
+    const hint = document.getElementById('config-save-hint');
+    const saveBtn = document.getElementById('btn-config-save');
+    const revertBtn = document.getElementById('btn-config-revert');
+    if (hint) {
+      hint.classList.remove('dirty', 'saved', 'error');
+      hint.textContent = dirty ? '有未保存的更改' : '已保存';
+      hint.classList.add(dirty ? 'dirty' : 'saved');
+    }
+    if (saveBtn) saveBtn.disabled = !dirty;
+    if (revertBtn) revertBtn.disabled = !dirty;
+  }
+
+  function markConfigDirty() {
+    readConfigFormToDraft();
+    readLlmProvidersFromDom();
+    setConfigDirty(!configJsonEqual(configDraft, configSaved));
+  }
+
+  function syncConfigLiveConstraints() {
+    const streaming = configDraft.pipelineMode === 'streaming';
+    const sttBtn = document.getElementById('cfg-streaming-stt');
+    if (sttBtn && streaming && !readToggle(sttBtn)) {
+      setToggleUi(sttBtn, true);
+      configDraft.streamingSttEnabled = true;
+    }
+    const callout = document.getElementById('cfg-live-callout');
+    if (callout) {
+      callout.hidden = !streaming;
+    }
+  }
+
+  function syncConfigStreamingModelSelect() {
+    const sel = document.getElementById('cfg-streaming-model');
+    if (!sel) return;
+    const engine = configDraft.streamingSttEngine || 'deepgram';
+    const options = STT_MODELS_BY_ENGINE[engine] || STT_MODELS_BY_ENGINE.deepgram;
+    const prev = configDraft.streamingSttModel || options[0];
+    sel.innerHTML = options
+      .map(function (m) {
+        const esc = m.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        return '<option value="' + esc + '">' + esc + '</option>';
+      })
+      .join('');
+    if (options.indexOf(prev) >= 0) sel.value = prev;
+    else {
+      sel.value = options[0];
+      configDraft.streamingSttModel = options[0];
+    }
+  }
+
+  function syncConfigSummarizeSelects() {
+    const provSel = document.getElementById('cfg-summarize-provider');
+    const modelSel = document.getElementById('cfg-summarize-model-live');
+    const providers = configDraft.llmProviders || [];
+    if (provSel) {
+      const prevP = configDraft.summarizeProviderId;
+      provSel.innerHTML = providers
+        .map(function (p) {
+          const esc = (p.id || '').replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+          const label = escapeHtml(p.name || p.id || '未命名');
+          return '<option value="' + esc + '">' + label + '</option>';
+        })
+        .join('');
+      const hasP = providers.some(function (p) {
+        return p.id === prevP;
+      });
+      if (hasP) provSel.value = prevP;
+      else if (providers[0]) {
+        provSel.value = providers[0].id;
+        configDraft.summarizeProviderId = providers[0].id;
+      }
+    }
+    if (modelSel) {
+      const pid = configDraft.summarizeProviderId;
+      const p = providers.find(function (x) {
+        return x.id === pid;
+      });
+      const models = (p && p.models ? p.models : [])
+        .filter(function (m) {
+          return (m.kind || 'llm') === 'llm' && (m.id || '').trim();
+        })
+        .map(function (m) {
+          return m.id.trim();
+        });
+      const prevM = configDraft.summarizeModel;
+      modelSel.innerHTML = models
+        .map(function (m) {
+          const esc = m.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+          return '<option value="' + esc + '">' + esc + '</option>';
+        })
+        .join('');
+      if (models.indexOf(prevM) >= 0) modelSel.value = prevM;
+      else if (models[0]) {
+        modelSel.value = models[0];
+        configDraft.summarizeModel = models[0];
+      }
+    }
+  }
+
+  function syncConfigAuthStatus() {
+    renderPlatformAuthSlot(
+      document.getElementById('cfg-auth-status-douyin'),
+      'douyin',
+      configDraft.authDouyin
+    );
+    renderPlatformAuthSlot(
+      document.getElementById('cfg-auth-status-bilibili'),
+      'bilibili',
+      configDraft.authBilibili
+    );
+    renderPlatformAuthSlot(
+      document.getElementById('cfg-auth-status-aliyundrive'),
+      'aliyundrive',
+      configDraft.authAliyun
+    );
+  }
+
+  function syncConfigModelSelects() {
+    const models = collectLlmModelsByKind('llm');
+    const agentSel = document.getElementById('cfg-agent-model');
+    if (agentSel) {
+      const prev = agentSel.value;
+      let html = '<option value="auto">自动</option>';
+      models.forEach(function (m) {
+        const esc = m.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+        html += '<option value="' + esc + '">' + esc + '</option>';
+      });
+      agentSel.innerHTML = html;
+      const hasPrev = Array.prototype.some.call(agentSel.options, function (o) {
+        return o.value === prev;
+      });
+      if (hasPrev) agentSel.value = prev;
+      else agentSel.value = 'auto';
+    }
+    syncAgentModelSelect();
+    syncConfigSummarizeSelects();
+  }
+
+  function syncAgentModelSelect() {
+    const models = collectLlmModelsByKind('llm');
+    const sel = document.getElementById('agent-model-select');
+    const pill = document.querySelector('.agent-header .model-pill');
+    if (!sel) return;
+    const prev = sel.value;
+    let html = '<option value="auto">Auto</option>';
+    models.forEach(function (m) {
+      const esc = m.replace(/&/g, '&amp;').replace(/"/g, '&quot;');
+      const short = m.length > 28 ? m.slice(0, 26) + '…' : m;
+      html += '<option value="' + esc + '">' + short + '</option>';
+    });
+    sel.innerHTML = html;
+    const preferred =
+      prev && Array.prototype.some.call(sel.options, function (o) {
+        return o.value === prev;
+      })
+        ? prev
+        : configSaved.agentModel && configSaved.agentModel !== 'auto'
+          ? configSaved.agentModel
+          : 'auto';
+    const hasPreferred = Array.prototype.some.call(sel.options, function (o) {
+      return o.value === preferred;
+    });
+    sel.value = hasPreferred ? preferred : 'auto';
+    if (pill) {
+      const label = sel.value === 'auto' ? 'auto' : sel.value.split('/').pop() || sel.value;
+      pill.textContent = (configSaved.activeProviderId || 'nvidia') + ' · ' + label;
+    }
+  }
+
+  function applyTheme(theme) {
+    const t = theme === 'dark' ? 'dark' : 'light';
+    document.documentElement.setAttribute('data-theme', t);
+    try {
+      localStorage.setItem(THEME_KEY, t);
+    } catch (_) {}
+  }
+
+  function applyConfigToRuntime() {
+    globalAutoRecord = !!configSaved.autoRecord;
+    applyTheme(configSaved.theme || 'light');
+    syncAgentModelSelect();
+    const sel = document.querySelector('#manage-list .manage-row.selected');
+    if (sel) renderManageDetail(sel);
+  }
+
+  function saveConfigDraft() {
+    readConfigFormToDraft();
+    readLlmProvidersFromDom();
+    syncConfigLiveConstraints();
+    readConfigFormToDraft();
+    readLlmProvidersFromDom();
+    if (configEditingProviderIndex >= 0) showProviderList();
+    if (!configDraft.feishuWebhookUrl && configSaved.feishuWebhookUrl) {
+      configDraft.feishuWebhookUrl = configSaved.feishuWebhookUrl;
+    }
+    (configDraft.llmProviders || []).forEach(function (p, i) {
+      const saved = (configSaved.llmProviders || [])[i];
+      if (saved && !p.apiKey) p.apiKey = saved.apiKey;
+    });
+    configSaved = cloneConfig(configDraft);
+    configDraft = cloneConfig(configSaved);
+    applyConfigDraftToForm();
+    setConfigDirty(false);
+    applyConfigToRuntime();
+    showToast('配置已保存（原型：将写入 PATCH /api/config）');
+  }
+
+  function revertConfigDraft() {
+    configDraft = cloneConfig(configSaved);
+    showProviderList();
+    applyConfigDraftToForm();
+    setConfigDirty(false);
+    applyConfigToRuntime();
+    showToast('已撤销更改');
+  }
+
+  function initConfigEditor() {
+    try {
+      const storedTheme = localStorage.getItem(THEME_KEY);
+      if (storedTheme === 'light' || storedTheme === 'dark') {
+        CONFIG_DEFAULTS.theme = storedTheme;
+      }
+    } catch (_) {}
+    configSaved = cloneConfig(CONFIG_DEFAULTS);
+    configDraft = cloneConfig(configSaved);
+    applyConfigDraftToForm();
+    applyConfigToRuntime();
+    setConfigDirty(false);
+
+    const form = document.getElementById('config-form');
+    if (!form) return;
+
+    form.addEventListener('input', function (e) {
+      if (e.target.closest('#provider-detail-form')) readLlmProvidersFromDom();
+      markConfigDirty();
+    });
+    form.addEventListener('change', function (e) {
+      const t = e.target;
+      if (t.closest('#provider-detail-form')) readLlmProvidersFromDom();
+      if (
+        t.id === 'cfg-pipeline-mode' ||
+        t.dataset.cfg === 'streamingSttEngine' ||
+        t.dataset.cfg === 'streamingSttModel'
+      ) {
+        readConfigFormToDraft();
+        readLlmProvidersFromDom();
+        syncConfigLiveConstraints();
+        syncConfigStreamingModelSelect();
+        syncConfigModelSelects();
+        applyConfigDraftToForm();
+      }
+      if (
+        t.id === 'cfg-summarize-provider' ||
+        t.id === 'cfg-summarize-model-live'
+      ) {
+        readConfigFormToDraft();
+        if (t.id === 'cfg-summarize-provider') syncConfigSummarizeSelects();
+        markConfigDirty();
+        return;
+      }
+      if (t.id === 'cfg-theme') {
+        readConfigFormToDraft();
+        applyTheme(configDraft.theme);
+        markConfigDirty();
+        return;
+      }
+      if (t.classList && t.classList.contains('provider-model-kind')) {
+        readLlmProvidersFromDom();
+        syncConfigModelSelects();
+        syncConfigSummarizeSelects();
+      }
+      markConfigDirty();
+    });
+
+    document.getElementById('btn-add-llm-provider')?.addEventListener('click', function () {
+      readLlmProvidersFromDom();
+      configDraft.llmProviders = configDraft.llmProviders || [];
+      const newId = 'p_' + Date.now();
+      configDraft.llmProviders.push({
+        id: newId,
+        name: '新服务',
+        baseUrl: '',
+        apiKey: '',
+        connected: undefined,
+        models: [{ id: '', kind: 'llm' }],
+      });
+      openProviderDetail(configDraft.llmProviders.length - 1);
+      markConfigDirty();
+    });
+
+    document.getElementById('btn-provider-back')?.addEventListener('click', function () {
+      showProviderList();
+      syncConfigModelSelects();
+      markConfigDirty();
+    });
+
+    document.getElementById('llm-providers-list')?.addEventListener('click', function (e) {
+      const editBtn = e.target.closest('.btn-edit-provider');
+      const copyBtn = e.target.closest('.btn-copy-provider');
+      const rmProv = e.target.closest('.btn-remove-provider');
+      if (!editBtn && !copyBtn && !rmProv) return;
+      if (editBtn) {
+        openProviderDetail(Number(editBtn.dataset.providerIndex));
+        return;
+      }
+      readLlmProvidersFromDom();
+      if (copyBtn) {
+        const pi = Number(copyBtn.dataset.providerIndex);
+        const src = configDraft.llmProviders[pi];
+        if (!src) return;
+        const copy = JSON.parse(JSON.stringify(src));
+        copy.id = 'p_' + Date.now();
+        copy.name = (copy.name || '未命名') + ' 副本';
+        configDraft.llmProviders.push(copy);
+        renderLlmProviderList();
+        syncConfigModelSelects();
+        markConfigDirty();
+        showToast('已复制 Provider');
+        return;
+      }
+      if (rmProv) {
+        const pi = Number(rmProv.dataset.providerIndex);
+        if (configDraft.llmProviders.length <= 1) {
+          showToast('至少保留一个 Provider');
+          return;
+        }
+        const removed = configDraft.llmProviders[pi];
+        configDraft.llmProviders.splice(pi, 1);
+        if (removed && configDraft.activeProviderId === removed.id) {
+          configDraft.activeProviderId = configDraft.llmProviders[0].id;
+        }
+        if (configDraft.summarizeProviderId === removed.id) {
+          configDraft.summarizeProviderId = configDraft.llmProviders[0].id;
+        }
+        renderLlmProviderList();
+        syncConfigModelSelects();
+        markConfigDirty();
+      }
+    });
+
+    document.getElementById('provider-detail-form')?.addEventListener('click', function (e) {
+      const activeBtn = e.target.closest('#cfg-provider-active');
+      const rmModel = e.target.closest('.btn-remove-model');
+      const addModel = e.target.closest('#btn-detail-add-model');
+      if (activeBtn) {
+        activeBtn.classList.toggle('on');
+        const on = activeBtn.classList.contains('on');
+        activeBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+        readProviderDetailFromDom();
+        const pi = configEditingProviderIndex;
+        const p = configDraft.llmProviders[pi];
+        if (on && p && p.id) configDraft.activeProviderId = p.id;
+        renderLlmProviderList();
+        markConfigDirty();
+        return;
+      }
+      if (!rmModel && !addModel) return;
+      readProviderDetailFromDom();
+      const pi = configEditingProviderIndex;
+      const p = configDraft.llmProviders[pi];
+      if (!p) return;
+      if (addModel) {
+        p.models = p.models || [];
+        p.models.push({ id: '', kind: 'llm' });
+        renderProviderDetailForm();
+        markConfigDirty();
+        return;
+      }
+      if (rmModel) {
+        const mi = Number(rmModel.dataset.modelIndex);
+        if (p.models.length > 1) {
+          p.models.splice(mi, 1);
+          renderProviderDetailForm();
+          markConfigDirty();
+        } else showToast('至少保留一个模型行');
+      }
+    });
+
+    form.querySelectorAll('[data-cfg-toggle]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        if (btn.disabled) return;
+        btn.classList.toggle('on');
+        btn.setAttribute('aria-pressed', btn.classList.contains('on') ? 'true' : 'false');
+        readConfigFormToDraft();
+        if (btn.dataset.cfgToggle === 'autoRecord') {
+          globalAutoRecord = readToggle(btn);
+          const sel = document.querySelector('#manage-list .manage-row.selected');
+          if (sel) renderManageDetail(sel);
+        }
+        if (btn.dataset.cfgToggle === 'autoRecord') syncConfigLiveConstraints();
+        markConfigDirty();
+      });
+    });
+
+    document.getElementById('btn-config-save')?.addEventListener('click', saveConfigDraft);
+    document.getElementById('btn-config-revert')?.addEventListener('click', revertConfigDraft);
+    document.getElementById('btn-config-doctor')?.addEventListener('click', function () {
+      showToast('正在检测环境…（原型）');
+      setTimeout(function () { showToast('环境检测完成'); }, 600);
+    });
+  }
+
+  const recordBanner = document.getElementById('record-banner');
+  const daemonCard = document.getElementById('daemon-card');
+  const railDaemonDot = document.getElementById('rail-daemon-dot');
+  const railDaemonBtn = document.getElementById('rail-daemon');
+
+  function syncDaemonUi() {
+    const on = daemonRunning;
+    app.classList.toggle('daemon-stopped', !on);
+    daemonCard?.classList.toggle('stopped', !on);
+    const strong = daemonCard?.querySelector('strong');
+    if (strong) strong.textContent = on ? 'Daemon 运行中' : 'Daemon';
+    if (railDaemonDot) railDaemonDot.classList.toggle('live', on);
+    if (railDaemonBtn) {
+      railDaemonBtn.title = on
+        ? 'Daemon 运行中 · 点击展开侧栏'
+        : 'Daemon 已停止 · 点击展开侧栏';
+    }
+    const stopBtn = document.getElementById('btn-daemon-stop');
+    if (stopBtn) {
+      stopBtn.textContent = on ? '⏹' : '▶';
+      stopBtn.title = on ? '停止 monitor watch' : '启动 monitor watch';
+      stopBtn.setAttribute('aria-label', on ? '停止' : '启动');
+      stopBtn.classList.toggle('icon-btn-danger', on);
+    }
+  }
+
+  function toggleDaemonLogPanel() {
+    const panel = document.getElementById('daemon-log-panel');
+    const btn = document.getElementById('btn-daemon-log');
+    if (!panel || !btn) return;
+    const open = panel.hasAttribute('hidden');
+    if (open) {
+      panel.removeAttribute('hidden');
+      btn.classList.add('active');
+      btn.setAttribute('aria-pressed', 'true');
+      btn.title = '隐藏日志';
+    } else {
+      panel.setAttribute('hidden', '');
+      btn.classList.remove('active');
+      btn.setAttribute('aria-pressed', 'false');
+      btn.title = '显示日志';
+    }
+  }
+
+  function syncLayoutClasses() {
+    const left = app.classList.contains('left-collapsed');
+    const right = app.classList.contains('right-collapsed');
+    app.classList.toggle('both-collapsed', left && right);
+    const sizes = getPaneSizes();
+    applyPaneSizes(sizes);
+  }
+
+  function syncRailDots() {
+    document.querySelectorAll('.rail-dot[data-creator]').forEach(function (dot) {
+      const item = document.querySelector(
+        '.creator-item[data-creator="' + dot.dataset.creator + '"]'
+      );
+      if (!item) return;
+      const lightEl = dot.querySelector('.light');
+      const l = item.dataset.light || 'gray';
+      const live = l === 'red' || l === 'green';
+      if (lightEl) lightEl.className = 'light ' + l;
+      dot.classList.toggle('is-live', live);
+      if (live) dot.setAttribute('aria-label', '直播中');
+      else dot.removeAttribute('aria-label');
+      const wrap = item.querySelector('.avatar-wrap');
+      if (wrap) wrap.classList.toggle('is-live', live);
+      const sub = item.querySelector('.creator-sub');
+      const name = item.dataset.name || '';
+      dot.title = sub ? name + ' · ' + sub.textContent.trim() : name;
+    });
+  }
+
+  function toggleDaemon() {
+    daemonRunning = !daemonRunning;
+    syncDaemonUi();
+    showToast(
+      daemonRunning
+        ? 'Daemon 已启动（原型模拟）'
+        : '已发送停止 monitor watch（原型模拟）'
+    );
+  }
+
+  function showToast(msg, ms) {
+    if (!toastEl) return;
+    toastEl.textContent = msg;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () {
+      toastEl.classList.remove('show');
+    }, ms || 2200);
+  }
+
+  function clampSize(n, min, max) {
+    return Math.min(max, Math.max(min, n));
+  }
+
+  function readCssPx(varName, fallback) {
+    const raw = getComputedStyle(document.documentElement).getPropertyValue(varName).trim();
+    const n = parseFloat(raw);
+    return Number.isFinite(n) ? n : fallback;
+  }
+
+  /** 右栏最宽不超过视口一半，保证中栏视频区有足够空间 */
+  const RIGHT_MAX_VIEWPORT_RATIO = 0.5;
+
+  function getRightWidthLimits() {
+    const leftCollapsed = app.classList.contains('left-collapsed');
+    const rightCollapsed = app.classList.contains('right-collapsed');
+    let reserved = 0;
+    reserved += leftCollapsed
+      ? readCssPx('--sidebar-collapsed-w', 56)
+      : readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW);
+    reserved += rightCollapsed
+      ? readCssPx('--right-collapsed-w', 48)
+      : 0;
+    if (!leftCollapsed) reserved += readCssPx('--grip-w', 6);
+    if (!rightCollapsed) reserved += readCssPx('--grip-w', 6);
+    reserved += SIZE_LIMITS.center.min;
+    const halfScreenMax = Math.floor(window.innerWidth * RIGHT_MAX_VIEWPORT_RATIO);
+    const dynamicMax = window.innerWidth - reserved;
+    const max = Math.min(halfScreenMax, dynamicMax, SIZE_LIMITS.right.max);
+    return {
+      min: SIZE_LIMITS.right.min,
+      max: Math.max(SIZE_LIMITS.right.min, max),
+    };
+  }
+
+  function applyPaneSizes(sizes) {
+    const root = document.documentElement;
+    const rightLimits = getRightWidthLimits();
+    root.style.setProperty(
+      '--sidebar-w',
+      clampSize(sizes.sidebarW, SIZE_LIMITS.sidebar.min, SIZE_LIMITS.sidebar.max) + 'px'
+    );
+    root.style.setProperty(
+      '--right-w',
+      clampSize(sizes.rightW, rightLimits.min, rightLimits.max) + 'px'
+    );
+    root.style.setProperty(
+      '--right-agent-h',
+      clampSize(sizes.agentH, SIZE_LIMITS.agent.min, SIZE_LIMITS.agent.max) + 'px'
+    );
+  }
+
+  function getPaneSizes() {
+    return {
+      sidebarW: readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW),
+      rightW: readCssPx('--right-w', SIZE_DEFAULTS.rightW),
+      agentH: readCssPx('--right-agent-h', SIZE_DEFAULTS.agentH),
+    };
+  }
+
+  function maxAgentHeight(splitEl) {
+    if (!splitEl) return SIZE_LIMITS.agent.max;
+    const header = splitEl.querySelector('.side-panel-header');
+    const headerH = header ? header.offsetHeight : 44;
+    const grip = 6;
+    const available = splitEl.clientHeight - headerH - grip - SIZE_LIMITS.transcriptMin;
+    return clampSize(available, SIZE_LIMITS.agent.min, SIZE_LIMITS.agent.max);
+  }
+
+  function bindColumnResize(handle, side) {
+    if (!handle) return;
+    handle.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      if (side === 'left' && app.classList.contains('left-collapsed')) return;
+      if (side === 'right' && app.classList.contains('right-collapsed')) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const start = getPaneSizes();
+      handle.classList.add('is-dragging');
+      app.classList.add('is-resizing');
+      document.body.classList.add('resize-col-active');
+
+      function onMove(ev) {
+        const dx = ev.clientX - startX;
+        const rightLimits = getRightWidthLimits();
+        if (side === 'left') {
+          applyPaneSizes({ sidebarW: start.sidebarW + dx, rightW: start.rightW, agentH: start.agentH });
+        } else {
+          applyPaneSizes({
+            sidebarW: start.sidebarW,
+            rightW: clampSize(start.rightW - dx, rightLimits.min, rightLimits.max),
+            agentH: start.agentH,
+          });
+        }
+      }
+
+      function onUp() {
+        handle.classList.remove('is-dragging');
+        app.classList.remove('is-resizing');
+        document.body.classList.remove('resize-col-active');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        saveLayout();
+      }
+
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function bindRightSplitResize(handle) {
+    const splitRoot = document.querySelector('.right-split');
+    if (!handle || !splitRoot) return;
+    handle.addEventListener('mousedown', function (e) {
+      if (e.button !== 0 || app.classList.contains('right-collapsed')) return;
+      e.preventDefault();
+      const startY = e.clientY;
+      const start = getPaneSizes();
+      handle.classList.add('is-dragging');
+      app.classList.add('is-resizing');
+      document.body.classList.add('resize-row-active');
+
+      function onMove(ev) {
+        const dy = ev.clientY - startY;
+        const maxAgent = maxAgentHeight(splitRoot);
+        applyPaneSizes({
+          sidebarW: start.sidebarW,
+          rightW: start.rightW,
+          agentH: clampSize(start.agentH - dy, SIZE_LIMITS.agent.min, maxAgent),
+        });
+      }
+
+      function onUp() {
+        handle.classList.remove('is-dragging');
+        app.classList.remove('is-resizing');
+        document.body.classList.remove('resize-row-active');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        saveLayout();
+      }
+
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function saveLayout() {
+    syncLayoutClasses();
+    const sizes = getPaneSizes();
+    try {
+      localStorage.setItem(
+        LS_KEY,
+        JSON.stringify({
+          leftCollapsed: app.classList.contains('left-collapsed'),
+          rightCollapsed: app.classList.contains('right-collapsed'),
+          sidebarW: sizes.sidebarW,
+          rightW: sizes.rightW,
+          agentH: sizes.agentH,
+        })
+      );
+    } catch (_) {}
+  }
+
+  function loadLayout() {
+    let s = {};
+    try {
+      s = JSON.parse(localStorage.getItem(LS_KEY) || '{}');
+    } catch (_) {}
+    applyPaneSizes({
+      sidebarW: typeof s.sidebarW === 'number' ? s.sidebarW : SIZE_DEFAULTS.sidebarW,
+      rightW: typeof s.rightW === 'number' ? s.rightW : SIZE_DEFAULTS.rightW,
+      agentH: typeof s.agentH === 'number' ? s.agentH : SIZE_DEFAULTS.agentH,
+    });
+    if (s.leftCollapsed) app.classList.add('left-collapsed');
+    if (s.rightCollapsed) app.classList.add('right-collapsed');
+    syncLayoutClasses();
+  }
+  loadLayout();
+  bindColumnResize(document.getElementById('resize-left'), 'left');
+  bindColumnResize(document.getElementById('resize-right'), 'right');
+  bindRightSplitResize(document.getElementById('resize-right-split'));
+  window.addEventListener('resize', function () {
+    applyPaneSizes(getPaneSizes());
+  });
+
+  function updateCenterToolbarContext(name) {
+    const settings = name === 'config' || name === 'manage';
+    centerToolbar?.classList.toggle('context-settings', settings);
+    if (centerContextLabel) {
+      centerContextLabel.textContent =
+        name === 'config' ? '系统配置' : name === 'manage' ? '监控管理' : '';
+    }
+    document.querySelectorAll('.user-menu-item[data-open-view]').forEach(function (btn) {
+      const on = settings && btn.dataset.openView === name;
+      btn.classList.toggle('active', on);
+    });
+  }
+
+  const userMenuTrigger = document.getElementById('user-menu-trigger');
+  const userMenu = document.getElementById('user-menu');
+  const userMenuBackdrop = document.getElementById('user-menu-backdrop');
+
+  const railUserMenuBtn = document.getElementById('rail-user-menu');
+
+  function positionUserMenu(anchorEl) {
+    if (!userMenu || !anchorEl) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const menuW = app.classList.contains('left-collapsed') ? 200 : Math.max(200, rect.width);
+    let left = rect.left;
+    if (left + menuW > window.innerWidth - 8) {
+      left = window.innerWidth - menuW - 8;
+    }
+    userMenu.style.width = menuW + 'px';
+    userMenu.style.left = Math.max(8, left) + 'px';
+    userMenu.style.bottom = window.innerHeight - rect.top + 6 + 'px';
+    userMenu.style.top = 'auto';
+  }
+
+  function setUserMenuOpen(open, anchorEl) {
+    if (!userMenu) return;
+    const anchor = open ? anchorEl || userMenuTrigger : null;
+    userMenu.classList.toggle('open', open);
+    userMenu.hidden = !open;
+    if (userMenuTrigger) {
+      userMenuTrigger.setAttribute(
+        'aria-expanded',
+        open && anchor === userMenuTrigger ? 'true' : 'false'
+      );
+    }
+    if (railUserMenuBtn) {
+      railUserMenuBtn.setAttribute(
+        'aria-expanded',
+        open && anchor === railUserMenuBtn ? 'true' : 'false'
+      );
+    }
+    if (userMenuBackdrop) {
+      userMenuBackdrop.classList.toggle('open', open);
+      userMenuBackdrop.setAttribute('aria-hidden', open ? 'false' : 'true');
+    }
+    if (open && anchor) positionUserMenu(anchor);
+  }
+
+  function showView(name) {
+    if (name === 'config' || name === 'manage') setUserMenuOpen(false);
+    Object.keys(views).forEach(function (k) {
+      const el = views[k];
+      if (el) el.classList.toggle('active', k === name);
+    });
+    if (centerTabs) {
+      centerTabs.querySelectorAll('.tab[data-view]').forEach(function (t) {
+        const v = t.dataset.view;
+        const on = (!playbackMode && v === name) || (playbackMode && v === 'history');
+        t.classList.toggle('active', on);
+        t.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+    }
+    updateCenterToolbarContext(name);
+    if (name === 'live' || (name === 'history' && !playbackMode)) setLiveContext();
+    if (name === 'playback') setPlaybackContext();
+    if (name === 'manage') {
+      syncManageFilterCounts();
+      const sel = document.querySelector('#manage-list .manage-row.selected');
+      const drawerOpen = manageDrawerEl && manageDrawerEl.classList.contains('open');
+      if (sel && drawerOpen && sel.nextElementSibling === manageDrawerEl) {
+        renderManageDetail(sel);
+      } else {
+        const target =
+          sel && !sel.classList.contains('hidden')
+            ? sel
+            : document.querySelector('#manage-list .manage-row[data-creator]:not(.hidden)');
+        if (target) openManageDrawerForRow(target);
+        else closeManageDrawer({ instant: true });
+      }
+    }
+    if (window.__m2tRelayout) setTimeout(window.__m2tRelayout, 60);
+  }
+
+  function showConfigPanel(id) {
+    configActivePanel = id;
+    if (id !== 'ai') showProviderList();
+    document.querySelectorAll('.config-panel').forEach(function (p) {
+      const on = p.id === 'config-panel-' + id;
+      p.classList.toggle('active', on);
+      p.hidden = !on;
+    });
+    document.querySelectorAll('#config-segments .seg-btn').forEach(function (b) {
+      const on = b.dataset.configPanel === id;
+      b.classList.toggle('active', on);
+      b.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    syncConfigHeadActions();
+  }
+
+  function autoRecordLabel(mode) {
+    if (mode === 'on') return { text: '自动', cls: 'tag-pill accent' };
+    if (mode === 'off') return { text: '手动', cls: 'tag-pill' };
+    return { text: '继承', cls: 'tag-pill' };
+  }
+
+  function updateManageRowAutoCell(row) {
+    const pill = row.querySelector('.manage-auto-pill');
+    if (!pill) return;
+    if (row.dataset.monitor !== '1') {
+      pill.className = 'manage-auto-pill tag-pill';
+      pill.textContent = '—';
+      return;
+    }
+    const lab = autoRecordLabel(row.dataset.autoRecord || 'inherit');
+    pill.className = 'manage-auto-pill ' + lab.cls;
+    pill.textContent = lab.text;
+  }
+
+  function syncManageFilterCounts() {
+    const rows = document.querySelectorAll('#manage-list .manage-row[data-creator]');
+    let on = 0;
+    let off = 0;
+    rows.forEach(function (r) {
+      if (r.dataset.monitor === '1') on += 1;
+      else off += 1;
+    });
+    const total = on + off;
+    const stats = document.getElementById('manage-stats');
+    if (stats) {
+      stats.innerHTML =
+        '已登记 <strong>' + total + '</strong> · 监控中 <strong>' + on + '</strong>';
+    }
+    document.querySelectorAll('[data-manage-filter]').forEach(function (chip) {
+      const f = chip.dataset.manageFilter;
+      const n = f === 'all' ? total : f === 'on' ? on : off;
+      const labels = { all: '全部', on: '已监控', off: '未监控' };
+      chip.textContent = labels[f] + ' (' + n + ')';
+    });
+  }
+
+  function applyManageFilter() {
+    const drawer = document.getElementById('manage-drawer');
+    document.querySelectorAll('#manage-list .manage-row[data-creator]').forEach(function (row) {
+      let ok = true;
+      if (manageFilter === 'on') ok = row.dataset.monitor === '1';
+      if (manageFilter === 'off') ok = row.dataset.monitor !== '1';
+      row.classList.toggle('hidden', !ok);
+    });
+    const sel = document.querySelector('#manage-list .manage-row.selected');
+    if (sel && sel.classList.contains('hidden')) {
+      closeManageDrawer({ instant: true });
+      const first = document.querySelector('#manage-list .manage-row[data-creator]:not(.hidden)');
+      if (first) openManageDrawerForRow(first);
+    } else if (drawer && drawer.classList.contains('open') && sel) {
+      if (sel.nextElementSibling !== drawer) sel.after(drawer);
+    }
+  }
+
+  const manageDrawerEl = document.getElementById('manage-drawer');
+  const MANAGE_DRAWER_MS = 340;
+  let manageDrawerCloseTimer = null;
+
+  function finishCloseManageDrawer() {
+    if (!manageDrawerEl) return;
+    if (manageDrawerCloseTimer) {
+      clearTimeout(manageDrawerCloseTimer);
+      manageDrawerCloseTimer = null;
+    }
+    manageDrawerEl.classList.remove('open');
+    manageDrawerEl.hidden = true;
+    delete manageDrawerEl.dataset.creator;
+    const inner = manageDrawerEl.querySelector('.manage-drawer-inner');
+    if (inner) inner.classList.remove('is-visible');
+    document.querySelectorAll('#manage-list .manage-row').forEach(function (r) {
+      r.classList.remove('selected');
+      r.setAttribute('aria-expanded', 'false');
+    });
+  }
+
+  function closeManageDrawer(opts) {
+    if (!manageDrawerEl || !manageDrawerEl.classList.contains('open')) {
+      finishCloseManageDrawer();
+      return;
+    }
+    if (opts && opts.instant) {
+      finishCloseManageDrawer();
+      return;
+    }
+    const inner = manageDrawerEl.querySelector('.manage-drawer-inner');
+    if (inner) inner.classList.remove('is-visible');
+    manageDrawerEl.classList.remove('open');
+
+    const done = function () {
+      manageDrawerEl.removeEventListener('transitionend', onEnd);
+      if (manageDrawerCloseTimer) {
+        clearTimeout(manageDrawerCloseTimer);
+        manageDrawerCloseTimer = null;
+      }
+      if (!manageDrawerEl.classList.contains('open')) finishCloseManageDrawer();
+    };
+    const onEnd = function (e) {
+      if (e.target !== manageDrawerEl) return;
+      if (e.propertyName === 'grid-template-rows' || e.propertyName === 'opacity') done();
+    };
+    manageDrawerEl.addEventListener('transitionend', onEnd);
+    manageDrawerCloseTimer = setTimeout(done, MANAGE_DRAWER_MS);
+  }
+
+  function openManageDrawerForRow(row, opts) {
+    if (!manageDrawerEl || !row) return;
+    opts = opts || {};
+    if (manageDrawerCloseTimer) {
+      clearTimeout(manageDrawerCloseTimer);
+      manageDrawerCloseTimer = null;
+    }
+    const prevCreator = manageDrawerEl.dataset.creator;
+    const switching =
+      manageDrawerEl.classList.contains('open') &&
+      prevCreator &&
+      prevCreator !== (row.dataset.creator || '');
+
+    document.querySelectorAll('#manage-list .manage-row').forEach(function (r) {
+      r.classList.remove('selected');
+      r.setAttribute('aria-expanded', 'false');
+    });
+    row.classList.add('selected');
+    row.setAttribute('aria-expanded', 'true');
+    row.after(manageDrawerEl);
+    manageDrawerEl.hidden = false;
+    manageDrawerEl.dataset.creator = row.dataset.creator || '';
+    renderManageDetail(row);
+
+    const inner = manageDrawerEl.querySelector('.manage-drawer-inner');
+
+    if (opts.instant) {
+      manageDrawerEl.classList.add('open');
+      if (inner) inner.classList.add('is-visible');
+    } else if (switching) {
+      manageDrawerEl.classList.add('open');
+      if (inner) {
+        inner.classList.remove('is-visible');
+        requestAnimationFrame(function () {
+          inner.classList.add('is-visible');
+        });
+      }
+    } else {
+      manageDrawerEl.classList.remove('open');
+      if (inner) inner.classList.remove('is-visible');
+      void manageDrawerEl.offsetHeight;
+      requestAnimationFrame(function () {
+        manageDrawerEl.classList.add('open');
+        requestAnimationFrame(function () {
+          if (inner) inner.classList.add('is-visible');
+        });
+      });
+    }
+
+    requestAnimationFrame(function () {
+      manageDrawerEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    });
+  }
+
+  function selectManageRow(row) {
+    if (!row || row.classList.contains('hidden')) return;
+    const openBelow =
+      manageDrawerEl &&
+      manageDrawerEl.classList.contains('open') &&
+      row.classList.contains('selected') &&
+      row.nextElementSibling === manageDrawerEl;
+    if (openBelow) {
+      closeManageDrawer();
+      return;
+    }
+    openManageDrawerForRow(row);
+  }
+
+  function renderManageDetail(row) {
+    if (!row) return;
+    const name = row.dataset.name || '';
+    const platform = row.dataset.platform || '';
+    const sub = row.dataset.sub || '';
+    const monitorOn = row.dataset.monitor === '1';
+    const mode = row.dataset.autoRecord || 'inherit';
+
+    const dn = document.getElementById('detail-name');
+    const ds = document.getElementById('detail-sub');
+    if (dn) dn.textContent = name;
+    if (ds) ds.textContent = platform + ' · ' + sub;
+
+    const mt = document.getElementById('detail-monitor-toggle');
+    if (mt) {
+      mt.classList.toggle('on', monitorOn);
+      mt.setAttribute('aria-pressed', monitorOn ? 'true' : 'false');
+    }
+
+    const arSection = document.getElementById('detail-auto-record-section');
+    if (arSection) arSection.style.display = monitorOn ? '' : 'none';
+
+    document.querySelectorAll('#detail-auto-record-group .radio-opt').forEach(function (opt) {
+      const inp = opt.querySelector('input');
+      const sel = inp && inp.value === mode;
+      opt.classList.toggle('selected', sel);
+      if (inp) inp.checked = sel;
+    });
+    const inheritSpan = document.querySelector(
+      '#detail-auto-record-group input[value="inherit"]'
+    );
+    if (inheritSpan) {
+      const label = inheritSpan.closest('.radio-opt');
+      const span = label && label.querySelector('span');
+      if (span) {
+        span.textContent =
+          '跟随全局设置（当前：' + (globalAutoRecord ? '开' : '关') + '）';
+      }
+    }
+
+    const dyn = document.getElementById('detail-sync-dynamics');
+    if (dyn) dyn.style.display = platform === 'bilibili' ? '' : 'none';
+
+    const av = document.getElementById('detail-avatar');
+    if (av) {
+      const initial = (name && name.charAt(0)) || '?';
+      const lightCls = row.dataset.light || 'gray';
+      av.innerHTML = initial + '<span class="light ' + lightCls + '"></span>';
+    }
+  }
+
+  function setManageMonitor(row, on) {
+    row.dataset.monitor = on ? '1' : '0';
+    row.classList.toggle('dimmed', !on);
+    const toggle = row.querySelector('.manage-monitor-toggle');
+    if (toggle) {
+      toggle.classList.toggle('on', on);
+      toggle.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+    const statusEl = row.querySelector('.manage-status-text');
+    if (statusEl) statusEl.textContent = on ? (row.dataset.status || '') : '未监控';
+    const light = row.querySelector('.manage-avatar .light');
+    if (light) {
+      light.className = on ? 'light ' + (row.dataset.light || 'gray') : 'light gray';
+    }
+    updateManageRowAutoCell(row);
+    syncManageFilterCounts();
+    applyManageFilter();
+    if (row.classList.contains('selected')) renderManageDetail(row);
+    showToast(on ? '已开启监控：' + row.dataset.name : '已关闭监控：' + row.dataset.name);
+  }
+
+  function setLiveContext() {
+    playbackMode = false;
+    if (centerBadge) centerBadge.style.display = '';
+    const tl = document.getElementById('transcript-live');
+    const tp = document.getElementById('transcript-playback');
+    const sp = document.getElementById('summary-playback');
+    const cl = document.getElementById('chat-live');
+    const cp = document.getElementById('chat-playback');
+    if (tl) tl.style.display = '';
+    if (tp) tp.style.display = 'none';
+    if (sp) sp.style.display = 'none';
+    if (cl) cl.style.display = '';
+    if (cp) cp.style.display = 'none';
+    syncRightTabs('transcript');
+  }
+
+  function setPlaybackContext() {
+    playbackMode = true;
+    if (centerBadge) centerBadge.style.display = 'none';
+    const tl = document.getElementById('transcript-live');
+    const tp = document.getElementById('transcript-playback');
+    const sp = document.getElementById('summary-playback');
+    const cl = document.getElementById('chat-live');
+    const cp = document.getElementById('chat-playback');
+    if (tl) tl.style.display = 'none';
+    if (tp) tp.style.display = '';
+    if (sp) sp.style.display = 'none';
+    if (cl) cl.style.display = 'none';
+    if (cp) cp.style.display = '';
+    syncRightTabs('transcript');
+  }
+
+  function syncRightTabs(which) {
+    const row = document.querySelector('.transcript-pane .tab-row');
+    if (!row) return;
+    row.querySelectorAll('[data-right-tab]').forEach(function (t) {
+      const on = t.dataset.rightTab === which;
+      t.classList.toggle('active', on);
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+    });
+    if (!playbackMode) return;
+    const tp = document.getElementById('transcript-playback');
+    const sp = document.getElementById('summary-playback');
+    if (tp) tp.style.display = which === 'transcript' ? '' : 'none';
+    if (sp) sp.style.display = which === 'summary' ? '' : 'none';
+    if (window.__m2tRelayout) setTimeout(window.__m2tRelayout, 50);
+  }
+
+  function selectCreator(item) {
+    if (!item) return;
+    document.querySelectorAll('.creator-item').forEach(function (el) {
+      el.classList.remove('selected');
+      el.removeAttribute('aria-current');
+    });
+    item.classList.add('selected');
+    item.setAttribute('aria-current', 'true');
+
+    const name = item.dataset.name || '';
+    const badge = item.dataset.badge || '';
+    const badgeClass = item.dataset.badgeClass || '';
+    const defaultView = item.dataset.defaultView || 'live';
+    const light = item.dataset.light || 'gray';
+
+    if (centerTitle) centerTitle.textContent = name;
+    if (centerBadge) {
+      centerBadge.textContent = badge;
+      centerBadge.className = 'badge ' + (badgeClass || 'badge-live');
+      centerBadge.style.display = badge ? '' : 'none';
+    }
+
+    document.querySelectorAll('.rail-dot[data-creator]').forEach(function (dot) {
+      dot.classList.toggle('selected', dot.dataset.creator === item.dataset.creator);
+    });
+    syncRailDots();
+
+    const showRecord = defaultView === 'live' && light === 'red' && !recording;
+    if (recordBanner) recordBanner.classList.toggle('hidden', !showRecord);
+
+    playbackMode = false;
+    showView(defaultView);
+    showToast('已切换：' + name);
+  }
+
+  function applyHistoryFilters() {
+    const q = (document.getElementById('history-search')?.value || '').trim().toLowerCase();
+    document.querySelectorAll('#history-list .session-row[data-session]').forEach(function (row) {
+      if (row.dataset.failed === '1') {
+        row.classList.remove('hidden');
+        return;
+      }
+      let ok = true;
+      if (historyFilter === 'transcript') ok = row.dataset.hasTranscript === '1';
+      if (historyFilter === 'summary') ok = row.dataset.hasSummary === '1';
+      if (q && ok) {
+        const label = (row.dataset.label || row.textContent || '').toLowerCase();
+        ok = label.includes(q);
+      }
+      row.classList.toggle('hidden', !ok);
+    });
+    document.querySelectorAll('#history-list .history-group').forEach(function (grp) {
+      const visible = grp.querySelectorAll('.session-row[data-session]:not(.hidden)').length > 0;
+      const hasMerged = grp.querySelector('.merged-row');
+      grp.classList.toggle('hidden', !visible && !hasMerged);
+    });
+  }
+
+  function openPlayback(row, opts) {
+    opts = opts || {};
+    if (row && row.dataset.failed === '1') {
+      showToast('该场次录制失败，无法回放');
+      return;
+    }
+    document.querySelectorAll('.session-row').forEach(function (r) {
+      r.classList.remove('selected');
+    });
+    if (row) row.classList.add('selected');
+
+    const label = opts.label || row?.dataset.label || '场次';
+    const time = opts.time || row?.dataset.time || '';
+    const meta = opts.meta || row?.dataset.meta || '';
+    const bc = document.getElementById('playback-breadcrumb');
+    const pm = document.getElementById('playback-meta');
+    if (bc) bc.textContent = label;
+    if (pm) {
+      pm.innerHTML = time
+        ? '<span>' + time + '</span><span>' + meta + '</span>'
+        : '<span>' + meta + '</span>';
+    }
+
+    playbackMode = true;
+    showView('playback');
+    setPlaybackContext();
+    if (opts.summary) {
+      syncRightTabs('summary');
+      showToast('已打开合并摘要：' + label);
+    } else {
+      showToast('回放：' + label);
+    }
+  }
+
+  document.getElementById('collapse-left')?.addEventListener('click', function () {
+    setUserMenuOpen(false);
+    app.classList.add('left-collapsed');
+    syncLayoutClasses();
+    saveLayout();
+    showToast('左栏已折叠');
+  });
+  document.getElementById('expand-left')?.addEventListener('click', function () {
+    app.classList.remove('left-collapsed');
+    syncLayoutClasses();
+    saveLayout();
+    showToast('左栏已展开');
+  });
+  document.getElementById('collapse-right')?.addEventListener('click', function () {
+    app.classList.add('right-collapsed');
+    syncLayoutClasses();
+    saveLayout();
+    showToast('右栏已折叠');
+  });
+  document.getElementById('expand-right')?.addEventListener('click', function () {
+    app.classList.remove('right-collapsed');
+    syncLayoutClasses();
+    saveLayout();
+    showToast('右栏已展开');
+  });
+
+  centerTabs?.addEventListener('click', function (e) {
+    const tab = e.target.closest('.tab[data-view]');
+    if (!tab) return;
+    playbackMode = false;
+    showView(tab.dataset.view);
+    const names = { live: '直播', history: '历史' };
+    showToast('视图：' + (names[tab.dataset.view] || tab.dataset.view));
+  });
+
+  userMenuTrigger?.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setUserMenuOpen(!userMenu?.classList.contains('open'), userMenuTrigger);
+  });
+  userMenuBackdrop?.addEventListener('click', function () {
+    setUserMenuOpen(false);
+  });
+  document.querySelectorAll('.user-menu-item[data-open-view]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      setUserMenuOpen(false);
+      playbackMode = false;
+      showView(btn.dataset.openView);
+      showToast(btn.dataset.openView === 'config' ? '系统配置' : '监控管理');
+    });
+  });
+  document.getElementById('btn-empty-add-creator')?.addEventListener('click', function () {
+    playbackMode = false;
+    showView('manage');
+    showToast('监控管理');
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && userMenu?.classList.contains('open')) setUserMenuOpen(false);
+  });
+
+  railUserMenuBtn?.addEventListener('click', function (e) {
+    e.stopPropagation();
+    setUserMenuOpen(!userMenu?.classList.contains('open'), railUserMenuBtn);
+  });
+
+  document.querySelector('.creator-list')?.addEventListener('click', function (e) {
+    const item = e.target.closest('.creator-item[data-creator]');
+    if (item) selectCreator(item);
+  });
+  document.querySelector('.creator-list')?.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const item = e.target.closest('.creator-item[data-creator]');
+    if (!item) return;
+    e.preventDefault();
+    selectCreator(item);
+  });
+
+  document.querySelector('.left-rail')?.addEventListener('click', function (e) {
+    if (e.target.closest('#expand-left, #rail-daemon, #rail-user-menu')) {
+      return;
+    }
+    const dot = e.target.closest('.rail-dot[data-creator]');
+    if (!dot) return;
+    const item = document.querySelector('.creator-item[data-creator="' + dot.dataset.creator + '"]');
+    if (item) selectCreator(item);
+  });
+  document.querySelector('.left-rail')?.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const dot = e.target.closest('.rail-dot[data-creator]');
+    if (!dot) return;
+    e.preventDefault();
+    const item = document.querySelector('.creator-item[data-creator="' + dot.dataset.creator + '"]');
+    if (item) selectCreator(item);
+  });
+
+  document.getElementById('rail-daemon')?.addEventListener('click', function () {
+    app.classList.remove('left-collapsed');
+    saveLayout();
+    showToast('已展开监控列表');
+  });
+  document.getElementById('btn-daemon-stop')?.addEventListener('click', toggleDaemon);
+  document.getElementById('btn-daemon-log')?.addEventListener('click', toggleDaemonLogPanel);
+  syncRailDots();
+  syncDaemonUi();
+
+  document.getElementById('btn-start-record')?.addEventListener('click', function () {
+    recording = true;
+    recordBanner?.classList.add('hidden');
+    if (centerBadge) {
+      centerBadge.textContent = '🟢 录制中';
+      centerBadge.className = 'badge badge-recording';
+    }
+    const selected = document.querySelector('.creator-item.selected');
+    if (selected) {
+      selected.dataset.badge = '🟢 录制中';
+      selected.dataset.badgeClass = 'badge-recording';
+      selected.dataset.light = 'green';
+      const light = selected.querySelector('.light');
+      if (light) {
+        light.className = 'light green';
+        light.title = '录制中';
+      }
+      syncRailDots();
+    }
+    showToast('已开始录制 · 实时转写 WebSocket 连接中（原型）');
+  });
+
+  document.querySelector('.history-toolbar')?.addEventListener('click', function (e) {
+    const chip = e.target.closest('.chip[data-filter]');
+    if (!chip) return;
+    historyFilter = chip.dataset.filter;
+    document.querySelectorAll('.chip[data-filter]').forEach(function (c) {
+      c.classList.toggle('active', c === chip);
+    });
+    applyHistoryFilters();
+    const labels = { all: '全部', transcript: '仅有转写', summary: '仅有摘要' };
+    showToast('筛选：' + (labels[historyFilter] || historyFilter));
+  });
+
+  document.getElementById('history-search')?.addEventListener('input', function () {
+    applyHistoryFilters();
+  });
+
+  document.getElementById('history-list')?.addEventListener('click', function (e) {
+    if (e.target.closest('#btn-open-merged')) return;
+    const row = e.target.closest('.session-row[data-session]');
+    if (row) {
+      openPlayback(row);
+      return;
+    }
+    const merged = e.target.closest('#merged-row');
+    if (merged) openPlayback(null, {
+      label: '20260603_merged',
+      meta: '合并组 · 3 段 · 云端',
+      summary: true,
+    });
+  });
+
+  document.getElementById('btn-open-merged')?.addEventListener('click', function (e) {
+    e.stopPropagation();
+    openPlayback(null, {
+      label: '20260603_merged',
+      meta: '合并组 · 3 段',
+      summary: true,
+    });
+  });
+
+  document.getElementById('back-to-history')?.addEventListener('click', function () {
+    playbackMode = false;
+    showView('history');
+    setLiveContext();
+    showToast('返回历史列表');
+  });
+
+  document.querySelector('.transcript-pane .tab-row')?.addEventListener('click', function (e) {
+    const tab = e.target.closest('[data-right-tab]');
+    if (!tab) return;
+    if (!playbackMode) {
+      showToast('直播时右栏固定为实时转写');
+      return;
+    }
+    syncRightTabs(tab.dataset.rightTab);
+    showToast(tab.dataset.rightTab === 'summary' ? '摘要' : '转写');
+  });
+
+  document.getElementById('btn-copy-transcript')?.addEventListener('click', function () {
+    const body = document.getElementById('transcript-body');
+    const text = body ? body.innerText.trim().slice(0, 2000) : '';
+    if (navigator.clipboard && text) {
+      navigator.clipboard.writeText(text).then(
+        function () { showToast('已复制转写内容'); },
+        function () { showToast('复制失败（需 HTTPS 或 localhost）'); }
+      );
+    } else {
+      showToast('已复制（原型）');
+    }
+  });
+
+  function syncAgentInputHeight(el) {
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  }
+
+  document.getElementById('agent-form')?.addEventListener('submit', function (e) {
+    e.preventDefault();
+    const input = document.getElementById('agent-input');
+    const msg = (input?.value || '').trim();
+    if (!msg) {
+      showToast('请输入消息');
+      return;
+    }
+    const scroll = document.getElementById('chat-scroll');
+    const live = document.getElementById('chat-live');
+    if (scroll && live) {
+      const bubble = document.createElement('div');
+      bubble.className = 'msg msg-user';
+      bubble.textContent = msg;
+      live.appendChild(bubble);
+      scroll.scrollTop = scroll.scrollHeight;
+    }
+    if (input) {
+      input.value = '';
+      syncAgentInputHeight(input);
+    }
+    showToast('已发送至 Agent（原型）');
+  });
+
+  const agentInput = document.getElementById('agent-input');
+  agentInput?.addEventListener('input', function () {
+    syncAgentInputHeight(agentInput);
+  });
+  syncAgentInputHeight(agentInput);
+
+  document.getElementById('agent-mode-pill')?.addEventListener('click', function () {
+    showToast('Agent 模式选择（实现期）');
+  });
+  document.getElementById('agent-model-select')?.addEventListener('change', function (e) {
+    const val = e.target.value;
+    const pill = document.querySelector('.agent-header .model-pill');
+    if (pill) {
+      const label = val === 'auto' ? 'auto' : val.split('/').pop() || val;
+      pill.textContent = (configDraft.activeProviderId || 'nvidia') + ' · ' + label;
+    }
+    showToast('模型：' + (val === 'auto' ? 'Auto' : val));
+  });
+  document.getElementById('agent-ctx-btn')?.addEventListener('click', function () {
+    showToast('上下文窗口（实现期）');
+  });
+  document.getElementById('agent-attach-btn')?.addEventListener('click', function () {
+    showToast('附件（实现期）');
+  });
+
+  document.querySelector('.video-placeholder')?.addEventListener('click', function () {
+    showToast('FLV 预览需连接 API /api/sessions/…/stream/proxy（原型）');
+  });
+
+  document.getElementById('config-segments')?.addEventListener('click', function (e) {
+    const btn = e.target.closest('.seg-btn[data-config-panel]');
+    if (!btn) return;
+    showConfigPanel(btn.dataset.configPanel);
+    const names = { user: '环境', monitor: '监控', live: '直播', ai: 'AI' };
+    showToast('配置 · ' + (names[btn.dataset.configPanel] || btn.dataset.configPanel));
+  });
+
+  document.getElementById('view-config')?.addEventListener('click', function (e) {
+    const authBtn = e.target.closest('[data-auth-login]');
+    if (!authBtn) return;
+    const platform = authBtn.getAttribute('data-auth-login');
+    const names = { douyin: '抖音', bilibili: 'B 站', aliyundrive: '阿里云盘' };
+    showToast('将打开「' + (names[platform] || platform) + '」登录流程（实现期嵌入终端或浏览器）');
+    if (platform === 'douyin') configDraft.authDouyin = true;
+    if (platform === 'bilibili') configDraft.authBilibili = true;
+    if (platform === 'aliyundrive') configDraft.authAliyun = true;
+    syncConfigAuthStatus();
+    markConfigDirty();
+  });
+
+  function bindToggle(id, onChange) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('click', function () {
+      el.classList.toggle('on');
+      const on = el.classList.contains('on');
+      el.setAttribute('aria-pressed', on ? 'true' : 'false');
+      if (onChange) onChange(on);
+    });
+  }
+  initConfigEditor();
+
+  document.querySelector('.manage-filters')?.addEventListener('click', function (e) {
+    const chip = e.target.closest('.chip[data-manage-filter]');
+    if (!chip) return;
+    manageFilter = chip.dataset.manageFilter;
+    document.querySelectorAll('.chip[data-manage-filter]').forEach(function (c) {
+      c.classList.toggle('active', c === chip);
+    });
+    applyManageFilter();
+    showToast('筛选：' + chip.textContent);
+  });
+
+  document.getElementById('manage-list')?.addEventListener('click', function (e) {
+    if (e.target.closest('#manage-drawer')) return;
+    const toggle = e.target.closest('.manage-monitor-toggle');
+    if (toggle) {
+      e.stopPropagation();
+      const row = toggle.closest('.manage-row[data-creator]');
+      if (row) setManageMonitor(row, row.dataset.monitor !== '1');
+      return;
+    }
+    const row = e.target.closest('.manage-row[data-creator]');
+    if (!row || row.classList.contains('hidden')) return;
+    selectManageRow(row);
+  });
+  document.getElementById('manage-list')?.addEventListener('keydown', function (e) {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const row = e.target.closest('.manage-row[data-creator]');
+    if (!row || row.classList.contains('hidden')) return;
+    e.preventDefault();
+    selectManageRow(row);
+  });
+
+  document.getElementById('detail-monitor-toggle')?.addEventListener('click', function () {
+    const row = document.querySelector('#manage-list .manage-row.selected');
+    if (!row) return;
+    setManageMonitor(row, row.dataset.monitor !== '1');
+  });
+
+  document.getElementById('detail-auto-record-group')?.addEventListener('change', function (e) {
+    const inp = e.target.closest('input[name="auto-record"]');
+    if (!inp) return;
+    const row = document.querySelector('#manage-list .manage-row.selected');
+    if (!row || row.dataset.monitor !== '1') return;
+    row.dataset.autoRecord = inp.value;
+    updateManageRowAutoCell(row);
+    document.querySelectorAll('#detail-auto-record-group .radio-opt').forEach(function (opt) {
+      opt.classList.toggle('selected', opt.querySelector('input') === inp);
+    });
+    const lab = autoRecordLabel(inp.value);
+    showToast(row.dataset.name + ' · 开录：' + lab.text);
+  });
+
+  document.getElementById('btn-add-creator')?.addEventListener('click', function () {
+    const url = (document.getElementById('manage-add-url')?.value || '').trim();
+    if (!url) {
+      showToast('请粘贴博主主页 URL');
+      return;
+    }
+    showToast('正在添加博主（原型 · 约 30–60s）…');
+  });
+
+  ['detail-sync-profile', 'detail-sync-catalog', 'detail-sync-dynamics'].forEach(function (id) {
+    document.getElementById(id)?.addEventListener('click', function () {
+      const row = document.querySelector('#manage-list .manage-row.selected');
+      const name = row?.dataset.name || '博主';
+      const action = id.indexOf('dynamics') >= 0 ? '同步动态' : id.indexOf('catalog') >= 0 ? '同步作品' : '同步资料';
+      showToast(name + ' · ' + action + '（原型）');
+    });
+  });
+
+  document.getElementById('detail-remove')?.addEventListener('click', function () {
+    const row = document.querySelector('#manage-list .manage-row.selected');
+    showToast('移除博主：' + (row?.dataset.name || '') + '（原型需二次确认）');
+  });
+
+  syncManageFilterCounts();
+  document.getElementById('detail-open-profile')?.addEventListener('click', function () {
+    const row = document.querySelector('#manage-list .manage-row.selected');
+    showToast('打开主页：' + (row?.dataset.name || '') + '（原型）');
+  });
+
+  (function initManageDrawer() {
+    const first = document.querySelector('#manage-list .manage-row.selected[data-creator]');
+    if (first && manageDrawerEl) openManageDrawerForRow(first, { instant: true });
+  })();
+
+  applyHistoryFilters();
+  showView('live');
+})();
+  </script>
+  <script type="module">
+    if (location.protocol === 'file:') {
+      /* Pretext 需 http(s) 加载；file:// 下交互由上方普通 script 负责 */
+    } else {
+      const { prepare, layout } = await import('./pretext.js');
+      const prepared = new Map();
+
+      async function initPretext() {
+        await document.fonts.ready;
+        prepared.clear();
+        const elements = document.querySelectorAll('[data-pretext]');
+        for (const el of elements) {
+          if (el.offsetParent === null && el.closest('[style*="display: none"]')) continue;
+          const text = el.textContent.trim();
+          if (!text) continue;
+          const font = getComputedStyle(el).font;
+          const lh = parseFloat(getComputedStyle(el).lineHeight) || 20;
+          prepared.set(el, { handle: prepare(text, font), lh });
+        }
+        relayout();
+      }
+
+      function relayout() {
+        for (const [el, { handle, lh }] of prepared) {
+          const w = el.clientWidth;
+          if (w <= 0) continue;
+          const { height } = layout(handle, w, lh);
+          el.style.height = `${height}px`;
+        }
+      }
+
+      window.__m2tRelayout = relayout;
+      new ResizeObserver(() => relayout()).observe(document.body);
+      initPretext();
+    }
+  </script>
+</body>
+</html>

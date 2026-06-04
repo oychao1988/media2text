@@ -89,3 +89,23 @@
 工程评审 D1–D4：1A / 2A / 3A / 4A。实现计划含 Task 4b `scan_and_start`。
 
 **历史合并顺序**：#10 → #11 → #12 → #13 → #9（文档 PR 可最后合并，或基于已合并的 main 重开）。
+
+### m2t-desktop 桌面端（2026-06-04，待实现）
+
+规格：[m2t-desktop-design](../superpowers/specs/2026-06-04-m2t-desktop-design.md) · 计划：[m2t-desktop.md](../superpowers/plans/2026-06-04-m2t-desktop.md) · UI：[finalized.html](../superpowers/designs/m2t-desktop/finalized.html)
+
+**建议合并顺序**（串行 API 轨；Tauri/布局可与 API 部分并行）：
+
+| 顺序 | GitHub | 规格正文 | 分支 |
+|------|--------|----------|------|
+| 1 | [#125](https://github.com/oychao1988/media2text/issues/125) | [m2t-desktop-p0-core-prerequisites.md](./m2t-desktop-p0-core-prerequisites.md) | `issue-125-m2t-desktop-p0-core` |
+| 2 | [#126](https://github.com/oychao1988/media2text/issues/126) | [m2t-desktop-p1-api-foundation.md](./m2t-desktop-p1-api-foundation.md) | `issue-126-m2t-desktop-p1-api-foundation` |
+| 3 | [#127](https://github.com/oychao1988/media2text/issues/127) | [m2t-desktop-p2-api-sessions-flv.md](./m2t-desktop-p2-api-sessions-flv.md) | `issue-127-m2t-desktop-p2-api-sessions-flv` |
+| 4 | [#128](https://github.com/oychao1988/media2text/issues/128) | [m2t-desktop-p3-api-recording-events.md](./m2t-desktop-p3-api-recording-events.md) | `issue-128-m2t-desktop-p3-api-recording-events` |
+| 5 | [#129](https://github.com/oychao1988/media2text/issues/129) | [m2t-desktop-p4-tauri-python-sidecar.md](./m2t-desktop-p4-tauri-python-sidecar.md) | `issue-129-m2t-desktop-p4-tauri-shell` |
+| 6 | [#130](https://github.com/oychao1988/media2text/issues/130) | [m2t-desktop-p5-react-layout-shell.md](./m2t-desktop-p5-react-layout-shell.md) | `issue-130-m2t-desktop-p5-layout-shell` |
+| 7 | [#131](https://github.com/oychao1988/media2text/issues/131) | [m2t-desktop-p6-react-feature-panels.md](./m2t-desktop-p6-react-feature-panels.md) | `issue-131-m2t-desktop-p6-feature-panels` |
+| 8 | [#132](https://github.com/oychao1988/media2text/issues/132) | [m2t-desktop-p7-agent-sidecar-ui.md](./m2t-desktop-p7-agent-sidecar-ui.md) | `issue-132-m2t-desktop-p7-agent` |
+| 9 | [#133](https://github.com/oychao1988/media2text/issues/133) | [m2t-desktop-p8-smoke-docs-a11y.md](./m2t-desktop-p8-smoke-docs-a11y.md) | `issue-133-m2t-desktop-p8-smoke` |
+
+**并行提示**：#127 与 #128 可并行；#129/#130 可在 #126 后 mock API 并行；#132 建议在 #131 前或同 PR 联调。
