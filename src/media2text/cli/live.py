@@ -1,52 +1,20 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 
 import typer
 
 from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
-from media2text.core.storage.repos import (
-    CreatorRepo,
-    LiveSessionRepo,
-    PipelineEventRepo,
-    PostProcessJobRepo,
-)
-from media2text.core.live.post_process_pool import resolve_post_process_workers
+from media2text.core.live.status import build_live_status
 from media2text.core.live.streaming_benchmark import (
     check_streaming_targets,
     streaming_targets_ms,
 )
+from media2text.core.storage.repos import LiveSessionRepo, PipelineEventRepo
 from media2text.core.workspace import open_db
 
 app = typer.Typer(help="Live recording pipeline status and timeline")
-
-
-def _parse_iso(value: str | None) -> datetime | None:
-    if not value:
-        return None
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-
-
-def _age_sec(since: str | None) -> float | None:
-    start = _parse_iso(since)
-    if not start:
-        return None
-    return (datetime.now(timezone.utc) - start).total_seconds()
-
-
-def _read_daemon_pid(workspace: Path) -> int | None:
-    lock = workspace / ".monitor-watch.lock"
-    if not lock.is_file():
-        return None
-    try:
-        return int(lock.read_text().strip())
-    except (OSError, ValueError):
-        return None
 
 
 @app.command("status")
@@ -55,66 +23,9 @@ def status_cmd(
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     cfg = AppConfig.load()
-    ws = cfg.ensure_workspace()
     conn = open_db(cfg)
-    sessions = LiveSessionRepo(conn)
-    creators = CreatorRepo(conn)
-    jobs = PostProcessJobRepo(conn)
-
-    active_rows = sessions.list_active()
-    if creator:
-        active_rows = [r for r in active_rows if r.creator_id == creator]
-
-    active: list[dict] = []
-    for row in active_rows:
-        c = creators.get(row.creator_id)
-        active.append(
-            {
-                "session_id": row.id,
-                "creator_id": row.creator_id,
-                "display_name": c.display_name if c else None,
-                "started_at": row.started_at,
-                "recording_age_sec": round(_age_sec(row.started_at) or 0, 1),
-                "offline_since_at": row.offline_since_at,
-                "ffmpeg_pid": row.ffmpeg_pid,
-                "status": row.status,
-                "pipeline_mode": row.pipeline_mode,
-                "transcribe_status": row.transcribe_status,
-            }
-        )
-
-    in_flight = jobs.list_in_flight(limit=50)
-    if creator:
-        in_flight = [j for j in in_flight if j.creator_id == creator]
-    counts = jobs.count_by_status()
-    job_items = []
-    for j in in_flight:
-        job_items.append(
-            {
-                "job_id": j.id,
-                "session_id": j.session_id,
-                "creator_id": j.creator_id,
-                "stage": j.stage,
-                "status": j.status,
-                "queued_sec": round(_age_sec(j.created_at) or 0, 1),
-            }
-        )
-
-    payload = {
-        "ok": True,
-        "command": "live status",
-        "daemon_lock_pid": _read_daemon_pid(ws),
-        "live_tick": {
-            "interval_sec": cfg.live.live_poll_interval_sec,
-        },
-        "active_recordings": active,
-        "post_process": {
-            "max_workers": resolve_post_process_workers(cfg),
-            "pending": counts.get("pending", 0),
-            "running": counts.get("running", 0),
-            "jobs": job_items,
-        },
-    }
+    payload = build_live_status(cfg, conn, creator_id=creator)
+    conn.close()
     emit(payload, as_json=json_out)
 
 

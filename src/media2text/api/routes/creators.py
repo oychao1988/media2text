@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
 
 from media2text.api.deps import get_cfg, get_db
+from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
 from media2text.core.creator.service import VALID_AUTO_RECORD_OVERRIDES
@@ -169,6 +171,51 @@ def sync_catalog(
         code = 401 if result.get("auth_required") else 400
         raise HTTPException(status_code=code, detail=result)
     return result
+
+
+@router.get("/{creator_id}/sessions")
+def list_sessions(
+    creator_id: str,
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    has_transcript: bool | None = Query(None),
+    has_summary: bool | None = Query(None),
+    status: str | None = Query(None),
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if not CreatorRepo(conn).get(creator_id):
+        raise HTTPException(status_code=404, detail="creator not found")
+    result = list_creator_sessions(
+        conn,
+        workspace=cfg.ensure_workspace(),
+        creator_id=creator_id,
+        limit=limit,
+        offset=offset,
+        has_transcript=has_transcript,
+        has_summary=has_summary,
+        status=status,
+    )
+    return result
+
+
+@router.get("/{creator_id}/manifest")
+def get_manifest(
+    creator_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    row = CreatorRepo(conn).get(creator_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="creator not found")
+    path = cfg.ensure_workspace() / "creators" / row.sec_uid / "agent-manifest.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="manifest not found")
+    try:
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=500, detail="manifest read failed") from exc
+    return {"ok": True, "creator_id": creator_id, "manifest": manifest}
 
 
 @router.post("/{creator_id}/sync-dynamics")
