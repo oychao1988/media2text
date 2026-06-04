@@ -1,0 +1,99 @@
+"""Workspace media files with HTTP Range support."""
+
+from __future__ import annotations
+
+import mimetypes
+from pathlib import Path
+
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi.responses import FileResponse
+
+from media2text.api.deps import get_cfg
+from media2text.api.security import safe_workspace_path
+from media2text.core.config import AppConfig
+
+router = APIRouter(tags=["media"])
+
+_EXT_MEDIA_TYPES = {
+    ".flv": "video/x-flv",
+    ".mp4": "video/mp4",
+    ".webm": "video/webm",
+    ".md": "text/markdown; charset=utf-8",
+    ".json": "application/json",
+}
+
+
+def _content_type(path: Path) -> str:
+    ext = path.suffix.lower()
+    if ext in _EXT_MEDIA_TYPES:
+        return _EXT_MEDIA_TYPES[ext]
+    guessed, _ = mimetypes.guess_type(path.name)
+    return guessed or "application/octet-stream"
+
+
+def _parse_range_header(
+    range_header: str | None,
+    size: int,
+) -> tuple[int, int] | None:
+    if not range_header or not range_header.strip().lower().startswith("bytes="):
+        return None
+    spec = range_header.strip()[6:]
+    if "," in spec:
+        raise HTTPException(status_code=416, detail="multiple ranges not supported")
+    start_s, _, end_s = spec.partition("-")
+    try:
+        if start_s and end_s:
+            start, end = int(start_s), int(end_s)
+        elif start_s:
+            start, end = int(start_s), size - 1
+        elif end_s:
+            suffix = int(end_s)
+            start = max(0, size - suffix)
+            end = size - 1
+        else:
+            return None
+    except ValueError as exc:
+        raise HTTPException(status_code=416, detail="invalid Range") from exc
+    if start < 0 or end >= size or start > end:
+        raise HTTPException(status_code=416, detail="range not satisfiable")
+    return start, end
+
+
+@router.get("/media")
+def get_media(
+    path: str = Query(..., description="Workspace-relative media path"),
+    range: str | None = Header(None, alias="Range"),
+    cfg: AppConfig = Depends(get_cfg),
+) -> Response:
+    ws = cfg.ensure_workspace()
+    target = safe_workspace_path(ws, path)
+    if not target.is_file():
+        raise HTTPException(status_code=404, detail="file not found")
+
+    size = target.stat().st_size
+    content_type = _content_type(target)
+    parsed = _parse_range_header(range, size)
+
+    if parsed is None:
+        return FileResponse(
+            path=target,
+            media_type=content_type,
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    start, end = parsed
+    length = end - start + 1
+    with target.open("rb") as fh:
+        fh.seek(start)
+        data = fh.read(length)
+
+    return Response(
+        content=data,
+        status_code=206,
+        media_type=content_type,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Content-Range": f"bytes {start}-{end}/{size}",
+            "Content-Length": str(length),
+        },
+    )
