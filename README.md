@@ -307,6 +307,51 @@ data/
 | `3` | 解析/页面结构变化 |
 | `4` | 部分失败（如下载/转写未完成） |
 
+## Desktop（m2t-desktop）
+
+macOS 优先的 Tauri 2 桌面壳：三栏 UI + Python API sidecar（`:8765`）+ Node Agent sidecar。规格见 [m2t-desktop-design](docs/superpowers/specs/2026-06-04-m2t-desktop-design.md)。
+
+### 环境
+
+除 CLI 通用依赖外，桌面端还需要：
+
+| 依赖 | 用途 |
+|------|------|
+| [ffmpeg](https://ffmpeg.org/) | 直播录制 / remux（与 CLI 相同） |
+| Chromium（`playwright install chromium`） | 平台登录、`creator sync` |
+| Node 20+、pnpm 9 | 前端 workspace 与 Agent sidecar |
+| Rust / Xcode CLT | Tauri 构建（`tauri dev` / `tauri build`） |
+| 可选 `pip install -e ".[transcribe-deepgram]"` + `.env` 的 `DEEPGRAM_API_KEY` | streaming 模式实时转写 |
+
+```bash
+source .venv/bin/activate
+pip install -e ".[desktop,dev]"
+playwright install chromium
+
+# 根目录：安装 JS workspace
+pnpm install
+```
+
+### 开发运行
+
+**仅调试 API（无 Tauri 窗口）：**
+
+```bash
+media2text serve --port 8765
+curl -s http://127.0.0.1:8765/api/health | jq .
+media2text doctor --json
+```
+
+**完整桌面应用（Tauri 自动 spawn Python serve + Agent sidecar）：**
+
+```bash
+pnpm --filter m2t-desktop tauri dev
+# 或仓库根目录
+pnpm dev:desktop
+```
+
+数据目录与 CLI 共用 `./data`（`config.yaml`、会话、DB）。验收清单：[2026-06-04-m2t-desktop-acceptance](docs/superpowers/verification/2026-06-04-m2t-desktop-acceptance.md)。
+
 ## 开发
 
 ```bash
