@@ -1134,6 +1134,27 @@ body.resize-col-active * {
   }
 }
 
+@media (max-width: 768px) {
+  .app {
+    grid-template-columns:
+      var(--sidebar-collapsed-w) 0px minmax(0, 1fr) 0px var(--right-collapsed-w);
+  }
+
+  .col-resize {
+    display: none !important;
+  }
+
+  .left-content,
+  .right-content {
+    display: none !important;
+  }
+
+  .left-rail,
+  .right-rail {
+    display: flex;
+  }
+}
+
 .toast-host {
   position: fixed;
   bottom: 16px;

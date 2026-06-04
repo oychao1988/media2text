@@ -27,7 +27,25 @@ media2text doctor --json    # ffmpeg、playwright、session、磁盘
 
 依赖：Python 3.12+、ffmpeg、Chromium（`playwright install chromium`）。
 
-可选 extra：`pip install -e ".[transcribe]"` / `".[transcribe-deepgram]"`。
+可选 extra：`pip install -e ".[transcribe]"` / `".[transcribe-deepgram]"` / `".[desktop]"`（FastAPI sidecar，桌面端必需）。
+
+## Desktop（m2t-desktop）
+
+- 规格：[docs/superpowers/specs/2026-06-04-m2t-desktop-design.md](docs/superpowers/specs/2026-06-04-m2t-desktop-design.md)
+- 验收：[docs/superpowers/verification/2026-06-04-m2t-desktop-acceptance.md](docs/superpowers/verification/2026-06-04-m2t-desktop-acceptance.md)
+
+```bash
+source .venv/bin/activate
+pip install -e ".[desktop,dev]"
+pnpm install
+
+media2text serve --port 8765          # 仅 API sidecar（127.0.0.1）
+pnpm --filter m2t-desktop tauri dev   # 完整 Tauri 壳 + 双 sidecar
+pnpm --filter m2t-desktop test        # Vitest（layout a11y / responsive）
+pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop
+```
+
+桌面端与 CLI 共用 `config.yaml`、`./data`；写操作经 API 复用 core，不绕过 `monitor watch` 语义。
 
 ## 常用流程
 
@@ -166,6 +184,7 @@ media2text creator show <creator_id> --json
 | `summarize backfill [--creator <id>] [--limit N] --json` | 工作区内缺 `.summary.md` 的转写批量补摘要 |
 | `summarize merge --sessions <ids> --json` | 多段直播合并摘要 |
 | `pipeline run --creator <id> --json` | 作品一条龙 |
+| `serve [--port 8765]` | Desktop API sidecar（loopback，Tauri 亦 spawn） |
 
 ## 工作区与 Agent 索引
 
