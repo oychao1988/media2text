@@ -59,5 +59,5 @@ class PostProcessExecutor:
         for job in claimed:
             self.submit(cfg, job_id=job.id, notify=notify)
 
-    def shutdown(self, *, wait: bool = True) -> None:
-        self._executor.shutdown(wait=wait)
+    def shutdown(self, *, wait: bool = True, cancel_futures: bool = False) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)

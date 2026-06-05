@@ -259,6 +259,10 @@ class DesktopChatConfig(BaseModel):
 class DesktopConfig(BaseModel):
     api_port: int = 8765
     theme: str = "light"
+    auto_start_monitor: bool = False
+    runtime_ws_interval_sec: int = 30
+    runtime_http_fallback_sec: int = 60
+    runtime_failed_recent_threshold: int = 10
     chat: DesktopChatConfig = Field(default_factory=DesktopChatConfig)
 
 

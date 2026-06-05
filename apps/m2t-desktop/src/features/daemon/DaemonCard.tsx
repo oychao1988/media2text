@@ -1,103 +1,168 @@
-import { useCallback, useEffect, useState } from 'react';
-import { apiGet, apiPost } from '../../lib/api';
-import { showToast } from '../../lib/toast';
-import type { DaemonStatus } from '../../lib/types';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { apiGet, apiPost, ApiError } from '../../lib/api';
+import type { RuntimeHealth, RuntimeStatus } from '../../lib/types';
+import { useRuntime } from '../runtime/RuntimeContext';
+import {
+  HEALTH_HINT,
+  HEALTH_TITLE,
+  buildDaemonStats,
+  formatRunningSec,
+  healthAriaLabel,
+  workQueueHasItems,
+  type WorkQueue,
+} from './daemonHealth';
 
-export function DaemonCard() {
-  const [status, setStatus] = useState<DaemonStatus | null>(null);
-  const [loading, setLoading] = useState(true);
+const LOG_REFRESH_MS = 12_000;
+const LOG_TAIL = 6;
+const WORK_QUEUE_REFRESH_MS = 15_000;
+
+type BottomPanel = 'logs' | 'tasks' | null;
+
+function logLineClass(line: string): string {
+  if (/失败|错误|lock held|已在运行|限流|过于频繁|异常退出/i.test(line)) {
+    return 'daemon-log-line warn';
+  }
+  if (/完成|已启动|ok\b/i.test(line)) {
+    return 'daemon-log-line ok';
+  }
+  return 'daemon-log-line';
+}
+
+type Props = {
+  onSelectCreator?: (creatorId: string) => void;
+};
+
+export function DaemonCard({ onSelectCreator }: Props) {
+  const { runtime, loading, fetchError, startRuntime, stopRuntime, refresh } = useRuntime();
   const [busy, setBusy] = useState(false);
-  const [logsOpen, setLogsOpen] = useState(true);
+  const [recoverBusy, setRecoverBusy] = useState(false);
+  const [bottomPanel, setBottomPanel] = useState<BottomPanel>('logs');
   const [logLines, setLogLines] = useState<string[]>([]);
+  const [workQueue, setWorkQueue] = useState<WorkQueue | null>(null);
 
-  const refresh = useCallback(async () => {
-    try {
-      const res = await apiGet<{ ok: boolean } & DaemonStatus>('/api/daemon', true);
-      setStatus(res);
-    } catch {
-      setStatus(null);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const health: RuntimeHealth = runtime?.health ?? 'stopped';
+  const title = HEALTH_TITLE[health];
+  const hint = HEALTH_HINT[health];
+  const running = runtime?.daemon.running ?? false;
+  const external = runtime?.managed_by === 'external';
+  const canControl = !external;
+  const stats = runtime ? buildDaemonStats(runtime) : [];
+  const showBottomPanel = Boolean(runtime) && !fetchError;
 
-  useEffect(() => {
-    void refresh();
-    const id = window.setInterval(() => void refresh(), 5000);
-    return () => window.clearInterval(id);
-  }, [refresh]);
+  const toggleBottomPanel = (panel: Exclude<BottomPanel, null>) => {
+    setBottomPanel((current) => (current === panel ? null : panel));
+  };
 
   const loadLogs = useCallback(async () => {
     try {
-      const res = await apiGet<{ ok: boolean; lines: string[] }>('/api/daemon/logs?tail=5', true);
+      const res = await apiGet<{ ok: boolean; lines: string[] }>(
+        `/api/runtime/logs?tail=${LOG_TAIL}`,
+        true,
+      );
       setLogLines(res.lines ?? []);
     } catch {
       setLogLines([]);
     }
   }, []);
 
-  useEffect(() => {
-    if (logsOpen) void loadLogs();
-  }, [logsOpen, loadLogs]);
+  const loadWorkQueue = useCallback(async () => {
+    try {
+      const res = await apiGet<WorkQueue>('/api/runtime/work-queue?limit=12', true);
+      setWorkQueue(res);
+    } catch {
+      setWorkQueue(null);
+    }
+  }, []);
 
-  const startDaemon = async () => {
-    if (busy || !status) return;
+  useEffect(() => {
+    if (bottomPanel !== 'logs') return undefined;
+    void loadLogs();
+    const id = window.setInterval(() => void loadLogs(), LOG_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [bottomPanel, loadLogs]);
+
+  useEffect(() => {
+    if (bottomPanel !== 'tasks' || !runtime || fetchError) return undefined;
+    void loadWorkQueue();
+    const id = window.setInterval(() => void loadWorkQueue(), WORK_QUEUE_REFRESH_MS);
+    return () => window.clearInterval(id);
+  }, [bottomPanel, runtime, fetchError, loadWorkQueue]);
+
+  const cardClass = useMemo(() => {
+    const extra = health === 'stopped' ? ' stopped' : health === 'degraded' ? ' degraded' : '';
+    return `daemon-card${extra}`;
+  }, [health]);
+
+  useEffect(() => {
+    document.getElementById('app')?.classList.toggle('daemon-stopped', health === 'stopped' && !loading);
+  }, [health, loading]);
+
+  const onStart = async () => {
+    if (busy || !runtime || !canControl) return;
     setBusy(true);
     try {
-      await apiPost('/api/daemon/start');
-      showToast('守护进程已启动', 'success');
-      await refresh();
-    } catch {
-      /* toast handled by api */
+      await startRuntime();
     } finally {
       setBusy(false);
     }
   };
 
-  const stopDaemon = async () => {
-    if (busy || !status) return;
+  const onStop = async () => {
+    if (busy || !runtime || !canControl) return;
     setBusy(true);
     try {
-      await apiPost('/api/daemon/stop');
-      showToast('已发送停止守护进程信号', 'success');
-      await refresh();
-    } catch {
-      /* toast handled by api */
+      await stopRuntime();
     } finally {
       setBusy(false);
     }
   };
 
-  const running = status?.running ?? false;
-  const cardClass = `daemon-card${running ? '' : ' stopped'}`;
+  const onRecoverStale = async () => {
+    if (recoverBusy) return;
+    setRecoverBusy(true);
+    try {
+      await apiPost('/api/runtime/recover-stale?older_than_sec=120', undefined, true);
+      await Promise.all([refresh(), loadWorkQueue()]);
+    } catch (err) {
+      const msg = err instanceof ApiError ? err.message : '清理失败';
+      window.alert(msg);
+    } finally {
+      setRecoverBusy(false);
+    }
+  };
 
-  useEffect(() => {
-    document.getElementById('app')?.classList.toggle('daemon-stopped', !running && !loading);
-  }, [running, loading]);
-
-  const meta = status
-    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 后处理 pending ${status.post_process.pending} · running ${status.post_process.running} · 监控任务 pending ${status.monitor_tasks?.pending ?? 0} · running ${status.monitor_tasks?.running ?? 0}${(status.monitor_tasks?.failed ?? 0) > 0 ? ` · failed ${status.monitor_tasks?.failed}` : ''}`
-    : loading
-      ? '加载中…'
-      : '无法获取状态';
+  const pickCreator = (creatorId: string) => {
+    onSelectCreator?.(creatorId);
+  };
 
   return (
     <div className={cardClass} id="daemon-card">
       <div className="daemon-card-head">
         <div className="daemon-status">
-          <span className={`status-dot${running ? ' live' : ''}`} aria-hidden="true" />
-          <strong>{running ? 'Daemon 运行中' : 'Daemon 已停止'}</strong>
+          <span
+            className={`status-dot health-${health}${running ? ' live' : ''}`}
+            role="img"
+            aria-label={healthAriaLabel(health)}
+          />
+          <div className="daemon-status-text">
+            <strong>{title}</strong>
+            <span className="daemon-hint">{loading ? '加载中…' : fetchError ?? hint}</span>
+          </div>
         </div>
         <div className="daemon-card-actions">
-          {running ? (
+          {external ? (
+            <span className="daemon-external-hint" title="由外部 CLI 守护进程管理">
+              外部
+            </span>
+          ) : running ? (
             <button
               type="button"
               className="icon-btn icon-btn-danger"
               id="btn-daemon-stop"
-              title="停止 monitor watch"
+              title="停止后台监控"
               aria-label="停止"
               disabled={busy || loading}
-              onClick={() => void stopDaemon()}
+              onClick={() => void onStop()}
             >
               ⏹
             </button>
@@ -105,72 +170,172 @@ export function DaemonCard() {
             <button
               type="button"
               className="icon-btn"
-              title="启动 monitor watch"
+              title="启动后台监控"
               aria-label="启动"
               disabled={busy || loading}
-              onClick={() => void startDaemon()}
+              onClick={() => void onStart()}
             >
               {busy ? '…' : '▶'}
             </button>
           )}
           <button
             type="button"
-            className={`icon-btn daemon-log-toggle${logsOpen ? ' active' : ''}`}
+            className={`icon-btn daemon-panel-toggle${bottomPanel === 'tasks' ? ' active' : ''}`}
+            id="btn-daemon-tasks"
+            title={bottomPanel === 'tasks' ? '隐藏任务详情' : '显示任务详情'}
+            aria-label="任务详情"
+            aria-pressed={bottomPanel === 'tasks'}
+            disabled={!showBottomPanel}
+            onClick={() => toggleBottomPanel('tasks')}
+          >
+            ☰
+          </button>
+          <button
+            type="button"
+            className={`icon-btn daemon-panel-toggle${bottomPanel === 'logs' ? ' active' : ''}`}
             id="btn-daemon-log"
-            title={logsOpen ? '隐藏日志' : '显示日志'}
+            title={bottomPanel === 'logs' ? '隐藏最近日志' : '显示最近日志'}
             aria-label="日志"
-            aria-pressed={logsOpen}
-            onClick={() => setLogsOpen((v) => !v)}
+            aria-pressed={bottomPanel === 'logs'}
+            disabled={!showBottomPanel}
+            onClick={() => toggleBottomPanel('logs')}
           >
             ▤
           </button>
         </div>
       </div>
-      <div className="daemon-meta">{meta}</div>
-      <pre
-        className="daemon-log-lines"
-        id="daemon-log-panel"
-        aria-label="守护进程日志"
-        hidden={!logsOpen}
-      >
-        {logLines.length ? logLines.join('\n') : '（暂无日志）'}
-      </pre>
+
+      {runtime && !fetchError ? (
+        <dl className="daemon-stats">
+          {stats.map((row) => (
+            <div className="daemon-stat" key={row.label}>
+              <dt>{row.label}</dt>
+              <dd>{row.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+
+      {bottomPanel === 'logs' ? (
+        <div className="daemon-log-panel" id="daemon-log-panel" aria-label="最近运行日志">
+          {logLines.length ? (
+            logLines.map((line) => (
+              <div key={line} className={logLineClass(line)}>
+                {line}
+              </div>
+            ))
+          ) : (
+            <div className="daemon-log-empty">暂无日志</div>
+          )}
+        </div>
+      ) : null}
+
+      {bottomPanel === 'tasks' ? (
+        <div className="daemon-log-panel daemon-tasks-panel" id="daemon-tasks-panel" aria-label="任务详情">
+          <div className="daemon-work-queue-body">
+            {(workQueue?.post_process.length ?? 0) > 0 ? (
+              <section className="daemon-work-section">
+                <h4>录后处理</h4>
+                <ul>
+                  {workQueue!.post_process.map((job) => (
+                    <li key={job.id}>
+                      <button
+                        type="button"
+                        className="daemon-work-item"
+                        onClick={() => pickCreator(job.creator_id)}
+                      >
+                        <span className="daemon-work-primary">
+                          {job.creator_name}
+                          {job.media_name ? ` · ${job.media_name}` : ''}
+                        </span>
+                        <span className="daemon-work-meta">
+                          {job.status === 'running' ? '进行中' : '排队'}
+                          {job.stage ? ` · ${job.stage}` : ''}
+                          {job.running_sec != null ? ` · ${formatRunningSec(job.running_sec)}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {(workQueue?.monitor_tasks.length ?? 0) > 0 ? (
+              <section className="daemon-work-section">
+                <h4>作品 / 同步任务</h4>
+                <ul>
+                  {workQueue!.monitor_tasks.map((task) => (
+                    <li key={task.id}>
+                      <button
+                        type="button"
+                        className="daemon-work-item"
+                        onClick={() => pickCreator(task.creator_id)}
+                      >
+                        <span className="daemon-work-primary">
+                          {task.creator_name} · {task.task_label}
+                        </span>
+                        <span className="daemon-work-meta">
+                          {task.status === 'running' ? '进行中' : '排队'}
+                          {task.running_sec != null ? ` · ${formatRunningSec(task.running_sec)}` : ''}
+                          {task.error ? ` · ${task.error.slice(0, 40)}` : ''}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {(workQueue?.stale_creators.length ?? 0) > 0 ? (
+              <section className="daemon-work-section">
+                <h4>开播状态过期</h4>
+                <ul>
+                  {workQueue!.stale_creators.map((c) => (
+                    <li key={c.creator_id}>
+                      <button
+                        type="button"
+                        className="daemon-work-item"
+                        onClick={() => pickCreator(c.creator_id)}
+                      >
+                        <span className="daemon-work-primary">{c.display_name}</span>
+                        <span className="daemon-work-meta">
+                          {c.checked_at
+                            ? `上次检测 ${formatRunningSec(c.stale_sec)} 前`
+                            : '尚未检测'}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ) : null}
+            {!workQueueHasItems(workQueue) ? (
+              <p className="daemon-work-empty">暂无排队任务（统计数字可能来自已卡住的旧记录）</p>
+            ) : null}
+            {(runtime?.queues.monitor_tasks.running ?? 0) > 0 ||
+            (runtime?.queues.post_process.running ?? 0) > 0 ? (
+              <button
+                type="button"
+                className="daemon-recover-btn"
+                disabled={recoverBusy}
+                onClick={() => void onRecoverStale()}
+              >
+                {recoverBusy ? '清理中…' : '重置卡住的任务计数'}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
 
 export function useDaemonActions() {
-  const restartDaemon = useCallback(async () => {
-    try {
-      await apiPost('/api/daemon/stop', undefined, true);
-      await apiPost('/api/daemon/start');
-      showToast('守护进程已重启', 'success');
-    } catch {
-      showToast('守护进程重启失败', 'error');
-    }
-  }, []);
-
-  return { restartDaemon };
+  const { restartRuntime } = useRuntime();
+  return { restartDaemon: restartRuntime };
 }
 
-export function useDaemonRunning(): boolean | null {
-  const [running, setRunning] = useState<boolean | null>(null);
-  useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const res = await apiGet<{ running: boolean }>('/api/daemon', true);
-        if (!cancelled) setRunning(res.running);
-      } catch {
-        if (!cancelled) setRunning(null);
-      }
-    };
-    void poll();
-    const id = window.setInterval(() => void poll(), 8000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(id);
-    };
-  }, []);
-  return running;
-}
+export {
+  HEALTH_TITLE,
+  formatHealthReason,
+  buildDaemonStats,
+  buildDaemonStats as buildMeta,
+} from './daemonHealth';

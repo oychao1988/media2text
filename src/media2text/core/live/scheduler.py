@@ -2,9 +2,14 @@ from __future__ import annotations
 
 import threading
 import time
+from collections.abc import Callable
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
 import structlog
+
+from media2text.core.runtime.status import write_heartbeat
+from media2text.core.storage.repos import LiveSessionRepo
 
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
@@ -36,6 +41,7 @@ class LiveTickLoop:
         *,
         creator_id: str | None,
         stop: threading.Event,
+        on_tick: Callable[[], None] | None = None,
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
@@ -43,6 +49,7 @@ class LiveTickLoop:
         self._monitor_pool = monitor_pool
         self._creator_id = creator_id
         self._stop = stop
+        self._on_tick = on_tick
         self._thread: threading.Thread | None = None
 
     def start(self) -> None:
@@ -80,6 +87,15 @@ class LiveTickLoop:
                     limit=self._cfg.live.post_process_max_parallel,
                 )
                 last_post = now
+            active = len(LiveSessionRepo(self._watcher._conn).list_active())
+            log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
+            if self._on_tick is not None:
+                self._on_tick()
+            else:
+                write_heartbeat(
+                    self._cfg.ensure_workspace(),
+                    last_tick_at=datetime.now(timezone.utc).isoformat(),
+                )
             self._stop.wait(timeout=live_poll)
 
 
@@ -143,9 +159,16 @@ class SlowTickLoop:
 
 
 class MonitorScheduler:
-    def __init__(self, watcher: MonitorWatcher, cfg: AppConfig) -> None:
+    def __init__(
+        self,
+        watcher: MonitorWatcher,
+        cfg: AppConfig,
+        *,
+        on_live_tick: Callable[[], None] | None = None,
+    ) -> None:
         self._watcher = watcher
         self._cfg = cfg
+        self._on_live_tick = on_live_tick
         self._stop = threading.Event()
         max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
@@ -172,6 +195,7 @@ class MonitorScheduler:
             self._monitor_pool,
             creator_id=creator_id,
             stop=self._stop,
+            on_tick=self._on_live_tick,
         )
         self._slow_loop = SlowTickLoop(
             self._watcher,
@@ -185,9 +209,9 @@ class MonitorScheduler:
 
     def stop(self) -> None:
         self._stop.set()
+        self._monitor_pool.shutdown(wait=False, cancel_futures=True)
+        self._post_pool.shutdown(wait=False, cancel_futures=True)
         if self._live_loop is not None:
             self._live_loop.join(timeout=5.0)
         if self._slow_loop is not None:
             self._slow_loop.join(timeout=5.0)
-        self._monitor_pool.shutdown(wait=True)
-        self._post_pool.shutdown(wait=True)

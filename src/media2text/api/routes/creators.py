@@ -351,3 +351,29 @@ def sync_dynamics(
         code = 401 if result.get("auth_required") else 400
         raise HTTPException(status_code=code, detail=result)
     return result
+
+
+@router.post("/{creator_id}/pipeline/run", status_code=202)
+def post_pipeline_run(
+    creator_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    from media2text.core.storage.repos import MonitorTaskRepo
+
+    row = CreatorRepo(conn).get(creator_id)
+    if not row:
+        raise HTTPException(status_code=404, detail={"ok": False, "error": "creator_not_found"})
+    repo = MonitorTaskRepo(conn)
+    task_id = repo.enqueue(
+        creator_id=creator_id,
+        task_type="pipeline_run",
+        dedupe_key=f"pipeline:{creator_id}",
+        priority=5,
+    )
+    if not task_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"ok": False, "error": "already_queued", "creator_id": creator_id},
+        )
+    return {"ok": True, "job_id": task_id, "status": "queued", "creator_id": creator_id}

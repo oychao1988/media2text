@@ -2,6 +2,8 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from media2text.core.playwright_env import launch_chromium
+
 SESSION_NAME = "douyin.json"
 
 
@@ -13,7 +15,7 @@ def login_interactive(workspace: Path, *, headless: bool = False) -> Path:
     path = session_path(workspace)
     path.parent.mkdir(parents=True, exist_ok=True)
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=headless)
+        browser = launch_chromium(p, headless=headless)
         context = browser.new_context()
         page = context.new_page()
         page.goto("https://www.douyin.com/", wait_until="domcontentloaded")

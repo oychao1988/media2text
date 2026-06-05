@@ -13,6 +13,8 @@ class EventType(str, Enum):
     RECORDING_STARTED = "recording.started"
     RECORDING_STOPPED = "recording.stopped"
     CREATOR_UPDATED = "creator.updated"
+    RUNTIME_HEALTH = "runtime.health"
+    QUEUE_UPDATED = "queue.updated"
 
 
 def event_payload(

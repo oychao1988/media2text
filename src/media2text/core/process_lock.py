@@ -31,17 +31,31 @@ def clear_stale_workspace_lock(lock_path: Path) -> bool:
     return False
 
 
-@contextmanager
-def workspace_lock(lock_path: Path):
+def acquire_workspace_lock(lock_path: Path) -> int:
+    """Create exclusive workspace lock; caller must call release_workspace_lock."""
     lock_path.parent.mkdir(parents=True, exist_ok=True)
     clear_stale_workspace_lock(lock_path)
     try:
         fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
     except FileExistsError as exc:
         raise LockError(f"lock already held: {lock_path}") from exc
+    os.write(fd, str(os.getpid()).encode())
+    return fd
+
+
+def release_workspace_lock(lock_path: Path, fd: int | None) -> None:
+    if fd is not None:
+        try:
+            os.close(fd)
+        except OSError:
+            pass
+    lock_path.unlink(missing_ok=True)
+
+
+@contextmanager
+def workspace_lock(lock_path: Path):
+    fd = acquire_workspace_lock(lock_path)
     try:
-        os.write(fd, str(os.getpid()).encode())
         yield
     finally:
-        os.close(fd)
-        lock_path.unlink(missing_ok=True)
+        release_workspace_lock(lock_path, fd)

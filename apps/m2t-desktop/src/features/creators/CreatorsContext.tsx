@@ -11,7 +11,7 @@ import {
 import { apiGet } from '../../lib/api';
 import type { Creator } from '../../lib/types';
 import { sortCreatorsLiveFirst } from './creatorUtils';
-import { useEventsWs } from './useEventsWs';
+import { useEvents } from './useEventsWs';
 
 type CreatorsState = {
   creators: Creator[];
@@ -71,14 +71,21 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
     void refresh();
   }, [refresh]);
 
-  useEventsWs({
-    onEvent: () => {
+  const { subscribe, onReconnect } = useEvents();
+
+  useEffect(() => {
+    return subscribe((event) => {
+      if (event.type === 'creator.updated') {
+        void refresh().then(() => setRevision((n) => n + 1));
+      }
+    });
+  }, [subscribe, refresh]);
+
+  useEffect(() => {
+    return onReconnect(() => {
       void refresh().then(() => setRevision((n) => n + 1));
-    },
-    onReconnect: () => {
-      void refresh().then(() => setRevision((n) => n + 1));
-    },
-  });
+    });
+  }, [onReconnect, refresh]);
 
   const selected = useMemo(
     () => creators.find((c) => c.id === selectedId) ?? null,
