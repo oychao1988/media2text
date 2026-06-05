@@ -82,6 +82,31 @@ def test_runtime_with_lock_external(api_client, workspace) -> None:
     assert body["managed_by"] in ("external", "none")
 
 
+def test_runtime_takeover_from_external(api_client, workspace) -> None:
+    from media2text.core.runtime.supervisor import MonitorSupervisor
+
+    external_pid = 828282
+    (workspace / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
+    alive = {external_pid}
+
+    def fake_alive(pid: int) -> bool:
+        return pid in alive
+
+    def fake_kill(pid: int, sig: int) -> None:
+        alive.discard(pid)
+
+    with (
+        patch("media2text.core.runtime.supervisor._pid_alive", fake_alive),
+        patch("media2text.core.runtime.supervisor.os.kill", fake_kill),
+        patch.object(MonitorSupervisor, "_run_daemon_thread", lambda self: None),
+    ):
+        r = api_client.post("/api/runtime/takeover")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["start"]["managed_by"] == "embedded"
+
+
 def test_daemon_deprecated_gone(api_client) -> None:
     r = api_client.get("/api/daemon")
     assert r.status_code == 410

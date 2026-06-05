@@ -15,12 +15,16 @@ const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
 struct PythonSidecarInner {
     child: Option<Child>,
+    reused_external: bool,
 }
 
 pub struct PythonSidecarState(Arc<Mutex<PythonSidecarInner>>);
 
 pub fn new_python_sidecar_state() -> PythonSidecarState {
-    PythonSidecarState(Arc::new(Mutex::new(PythonSidecarInner { child: None })))
+    PythonSidecarState(Arc::new(Mutex::new(PythonSidecarInner {
+        child: None,
+        reused_external: false,
+    })))
 }
 
 #[tauri::command]
@@ -39,16 +43,27 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
     // Reuse manual `media2text serve` only when it exposes desktop config secrets.
     // Single probe — do not use wait_for_health() here (empty port would idle 60s).
     let client = blocking_http_client()?;
+    let force_restart = cfg!(debug_assertions);
     if health_ready_now(&client)? {
-        if existing_api_compatible(&client) {
+        if force_restart {
+            eprintln!(
+                "[python-sidecar] dev mode: restarting existing API on :{API_PORT} to pick up code changes"
+            );
+            try_kill_media2text_serve_on_port(API_PORT);
+            thread::sleep(Duration::from_millis(500));
+        } else if existing_api_compatible(&client) {
+            guard.reused_external = true;
             return Ok(());
+        } else {
+            eprintln!(
+                "[python-sidecar] API on :{API_PORT} is stale (missing runtime, config secrets, or history APIs); restarting sidecar"
+            );
+            try_kill_media2text_serve_on_port(API_PORT);
+            thread::sleep(Duration::from_millis(500));
         }
-        eprintln!(
-            "[python-sidecar] API on :{API_PORT} is stale (missing /api/runtime or provider api_key); restarting sidecar"
-        );
-        try_kill_media2text_serve_on_port(API_PORT);
-        thread::sleep(Duration::from_millis(500));
     }
+
+    guard.reused_external = false;
 
     let project_root = resolve_project_root()?;
     let python = resolve_python_executable(&project_root)?;
@@ -91,9 +106,17 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
 
 pub fn stop_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
     let mut guard = state.0.lock().map_err(|e| e.to_string())?;
+    let had_spawned_child = guard.child.is_some();
     if let Some(mut child) = guard.child.take() {
         let _ = child.kill();
         let _ = child.wait();
+    } else if guard.reused_external {
+        try_kill_media2text_serve_on_port(API_PORT);
+    }
+    guard.reused_external = false;
+    // Orphan cleanup when the shell was spawned by us but exit did not reap it (e.g. force quit).
+    if cfg!(debug_assertions) && had_spawned_child {
+        try_kill_media2text_serve_on_port(API_PORT);
     }
     Ok(())
 }
@@ -141,8 +164,28 @@ fn runtime_api_available(client: &reqwest::blocking::Client) -> bool {
     matches!(client.get(RUNTIME_URL).send(), Ok(resp) if resp.status().is_success())
 }
 
+fn health_api_feature(client: &reqwest::blocking::Client, key: &str) -> bool {
+    match client.get(HEALTH_URL).send() {
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<serde_json::Value>()
+            .ok()
+            .and_then(|body| {
+                body.get("api_features")
+                    .and_then(|f| f.get(key))
+                    .and_then(|v| v.as_bool())
+            })
+            .unwrap_or(false),
+        _ => false,
+    }
+}
+
 fn existing_api_compatible(client: &reqwest::blocking::Client) -> bool {
     if !runtime_api_available(client) {
+        return false;
+    }
+    if !health_api_feature(client, "history_summarize")
+        || !health_api_feature(client, "history_retry_download")
+    {
         return false;
     }
     match client.get(CONFIG_URL).send() {

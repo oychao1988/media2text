@@ -253,6 +253,20 @@ class AwemeRepo:
         )
         self._conn.commit()
 
+    def reset_failed_to_listed(self, aweme_id: str) -> bool:
+        """Move a failed aweme back to the download queue."""
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.execute(
+            """
+            UPDATE awemes
+            SET sync_status = 'listed', transcribe_status = NULL, updated_at = ?
+            WHERE aweme_id = ? AND sync_status = 'failed'
+            """,
+            (now, aweme_id),
+        )
+        self._conn.commit()
+        return cur.rowcount == 1
+
     def get(self, aweme_id: str) -> AwemeRow | None:
         row = self._conn.execute(
             "SELECT * FROM awemes WHERE aweme_id = ?",

@@ -1,9 +1,13 @@
 import logging
+import os
 from pathlib import Path
 
 import structlog
 
 from media2text.core.runtime.monitor_log import structlog_sink_processor
+
+# Embedded serve: console sink goes to devnull (Tauri sidecar stdout may be closed).
+_EMBEDDED_LOG_FILE = open(os.devnull, "w")
 
 
 def _processors(*, with_monitor_sink: bool) -> list:
@@ -33,5 +37,6 @@ def enable_monitor_log_sink(workspace: Path) -> Path:
     structlog.configure(
         processors=_processors(with_monitor_sink=True),
         wrapper_class=structlog.make_filtering_bound_logger(logging.INFO),
+        logger_factory=structlog.PrintLoggerFactory(file=_EMBEDDED_LOG_FILE),
     )
     return path

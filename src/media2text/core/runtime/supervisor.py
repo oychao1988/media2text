@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import os
+import signal
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -17,6 +19,7 @@ from media2text.core.monitor.watcher import MonitorWatcher
 from media2text.core.process_lock import (
     LockError,
     acquire_workspace_lock,
+    clear_stale_workspace_lock,
     release_workspace_lock,
 )
 from media2text.core.runtime.status import write_heartbeat
@@ -153,6 +156,66 @@ class MonitorSupervisor:
         log.info("monitor_supervisor_stopped")
         return {"ok": True, "stopped": True, "managed_by": "embedded"}
 
+    def stop_external(self, cfg: AppConfig, *, timeout_sec: float = 15.0) -> dict[str, Any]:
+        """Stop a CLI ``monitor watch --daemon`` process not owned by this supervisor."""
+        if self._is_embedded_running():
+            return {
+                "ok": True,
+                "stopped": False,
+                "message": "embedded supervisor already running",
+            }
+        ws = cfg.ensure_workspace()
+        lock_path = ws / ".monitor-watch.lock"
+        pid = monitor_lock_pid(ws)
+        if pid is None or not _pid_alive(pid):
+            clear_stale_workspace_lock(lock_path)
+            return {"ok": True, "stopped": False, "message": "no external daemon"}
+        if self._holds_embedded_lock(pid):
+            return {
+                "ok": True,
+                "stopped": False,
+                "message": "monitor already managed by desktop",
+            }
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            return {"ok": False, "error": "stop_failed", "detail": str(exc), "pid": pid}
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if not _pid_alive(pid):
+                break
+            time.sleep(0.25)
+        if _pid_alive(pid):
+            try:
+                os.kill(pid, signal.SIGKILL)
+            except OSError:
+                pass
+            time.sleep(0.5)
+        if not _pid_alive(pid):
+            self._clear_lock_for_pid(lock_path, pid)
+        clear_stale_workspace_lock(lock_path)
+        if _pid_alive(pid):
+            return {
+                "ok": False,
+                "error": "stop_timeout",
+                "pid": pid,
+                "message": "外部守护进程未能及时退出",
+            }
+        log.info("monitor_external_stopped", pid=pid)
+        return {"ok": True, "stopped": True, "pid": pid, "managed_by": "none"}
+
+    def takeover(self, cfg: AppConfig, *, creator_id: str | None = None) -> dict[str, Any]:
+        """Stop external CLI daemon if present, then start embedded supervisor."""
+        stop_result = self.stop_external(cfg)
+        if not stop_result.get("ok"):
+            return stop_result
+        start_result = self.start(cfg, creator_id=creator_id)
+        return {
+            "ok": start_result.get("ok", False),
+            "stop_external": stop_result,
+            "start": start_result,
+        }
+
     def status(self, cfg: AppConfig) -> SupervisorStatus:
         ws = cfg.ensure_workspace()
         lock_pid = monitor_lock_pid(ws)
@@ -197,6 +260,18 @@ class MonitorSupervisor:
 
     def _holds_embedded_lock(self, pid: int) -> bool:
         return pid == os.getpid() and self._lock_fd is not None
+
+    @staticmethod
+    def _clear_lock_for_pid(lock_path: Path, pid: int) -> None:
+        if not lock_path.is_file():
+            return
+        try:
+            recorded = int(lock_path.read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            lock_path.unlink(missing_ok=True)
+            return
+        if recorded == pid:
+            lock_path.unlink(missing_ok=True)
 
     def _run_daemon_thread(self) -> None:
         cfg = self._cfg

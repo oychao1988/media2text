@@ -118,6 +118,10 @@ export function sessionCanDownloadCloud(session: LiveSessionSummary): boolean {
   return session.kind === 'live' && sessionCloudAvailable(session) && !session.media_available;
 }
 
+export function sessionCanRetryVodDownload(session: LiveSessionSummary): boolean {
+  return session.kind === 'vod' && session.status === 'failed';
+}
+
 export function sessionCanDeleteLocal(session: LiveSessionSummary): boolean {
   return Boolean(session.media_available && sessionMediaPath(session));
 }

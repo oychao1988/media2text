@@ -25,6 +25,7 @@ type RuntimeState = {
   startRuntime: () => Promise<void>;
   stopRuntime: () => Promise<void>;
   restartRuntime: () => Promise<void>;
+  takeoverRuntime: () => Promise<void>;
 };
 
 const RuntimeContext = createContext<RuntimeState | null>(null);
@@ -86,12 +87,16 @@ export function RuntimeProvider({ children }: ProviderProps) {
       showToast('守护进程已启动', 'success');
       await refresh();
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        showToast('已有监控在运行；若为终端独立进程，请点「改用 Desktop 管理」', 'error', 8000);
+        await refresh();
+        return;
+      }
       const msg =
         err instanceof ApiError
           ? err.message
           : '启动失败';
       showToast(msg, 'error');
-      throw err;
     }
   }, [refresh]);
 
@@ -106,7 +111,6 @@ export function RuntimeProvider({ children }: ProviderProps) {
           ? err.message
           : '停止失败';
       showToast(msg, 'error');
-      throw err;
     }
   }, [refresh]);
 
@@ -120,6 +124,20 @@ export function RuntimeProvider({ children }: ProviderProps) {
     }
   }, [refresh]);
 
+  const takeoverRuntime = useCallback(async () => {
+    try {
+      await apiPost('/api/runtime/takeover', undefined, true);
+      showToast('已切换为 Desktop 管理监控', 'success');
+      await refresh();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : '切换失败';
+      showToast(msg, 'error');
+    }
+  }, [refresh]);
+
   const value = useMemo(
     () => ({
       runtime,
@@ -130,8 +148,19 @@ export function RuntimeProvider({ children }: ProviderProps) {
       startRuntime,
       stopRuntime,
       restartRuntime,
+      takeoverRuntime,
     }),
-    [runtime, loading, fetchError, connected, refresh, startRuntime, stopRuntime, restartRuntime],
+    [
+      runtime,
+      loading,
+      fetchError,
+      connected,
+      refresh,
+      startRuntime,
+      stopRuntime,
+      restartRuntime,
+      takeoverRuntime,
+    ],
   );
 
   return <RuntimeContext.Provider value={value}>{children}</RuntimeContext.Provider>;

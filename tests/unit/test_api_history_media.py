@@ -7,6 +7,8 @@ from media2text.api.services.history_media import (
     delete_history_record,
     delete_local_media,
     download_from_cloud,
+    retry_vod_download,
+    summarize_history_item,
 )
 from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.core.config import AppConfig
@@ -211,3 +213,168 @@ def test_download_from_cloud_restores_file(workspace) -> None:
 
     assert result["ok"] is True
     assert target.read_bytes() == b"cloud-bytes"
+
+
+def test_retry_vod_download_resets_failed_and_enqueues(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_retry",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    conn.execute(
+        """
+        INSERT INTO awemes
+          (aweme_id, creator_id, title, create_time, media_type, sync_status, transcribe_status, updated_at)
+        VALUES ('fail1', ?, 't', 1, 'video', 'failed', 'download error', datetime('now'))
+        """,
+        (cid,),
+    )
+    conn.commit()
+
+    result = retry_vod_download(cfg, conn, creator_id=cid, item_id="fail1")
+    row = AwemeRepo(conn).get("fail1")
+    task = conn.execute(
+        "SELECT task_type, status FROM monitor_tasks WHERE creator_id = ? ORDER BY id DESC LIMIT 1",
+        (cid,),
+    ).fetchone()
+    conn.close()
+
+    assert result["ok"] is True
+    assert result["queued"] is True
+    assert row is not None
+    assert row.sync_status == "listed"
+    assert row.transcribe_status is None
+    assert task is not None
+    assert task["task_type"] == "download"
+
+
+def test_retry_vod_download_rejects_non_failed(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_retry2",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    conn.execute(
+        """
+        INSERT INTO awemes
+          (aweme_id, creator_id, title, create_time, media_type, sync_status, updated_at)
+        VALUES ('listed1', ?, 't', 1, 'video', 'listed', datetime('now'))
+        """,
+        (cid,),
+    )
+    conn.commit()
+
+    result = retry_vod_download(cfg, conn, creator_id=cid, item_id="listed1")
+    conn.close()
+
+    assert result["ok"] is False
+    assert result["error"] == "invalid_status"
+
+
+def test_summarize_history_item_disabled(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace), "summarize": {"enabled": False}})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_sum",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    mp4 = workspace / "creators" / "sec_sum" / "live" / "x.mp4"
+    mp4.parent.mkdir(parents=True)
+    mp4.write_bytes(b"x")
+    transcript = mp4.with_suffix(".transcript.json")
+    transcript.write_text('{"segments": []}', encoding="utf-8")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(mp4),
+    )
+    LiveSessionRepo(conn).update_status(sid, local_path=str(mp4), status="completed")
+
+    result = summarize_history_item(
+        cfg, conn, creator_id=cid, kind="live", item_id=sid, force=False
+    )
+    conn.close()
+
+    assert result["ok"] is False
+    assert result["error"] == "summarize_disabled"
+
+
+def test_summarize_history_item_no_transcript(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace), "summarize": {"enabled": True}})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_sum2",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    missing = workspace / "creators" / "sec_sum2" / "live" / "y.mp4"
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(missing),
+    )
+    LiveSessionRepo(conn).update_status(sid, local_path=str(missing), status="completed")
+
+    result = summarize_history_item(
+        cfg, conn, creator_id=cid, kind="live", item_id=sid, force=False
+    )
+    conn.close()
+
+    assert result["ok"] is False
+    assert result["error"] == "no_transcript"
+
+
+def test_summarize_history_item_success(workspace, monkeypatch) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace), "summarize": {"enabled": True}})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_sum3",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    mp4 = workspace / "creators" / "sec_sum3" / "live" / "z.mp4"
+    mp4.parent.mkdir(parents=True)
+    mp4.write_bytes(b"x")
+    transcript = mp4.with_suffix(".transcript.json")
+    transcript.write_text('{"segments": [{"start": 0, "text": "hello"}]}', encoding="utf-8")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(mp4),
+    )
+    LiveSessionRepo(conn).update_status(sid, local_path=str(mp4), status="completed")
+
+    monkeypatch.setattr(
+        "media2text.api.services.history_media.summarize_engine_available",
+        lambda _cfg: (True, None),
+    )
+    monkeypatch.setattr(
+        "media2text.api.services.history_media.create_summarize_backend",
+        lambda _cfg: object(),
+    )
+    monkeypatch.setattr(
+        "media2text.api.services.history_media.summarize_one",
+        lambda _target, _cfg, _backend, force=False: {
+            "summarized": True,
+            "summary_path": str(mp4.with_suffix(".summary.md")),
+            "skipped": False,
+        },
+    )
+    monkeypatch.setattr(
+        "media2text.api.services.history_media.refresh_manifest",
+        lambda *args, **kwargs: None,
+    )
+
+    result = summarize_history_item(
+        cfg, conn, creator_id=cid, kind="live", item_id=sid, force=False
+    )
+    conn.close()
+
+    assert result["ok"] is True
+    assert result["summarized"] is True
+    assert result["summary_path"] is not None

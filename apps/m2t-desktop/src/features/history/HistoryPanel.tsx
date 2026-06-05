@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { apiDelete, apiGet, apiPost } from '../../lib/api';
+import { ApiError, apiDelete, apiGet, apiPost } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { LiveGroup, LiveSessionSummary } from '../../lib/types';
 import {
@@ -9,6 +9,7 @@ import {
   historyRowTitle,
   sessionCanDeleteLocal,
   sessionCanDownloadCloud,
+  sessionCanRetryVodDownload,
   sessionCloudLabel,
   sessionIsDisabled,
   sessionLocalLabel,
@@ -168,6 +169,28 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
     onSessionSelect?.(session);
   };
 
+  const retryVodDownload = async (session: LiveSessionSummary) => {
+    if (!creatorId || !sessionCanRetryVodDownload(session)) return;
+    const rowKey = `${session.kind}:${session.item_id}`;
+    setBusyKey(rowKey);
+    try {
+      await apiPost(`/api/creators/${creatorId}/history/vod/${session.item_id}/retry-download`);
+      showToast('已加入下载队列', 'success');
+      invalidateCache();
+      await loadSessions({ silent: true });
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : err instanceof Error
+            ? err.message
+            : '重试下载失败';
+      showToast(msg, 'error');
+    } finally {
+      setBusyKey(null);
+    }
+  };
+
   const runAction = async (action: PendingAction) => {
     if (!creatorId) return;
     const { session } = action;
@@ -299,6 +322,17 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
+                    {sessionCanRetryVodDownload(s) ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm session-action"
+                        disabled={busy}
+                        title="重新加入下载队列"
+                        onClick={() => void retryVodDownload(s)}
+                      >
+                        重试
+                      </button>
+                    ) : null}
                     {sessionCanDownloadCloud(s) ? (
                       <button
                         type="button"

@@ -23,7 +23,10 @@ def get_runtime_status(cfg: AppConfig, supervisor: MonitorSupervisor | None) -> 
 
 
 def start_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
-    return supervisor.start(cfg)
+    result = supervisor.start(cfg)
+    if result.get("ok"):
+        recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
+    return result
 
 
 def stop_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
@@ -56,3 +59,11 @@ def recover_runtime_stale_work(
     older_than_sec: int = 120,
 ) -> dict[str, Any]:
     return recover_stale_work(cfg, older_than_sec=older_than_sec)
+
+
+def takeover_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
+    result = supervisor.takeover(cfg)
+    start = result.get("start") or {}
+    if start.get("ok"):
+        recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
+    return result

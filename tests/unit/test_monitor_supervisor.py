@@ -89,3 +89,34 @@ def test_supervisor_stop_not_owner_for_external(tmp_path, monkeypatch) -> None:
         result = sup.stop(cfg)
     assert result["ok"] is False
     assert result["not_owner"] is True
+
+
+def test_supervisor_stop_external_and_takeover(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    ws = cfg.ensure_workspace()
+    external_pid = 616161
+    (ws / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
+    sup = MonitorSupervisor()
+    alive = {external_pid}
+
+    def fake_alive(pid: int) -> bool:
+        return pid in alive
+
+    def fake_kill(pid: int, sig: int) -> None:
+        alive.discard(pid)
+
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor._pid_alive",
+        fake_alive,
+    )
+    monkeypatch.setattr("media2text.core.runtime.supervisor.os.kill", fake_kill)
+
+    stop_result = sup.stop_external(cfg)
+    assert stop_result["ok"] is True
+    assert stop_result["stopped"] is True
+
+    with patch.object(MonitorSupervisor, "_run_daemon_thread", lambda self: None):
+        takeover = sup.takeover(cfg)
+    assert takeover["ok"] is True
+    assert takeover["start"]["managed_by"] == "embedded"

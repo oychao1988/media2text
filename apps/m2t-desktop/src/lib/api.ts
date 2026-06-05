@@ -22,7 +22,17 @@ function extractErrorMessage(body: unknown, status: number): string {
     if (typeof obj.detail === 'string') return obj.detail;
     if (obj.detail && typeof obj.detail === 'object') {
       const d = obj.detail as Record<string, unknown>;
-      if (typeof d.error === 'string') return d.error;
+      if (typeof d.error === 'string') {
+        const extra = typeof d.detail === 'string' ? d.detail : '';
+        const code = d.error;
+        if (code === 'summarize_disabled') return '摘要未启用，请在设置中打开';
+        if (code === 'summarize_unavailable') {
+          return extra ? `摘要服务不可用：${extra}` : '摘要服务不可用，请检查 LLM 配置';
+        }
+        if (code === 'no_transcript') return '无转写文件，无法生成摘要';
+        if (code === 'invalid_status') return '当前状态不可重试下载';
+        return extra ? `${code}: ${extra}` : code;
+      }
       if (typeof d.message === 'string') return d.message;
     }
     if (typeof obj.error === 'string') return obj.error;

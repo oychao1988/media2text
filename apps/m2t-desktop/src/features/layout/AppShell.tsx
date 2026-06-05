@@ -271,6 +271,21 @@ export function AppShell() {
             transcriptPath={transcriptPath}
             mode={centerView === 'playback' ? 'playback' : 'live'}
             playbackTime={playbackTime}
+            playbackItem={
+              centerView === 'playback' && playbackSession && selectedId
+                ? {
+                    creatorId: selectedId,
+                    kind: playbackSession.kind,
+                    itemId: playbackSession.session_id,
+                    hasTranscript: playbackSession.has_transcript,
+                    hasSummary: playbackSession.has_summary,
+                  }
+                : null
+            }
+            onSummaryUpdated={(path) => {
+              if (!playbackSession) return;
+              setPlaybackSession({ ...playbackSession, has_summary: Boolean(path), summary_path: path });
+            }}
           />
           <div
             className="row-resize"

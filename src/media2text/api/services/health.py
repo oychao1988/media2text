@@ -32,7 +32,11 @@ def refresh_health_cache(cfg: AppConfig | None = None) -> dict:
         "compliance_accepted": report["compliance_accepted"],
         "index_stale": report["index_stale"],
         "monitor_lock_pid": report["monitor_lock_pid"],
-        "api_features": {"config_provider_secrets": True},
+        "api_features": {
+            "config_provider_secrets": True,
+            "history_summarize": True,
+            "history_retry_download": True,
+        },
     }
     return _cache
 

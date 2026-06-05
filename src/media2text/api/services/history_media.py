@@ -14,7 +14,12 @@ from media2text.core.storage.repos import (
     CloudUploadRepo,
     CreatorRepo,
     LiveSessionRepo,
+    MonitorTaskRepo,
 )
+from media2text.core.summarize.errors import SummarizeConfigError, SummarizeError
+from media2text.core.summarize.factory import create_summarize_backend, summarize_engine_available
+from media2text.core.summarize.reader import transcript_path_for_media
+from media2text.core.summarize.runner import summarize_one
 
 HistoryKind = Literal["live", "vod"]
 
@@ -260,3 +265,142 @@ def _delete_sidecars(media: Path) -> None:
     for suffix in suffixes:
         sidecar = Path(f"{stem}{suffix}")
         sidecar.unlink(missing_ok=True)
+
+
+def _resolve_history_summarize_target(
+    ws: Path,
+    *,
+    kind: HistoryKind,
+    local_path: str | None,
+    temp_path: str | None = None,
+) -> Path | None:
+    media = _resolve_media_path(ws, local_path=local_path, temp_path=temp_path)
+    if media and media.is_file():
+        return media
+    base_raw = local_path or temp_path
+    if not base_raw:
+        return None
+    rel = workspace_rel(ws, base_raw)
+    candidates: list[Path] = []
+    if rel:
+        try:
+            candidates.append(safe_workspace_path(ws, rel))
+        except Exception:
+            pass
+    if Path(base_raw).is_absolute():
+        candidates.append(Path(base_raw))
+    for candidate in candidates:
+        transcript = transcript_path_for_media(candidate)
+        if transcript.is_file():
+            return transcript
+    return None
+
+
+def summarize_history_item(
+    cfg: AppConfig,
+    conn,
+    *,
+    creator_id: str,
+    kind: HistoryKind,
+    item_id: str,
+    force: bool = False,
+) -> dict[str, Any]:
+    if not cfg.summarize.enabled:
+        return {"ok": False, "error": "summarize_disabled"}
+
+    creator = CreatorRepo(conn).get(creator_id)
+    if not creator:
+        return {"ok": False, "error": "creator_not_found"}
+
+    ws = cfg.ensure_workspace()
+    target: Path | None = None
+
+    if kind == "live":
+        session = LiveSessionRepo(conn).get(item_id)
+        if not session or session.creator_id != creator_id:
+            return {"ok": False, "error": "not_found"}
+        target = _resolve_history_summarize_target(
+            ws,
+            kind=kind,
+            local_path=session.local_path,
+            temp_path=session.temp_path,
+        )
+    else:
+        aweme = AwemeRepo(conn).get(item_id)
+        if not aweme or aweme.creator_id != creator_id:
+            return {"ok": False, "error": "not_found"}
+        target = _resolve_history_summarize_target(
+            ws,
+            kind=kind,
+            local_path=aweme.local_path,
+        )
+
+    if target is None:
+        return {"ok": False, "error": "no_transcript"}
+
+    ok, reason = summarize_engine_available(cfg)
+    if not ok:
+        return {"ok": False, "error": "summarize_unavailable", "detail": reason}
+
+    try:
+        backend = create_summarize_backend(cfg)
+    except SummarizeConfigError as exc:
+        return {"ok": False, "error": "summarize_unavailable", "detail": str(exc)}
+
+    try:
+        item = summarize_one(target, cfg, backend, force=force)
+    except SummarizeError as exc:
+        return {"ok": False, "error": "summarize_failed", "detail": str(exc)}
+    except Exception as exc:  # noqa: BLE001
+        return {"ok": False, "error": "summarize_failed", "detail": str(exc)}
+
+    refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
+    summary_path = item.get("summary_path")
+    rel_summary = workspace_rel(ws, summary_path) if summary_path else None
+    return {
+        "ok": True,
+        "kind": kind,
+        "item_id": item_id,
+        "summarized": bool(item.get("summarized") or (summary_path and not item.get("skipped"))),
+        "skipped": bool(item.get("skipped")),
+        "summary_path": rel_summary,
+    }
+
+
+def retry_vod_download(
+    cfg: AppConfig,
+    conn,
+    *,
+    creator_id: str,
+    item_id: str,
+) -> dict[str, Any]:
+    creator = CreatorRepo(conn).get(creator_id)
+    if not creator:
+        return {"ok": False, "error": "creator_not_found"}
+
+    aweme = AwemeRepo(conn).get(item_id)
+    if not aweme or aweme.creator_id != creator_id:
+        return {"ok": False, "error": "not_found"}
+    if aweme.sync_status != "failed":
+        return {
+            "ok": False,
+            "error": "invalid_status",
+            "status": aweme.sync_status,
+        }
+
+    if not AwemeRepo(conn).reset_failed_to_listed(item_id):
+        return {"ok": False, "error": "retry_failed"}
+
+    task_id = MonitorTaskRepo(conn).enqueue(
+        creator_id=creator_id,
+        task_type="download",
+        dedupe_key=f"download:{creator_id}",
+        priority=10,
+        payload_json=f'{{"platform": "{creator.platform}"}}',
+    )
+    return {
+        "ok": True,
+        "item_id": item_id,
+        "task_id": task_id,
+        "queued": task_id is not None,
+    }
