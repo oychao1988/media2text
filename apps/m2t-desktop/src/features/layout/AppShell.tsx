@@ -101,6 +101,11 @@ export function AppShell() {
     return null;
   }, [centerView, playbackSession]);
 
+  const transcriptPath = useMemo(() => {
+    if (centerView === 'playback' && playbackSession) return playbackSession.transcript_path;
+    return null;
+  }, [centerView, playbackSession]);
+
   const listLoading = previewLoading || creatorsLoading;
   const listEmpty = !listLoading && !creatorsError && (showEmptyCreators || creators.length === 0);
 
@@ -263,6 +268,7 @@ export function AppShell() {
           <TranscriptPane
             sessionId={transcriptSessionId}
             summaryPath={summaryPath}
+            transcriptPath={transcriptPath}
             mode={centerView === 'playback' ? 'playback' : 'live'}
             playbackTime={playbackTime}
           />

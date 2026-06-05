@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.schemas.events import EventType, event_payload
 from media2text.api.services import creator_avatar as creator_avatar_svc
+from media2text.api.services import history_media as history_media_svc
 from media2text.api.services import live_snapshot as live_snapshot_svc
 from media2text.api.services import recording as recording_svc
 from media2text.api.services.events_hub import events_hub
@@ -228,6 +229,83 @@ def list_sessions(
         has_summary=has_summary,
         status=status,
     )
+    return result
+
+
+@router.post("/{creator_id}/history/{kind}/{item_id}/delete-local")
+def post_history_delete_local(
+    creator_id: str,
+    kind: str,
+    item_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=400, detail="kind must be live or vod")
+    result = history_media_svc.delete_local_media(
+        cfg,
+        conn,
+        creator_id=creator_id,
+        kind=kind,  # type: ignore[arg-type]
+        item_id=item_id,
+    )
+    if not result.get("ok"):
+        code = 404 if result.get("error") == "not_found" else 400
+        if result.get("error") == "session_active":
+            code = 409
+        raise HTTPException(status_code=code, detail=result)
+    return result
+
+
+@router.post("/{creator_id}/history/{kind}/{item_id}/download-cloud")
+def post_history_download_cloud(
+    creator_id: str,
+    kind: str,
+    item_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=400, detail="kind must be live or vod")
+    result = history_media_svc.download_from_cloud(
+        cfg,
+        conn,
+        creator_id=creator_id,
+        kind=kind,  # type: ignore[arg-type]
+        item_id=item_id,
+    )
+    if not result.get("ok"):
+        code = 404 if result.get("error") == "not_found" else 400
+        if result.get("error") == "aliyundrive_disabled":
+            code = 503
+        raise HTTPException(status_code=code, detail=result)
+    return result
+
+
+@router.delete("/{creator_id}/history/{kind}/{item_id}")
+def delete_history_item(
+    creator_id: str,
+    kind: str,
+    item_id: str,
+    delete_files: bool = Query(True),
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=400, detail="kind must be live or vod")
+    result = history_media_svc.delete_history_record(
+        cfg,
+        conn,
+        creator_id=creator_id,
+        kind=kind,  # type: ignore[arg-type]
+        item_id=item_id,
+        delete_files=delete_files,
+    )
+    if not result.get("ok"):
+        code = 404 if result.get("error") == "not_found" else 400
+        if result.get("error") == "session_active":
+            code = 409
+        raise HTTPException(status_code=code, detail=result)
     return result
 
 

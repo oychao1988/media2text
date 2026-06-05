@@ -20,6 +20,7 @@ import {
 type Props = {
   sessionId: string | null;
   summaryPath: string | null;
+  transcriptPath?: string | null;
   mode?: 'live' | 'playback';
   playbackTime?: number;
 };
@@ -70,7 +71,13 @@ function TranscriptContent({
   );
 }
 
-export function TranscriptPane({ sessionId, summaryPath, mode = 'live', playbackTime = 0 }: Props) {
+export function TranscriptPane({
+  sessionId,
+  summaryPath,
+  transcriptPath = null,
+  mode = 'live',
+  playbackTime = 0,
+}: Props) {
   const [tab, setTab] = useState<'transcript' | 'summary'>('transcript');
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
   const [summaryMd, setSummaryMd] = useState<string | null>(null);
@@ -183,6 +190,14 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live', playback
 
     const loadRest = async () => {
       try {
+        if (mode === 'playback' && transcriptPath) {
+          const url = await mediaUrl(transcriptPath);
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('transcript unavailable');
+          const payload = (await res.json()) as TranscriptPayload;
+          if (!cancelled) applyPayload(payload);
+          return;
+        }
         const res = await apiGet<TranscriptPayload & { ok: boolean }>(
           `/api/sessions/${sessionId}/transcript`,
           true,
@@ -245,7 +260,7 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live', playback
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [sessionId, mode]);
+  }, [sessionId, transcriptPath, mode]);
 
   useEffect(() => {
     if (tab !== 'summary') return;
@@ -255,6 +270,14 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live', playback
     setSummaryMd(null);
     void (async () => {
       try {
+        if (mode === 'playback' && summaryPath) {
+          const url = await mediaUrl(summaryPath);
+          const res = await fetch(url);
+          if (!res.ok) throw new Error('摘要不可用');
+          const text = await res.text();
+          if (!cancelled) setSummaryMd(text.trim() ? text : null);
+          return;
+        }
         if (mode === 'playback' && sessionId) {
           const res = await apiGet<{ ok: boolean; text: string }>(
             `/api/sessions/${sessionId}/summary`,
