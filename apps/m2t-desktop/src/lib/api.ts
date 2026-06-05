@@ -46,6 +46,15 @@ export function resetApiBaseUrlCache(): void {
   cachedBaseUrl = null;
 }
 
+export async function creatorAvatarUrl(
+  creatorId: string,
+  version?: string | null,
+): Promise<string> {
+  const base = await getApiBaseUrl();
+  const q = version ? `?v=${encodeURIComponent(version)}` : '';
+  return `${base}/api/creators/${creatorId}/avatar${q}`;
+}
+
 export async function buildWsUrl(path: string): Promise<string> {
   const base = await getApiBaseUrl();
   const u = new URL(base);

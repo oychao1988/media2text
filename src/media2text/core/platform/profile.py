@@ -92,6 +92,9 @@ def sync_creator_profile(cfg: AppConfig, creator_id: str) -> dict:
         "platform": creator.platform,
         "display_name": profile.display_name,
         "unique_id": profile.unique_id,
+        "avatar_url": profile.avatar_url,
+        "signature": profile.signature,
+        "follower_count": profile.follower_count,
         "profile_synced_at": now,
         "auth_required": False,
     }

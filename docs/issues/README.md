@@ -109,4 +109,10 @@
 | 9 | [#133](https://github.com/oychao1988/media2text/issues/133) | [m2t-desktop-p8-smoke-docs-a11y.md](./m2t-desktop-p8-smoke-docs-a11y.md) | `issue-133-m2t-desktop-p8-smoke` |
 | 10 | [#143](https://github.com/oychao1988/media2text/issues/143) | [m2t-desktop-p9-ui-parity-finalized.md](./m2t-desktop-p9-ui-parity-finalized.md) | `issue-143-m2t-desktop-p9-ui-parity` |
 
+### m2t-desktop 监控管理 & 侧栏 UX（2026-06-05）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#154](https://github.com/oychao1988/media2text/issues/154) | （本 PR） | [m2t-desktop-manage-creator-ux.md](./m2t-desktop-manage-creator-ux.md) | `issue-154-m2t-desktop-manage-creator-ux` |
+
 **并行提示**：#127 与 #128 可并行；#129/#130 可在 #126 后 mock API 并行；#132 建议在 #131 前或同 PR 联调；**#143** 建议在 #131/#132 合并后、#133 冒烟前完成 Phase A–D。

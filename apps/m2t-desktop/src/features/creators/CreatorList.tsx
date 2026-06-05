@@ -1,9 +1,7 @@
 import type { Creator } from '../../lib/types';
-import {
-  creatorInitial,
-  formatCreatorSub,
-} from './creatorUtils';
-import { StatusLight } from './StatusLight';
+import { CreatorAvatar } from './CreatorAvatar';
+import { CreatorHoverPopover } from './CreatorHoverPopover';
+import { formatCreatorSub, isCreatorLive } from './creatorUtils';
 
 type Props = {
   creators: Creator[];
@@ -40,32 +38,40 @@ export function CreatorList({
     <nav className="creator-list" id="creator-list" aria-label="已监控博主">
       {creators.map((creator) => {
         const selected = creator.id === selectedId;
-        const live = creator.is_live || creator.status_light === 'green';
+        const live = isCreatorLive(creator);
         return (
-          <div
-            key={creator.id}
-            className={`creator-item${selected ? ' selected' : ''}${creator.profile_stale ? ' stale' : ''}`}
-            tabIndex={0}
-            role="button"
-            aria-current={selected ? 'true' : undefined}
-            data-creator={creator.id}
-            onClick={() => onSelect(creator)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                onSelect(creator);
-              }
-            }}
-          >
-            <div className={`avatar-wrap${live ? ' is-live' : ''}`}>
-              <div className="avatar">{creatorInitial(creator.display_name)}</div>
-              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
+          <CreatorHoverPopover key={creator.id} creator={creator}>
+            <div
+              className={`creator-item${selected ? ' selected' : ''}${creator.profile_stale ? ' stale' : ''}`}
+              tabIndex={0}
+              role="button"
+              aria-current={selected ? 'true' : undefined}
+              data-creator={creator.id}
+              onClick={() => onSelect(creator)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelect(creator);
+                }
+              }}
+            >
+              <div className={`avatar-wrap${live ? ' is-live' : ''}`}>
+                <CreatorAvatar
+                  variant="list"
+                  creatorId={creator.id}
+                  displayName={creator.display_name}
+                  avatarUrl={creator.avatar_url}
+                  profileSyncedAt={creator.profile_synced_at}
+                  light={creator.status_light}
+                  abbr={creator.status_abbr}
+                />
+              </div>
+              <div className="creator-info">
+                <div className="creator-name">{creator.display_name ?? creator.unique_id ?? creator.id}</div>
+                <div className="creator-sub">{formatCreatorSub(creator)}</div>
+              </div>
             </div>
-            <div className="creator-info">
-              <div className="creator-name">{creator.display_name ?? creator.unique_id ?? creator.id}</div>
-              <div className="creator-sub">{formatCreatorSub(creator)}</div>
-            </div>
-          </div>
+          </CreatorHoverPopover>
         );
       })}
     </nav>
