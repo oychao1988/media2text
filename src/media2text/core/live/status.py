@@ -109,5 +109,6 @@ def build_live_status(
             "pending": task_counts.get("pending", 0),
             "running": task_counts.get("running", 0),
             "failed": task_counts.get("failed", 0),
+            "dlq": task_counts.get("failed", 0),
         },
     }

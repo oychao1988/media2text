@@ -947,6 +947,53 @@ class MonitorTaskRepo:
         ).fetchone()
         return MonitorTaskRow(**dict(row)) if row else None
 
+    def _select_fair_pending_id(
+        self,
+        *,
+        min_priority: int,
+        max_priority: int | None,
+    ) -> str | None:
+        """Pick oldest pending task per creator, then lowest priority globally."""
+        if max_priority is not None:
+            row = self._conn.execute(
+                """
+                SELECT t.id FROM monitor_tasks t
+                INNER JOIN (
+                  SELECT creator_id, MIN(created_at) AS min_created
+                  FROM monitor_tasks
+                  WHERE status = 'pending'
+                    AND priority >= ? AND priority <= ?
+                  GROUP BY creator_id
+                ) heads
+                  ON t.creator_id = heads.creator_id
+                 AND t.created_at = heads.min_created
+                WHERE t.status = 'pending'
+                  AND t.priority >= ? AND t.priority <= ?
+                ORDER BY t.priority ASC, t.created_at ASC
+                LIMIT 1
+                """,
+                (min_priority, max_priority, min_priority, max_priority),
+            ).fetchone()
+        else:
+            row = self._conn.execute(
+                """
+                SELECT t.id FROM monitor_tasks t
+                INNER JOIN (
+                  SELECT creator_id, MIN(created_at) AS min_created
+                  FROM monitor_tasks
+                  WHERE status = 'pending' AND priority >= ?
+                  GROUP BY creator_id
+                ) heads
+                  ON t.creator_id = heads.creator_id
+                 AND t.created_at = heads.min_created
+                WHERE t.status = 'pending' AND t.priority >= ?
+                ORDER BY t.priority ASC, t.created_at ASC
+                LIMIT 1
+                """,
+                (min_priority, min_priority),
+            ).fetchone()
+        return str(row["id"]) if row else None
+
     def claim_pending(
         self,
         *,
@@ -957,30 +1004,13 @@ class MonitorTaskRepo:
         claimed: list[MonitorTaskRow] = []
         now = datetime.now(timezone.utc).isoformat()
         for _ in range(limit):
-            if max_priority is not None:
-                row = self._conn.execute(
-                    """
-                    SELECT id FROM monitor_tasks
-                    WHERE status = 'pending'
-                      AND priority >= ?
-                      AND priority <= ?
-                    ORDER BY priority ASC, created_at ASC
-                    LIMIT 1
-                    """,
-                    (min_priority, max_priority),
-                ).fetchone()
-            else:
-                row = self._conn.execute(
-                    """
-                    SELECT id FROM monitor_tasks
-                    WHERE status = 'pending' AND priority >= ?
-                    ORDER BY priority ASC, created_at ASC
-                    LIMIT 1
-                    """,
-                    (min_priority,),
-                ).fetchone()
-            if not row:
+            task_id = self._select_fair_pending_id(
+                min_priority=min_priority,
+                max_priority=max_priority,
+            )
+            if not task_id:
                 break
+            row = {"id": task_id}
             cur = self._conn.execute(
                 """
                 UPDATE monitor_tasks
@@ -1020,6 +1050,52 @@ class MonitorTaskRepo:
             (error, now, task_id),
         )
         self._conn.commit()
+
+    def fail_or_retry(self, task_id: str, *, error: str, max_retries: int) -> str:
+        """On worker failure: retry (pending) or DLQ (failed). Returns outcome."""
+        row = self.get(task_id)
+        if not row:
+            return "missing"
+        next_attempt = int(row.attempt_count) + 1
+        if next_attempt < max_retries:
+            self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'pending', attempt_count = ?, error = ?,
+                    started_at = NULL, finished_at = NULL
+                WHERE id = ?
+                """,
+                (next_attempt, error, task_id),
+            )
+            self._conn.commit()
+            return "retry"
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'failed', attempt_count = ?, error = ?,
+                finished_at = ?
+            WHERE id = ?
+            """,
+            (next_attempt, error, now, task_id),
+        )
+        self._conn.commit()
+        return "failed"
+
+    def retry_failed(self, task_id: str) -> bool:
+        """Reset a failed task to pending. Returns True if updated."""
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'pending', attempt_count = 0, error = NULL,
+                started_at = NULL, finished_at = NULL, created_at = ?
+            WHERE id = ? AND status = 'failed'
+            """,
+            (now, task_id),
+        )
+        self._conn.commit()
+        return cur.rowcount == 1
 
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec

@@ -385,6 +385,16 @@ def _migrate_monitor_v1(conn: sqlite3.Connection) -> None:
         """
     )
     conn.commit()
+    _migrate_monitor_v2(conn)
+
+
+def _migrate_monitor_v2(conn: sqlite3.Connection) -> None:
+    cols = {row[1] for row in conn.execute("PRAGMA table_info(monitor_tasks)").fetchall()}
+    if "attempt_count" not in cols:
+        conn.execute(
+            "ALTER TABLE monitor_tasks ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
 
 
 def connect(db_path: Path) -> sqlite3.Connection:

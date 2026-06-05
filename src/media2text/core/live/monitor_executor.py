@@ -68,9 +68,18 @@ def run_monitor_task(
         result["task_id"] = task_id
         return result
     except Exception as exc:  # noqa: BLE001
-        repo.mark_failed(task_id, error=str(exc))
-        log.exception("monitor_task_failed", task_id=task_id, task_type=task.task_type)
-        return {"ok": False, "error": str(exc), "task_id": task_id}
+        outcome = repo.fail_or_retry(
+            task_id,
+            error=str(exc),
+            max_retries=cfg.monitor.task_max_retries,
+        )
+        log.exception(
+            "monitor_task_failed",
+            task_id=task_id,
+            task_type=task.task_type,
+            outcome=outcome,
+        )
+        return {"ok": False, "error": str(exc), "task_id": task_id, "outcome": outcome}
 
 
 def _dispatch_task(

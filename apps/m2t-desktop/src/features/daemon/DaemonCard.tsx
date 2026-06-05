@@ -76,7 +76,7 @@ export function DaemonCard() {
   }, [running, loading]);
 
   const meta = status
-    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 后处理 pending ${status.post_process.pending} · running ${status.post_process.running}`
+    ? `PID ${status.pid ?? '—'} · LiveTick ${status.live_tick_interval_sec}s · 后处理 pending ${status.post_process.pending} · running ${status.post_process.running} · 监控任务 pending ${status.monitor_tasks?.pending ?? 0} · running ${status.monitor_tasks?.running ?? 0}${(status.monitor_tasks?.failed ?? 0) > 0 ? ` · failed ${status.monitor_tasks?.failed}` : ''}`
     : loading
       ? '加载中…'
       : '无法获取状态';
