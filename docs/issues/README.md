@@ -141,7 +141,7 @@
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
-| 1 | [#166](https://github.com/oychao1988/media2text/issues/166) | （本 PR） | [m2t-desktop-history-ops-runtime-takeover.md](./m2t-desktop-history-ops-runtime-takeover.md) | `issue-166-desktop-history-ops-runtime` |
+| 1 | [#166](https://github.com/oychao1988/media2text/issues/166) | [#167](https://github.com/oychao1988/media2text/pull/167) | [m2t-desktop-history-ops-runtime-takeover.md](./m2t-desktop-history-ops-runtime-takeover.md) | `issue-166-desktop-history-ops-runtime` |
 
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
