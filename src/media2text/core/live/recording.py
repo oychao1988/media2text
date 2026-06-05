@@ -6,8 +6,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import Popen
 
-from concurrent.futures import ThreadPoolExecutor, as_completed
-
 import structlog
 
 from media2text.core.config import AppConfig
@@ -20,7 +18,8 @@ from media2text.core.errors import (
     PlatformChanged,
     RecordingError,
 )
-from media2text.core.live.snapshot import upsert_live_snapshot
+from media2text.core.desktop.state_events import enqueue_creator_updated
+from media2text.core.live.snapshot import touch_snapshot_probe_failed, upsert_live_snapshot
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import (
     concat_to_flv,
@@ -99,42 +98,22 @@ class LiveRecordingCore:
                 continue
             scan_targets.append(creator)
 
-        live_by_creator: dict[str, tuple] = {}
-        workers = max(1, self._cfg.live.scan_concurrency)
-        if scan_targets:
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = {
-                    pool.submit(self._fetch_live_info, creator): creator
-                    for creator in scan_targets
-                }
-                for fut in as_completed(futures):
-                    creator = futures[fut]
-                    live_by_creator[creator.id] = fut.result()
-
         for creator in scan_targets:
-            outcome = live_by_creator.get(creator.id)
-            if outcome is None:
-                continue
-            live_info, err = outcome
-            if err is not None:
-                kind, payload = err
-                if kind == "auth_required":
+            live_info, err_payload = self.observe_live_state(creator)
+            if err_payload is not None:
+                if err_payload.get("auth_required"):
                     auth_required = True
-                elif kind == "platform_changed":
+                elif err_payload.get("platform_changed"):
                     platform_changed = True
-                errors.append(payload)
+                errors.append(err_payload)
                 continue
-            if live_info is not None:
-                upsert_live_snapshot(self._conn, creator.id, live_info)
             if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             if not effective_auto_record(creator, self._cfg):
                 continue
             room_id = live_info.room_id
             try:
-                meta = self._start_recording(
-                    creator.id, creator.sec_uid, room_id, live_info
-                )
+                meta = self.maybe_start_recording(creator, live_info)
             except AuthRequired as exc:
                 auth_required = True
                 errors.append(
@@ -165,6 +144,28 @@ class LiveRecordingCore:
             started_session_ids.add(meta["session_id"])
 
         return started, started_session_ids, errors, auth_required, platform_changed
+
+    def observe_live_state(self, creator) -> tuple[LiveRoomInfo | None, dict | None]:
+        """Fetch live status, upsert snapshot, enqueue outbox; no recording."""
+        live_info, err = self._fetch_live_info(creator)
+        if err is not None:
+            _kind, payload = err
+            touch_snapshot_probe_failed(
+                self._conn,
+                creator.id,
+                error=str(payload.get("error", _kind)),
+            )
+            enqueue_creator_updated(self._conn, creator.id)
+            return None, payload
+        if live_info is not None:
+            if upsert_live_snapshot(self._conn, creator.id, live_info):
+                enqueue_creator_updated(self._conn, creator.id)
+        return live_info, None
+
+    def maybe_start_recording(self, creator, live_info: LiveRoomInfo) -> dict:
+        return self._start_recording(
+            creator.id, creator.sec_uid, live_info.room_id, live_info
+        )
 
     def start_recording_for_creator(self, creator_id: str) -> dict:
         """Start recording when the creator is live and has no active session."""
@@ -280,7 +281,8 @@ class LiveRecordingCore:
 
             try:
                 profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-                upsert_live_snapshot(self._conn, creator.id, profile)
+                if upsert_live_snapshot(self._conn, creator.id, profile):
+                    enqueue_creator_updated(self._conn, creator.id)
             except Exception:  # noqa: BLE001
                 pass
 
@@ -298,6 +300,7 @@ class LiveRecordingCore:
                         session_id=row.id,
                         creator_id=creator.id,
                     )
+                    enqueue_creator_updated(self._conn, creator.id)
                 continue
 
             if self._recording_age_sec(row.started_at) < min_offline:
@@ -314,6 +317,7 @@ class LiveRecordingCore:
                     status="offline_pending",
                 )
                 self._emit_live_ended(creator, row)
+                enqueue_creator_updated(self._conn, creator.id)
                 continue
 
             offline_since = self._parse_iso(row.offline_since_at)
@@ -326,6 +330,7 @@ class LiveRecordingCore:
             meta = self._finalize_recording(row.id, row.temp_path, pid)
             if meta:
                 finalized.append(meta)
+                enqueue_creator_updated(self._conn, creator.id)
 
         return finalized
 

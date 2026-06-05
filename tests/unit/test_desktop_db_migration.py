@@ -64,3 +64,20 @@ def test_live_snapshot_and_chat_crud(tmp_path) -> None:
     assert len(msgs) == 1
     assert msgs[0].content == "hello"
     conn.close()
+
+
+def test_desktop_v2_tables_and_probe_error(tmp_path) -> None:
+    conn = connect(tmp_path / "media2text.db")
+    tables = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    assert "desktop_events" in tables
+    cols = {
+        r[1]
+        for r in conn.execute("PRAGMA table_info(creator_live_snapshots)").fetchall()
+    }
+    assert "probe_error" in cols
+    conn.close()

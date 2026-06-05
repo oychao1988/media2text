@@ -12,6 +12,7 @@ from media2text.core.storage.models import (
     CreatorRow,
     DesktopChatMessageRow,
     DesktopChatThreadRow,
+    DesktopEventRow,
     DynamicRow,
     LiveSessionRow,
     PipelineEventRow,
@@ -1282,23 +1283,63 @@ class LiveSnapshotRepo:
         room_id: str | None = None,
         title: str | None = None,
         checked_at: str | None = None,
-    ) -> None:
+    ) -> bool:
         now = checked_at or datetime.now(timezone.utc).isoformat()
+        live_int = 1 if is_live else 0
+        existing = self.get(creator_id)
+        if existing is not None:
+            unchanged = (
+                existing.is_live == live_int
+                and existing.room_id == room_id
+                and existing.title == title
+            )
+            self._conn.execute(
+                """
+                UPDATE creator_live_snapshots
+                SET is_live = ?, room_id = ?, title = ?, checked_at = ?, probe_error = NULL
+                WHERE creator_id = ?
+                """,
+                (live_int, room_id, title, now, creator_id),
+            )
+            self._conn.commit()
+            return not unchanged
         self._conn.execute(
             """
             INSERT INTO creator_live_snapshots (
-              creator_id, is_live, room_id, title, checked_at
+              creator_id, is_live, room_id, title, checked_at, probe_error
             )
-            VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(creator_id) DO UPDATE SET
-              is_live = excluded.is_live,
-              room_id = excluded.room_id,
-              title = excluded.title,
-              checked_at = excluded.checked_at
+            VALUES (?, ?, ?, ?, ?, NULL)
             """,
-            (creator_id, 1 if is_live else 0, room_id, title, now),
+            (creator_id, live_int, room_id, title, now),
         )
         self._conn.commit()
+        return True
+
+    def touch_probe(self, creator_id: str, *, probe_error: str) -> bool:
+        now = datetime.now(timezone.utc).isoformat()
+        existing = self.get(creator_id)
+        if existing is None:
+            self._conn.execute(
+                """
+                INSERT INTO creator_live_snapshots (
+                  creator_id, is_live, room_id, title, checked_at, probe_error
+                )
+                VALUES (?, 0, NULL, NULL, ?, ?)
+                """,
+                (creator_id, now, probe_error),
+            )
+            self._conn.commit()
+            return True
+        self._conn.execute(
+            """
+            UPDATE creator_live_snapshots
+            SET checked_at = ?, probe_error = ?
+            WHERE creator_id = ?
+            """,
+            (now, probe_error, creator_id),
+        )
+        self._conn.commit()
+        return True
 
     def get(self, creator_id: str) -> CreatorLiveSnapshotRow | None:
         row = self._conn.execute(
@@ -1308,6 +1349,59 @@ class LiveSnapshotRepo:
         if not row:
             return None
         return CreatorLiveSnapshotRow(**dict(row))
+
+
+class DesktopEventRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def enqueue_creator_updated(
+        self, creator_id: str, *, payload: dict | None = None
+    ) -> str:
+        event_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        payload_json = json.dumps(payload) if payload else None
+        self._conn.execute(
+            """
+            INSERT INTO desktop_events (id, event_type, creator_id, payload_json, created_at)
+            VALUES (?, 'creator.updated', ?, ?, ?)
+            """,
+            (event_id, creator_id, payload_json, now),
+        )
+        self._conn.commit()
+        return event_id
+
+    def claim_pending(self, *, limit: int = 50) -> list[DesktopEventRow]:
+        rows = self._conn.execute(
+            """
+            SELECT id FROM desktop_events
+            WHERE delivered_at IS NULL
+            ORDER BY created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        out: list[DesktopEventRow] = []
+        for row in rows:
+            full = self.get(row["id"])
+            if full:
+                out.append(full)
+        return out
+
+    def mark_delivered(self, event_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            "UPDATE desktop_events SET delivered_at = ? WHERE id = ?",
+            (now, event_id),
+        )
+        self._conn.commit()
+
+    def get(self, event_id: str) -> DesktopEventRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM desktop_events WHERE id = ?",
+            (event_id,),
+        ).fetchone()
+        return DesktopEventRow(**dict(row)) if row else None
 
 
 class DesktopChatRepo:
