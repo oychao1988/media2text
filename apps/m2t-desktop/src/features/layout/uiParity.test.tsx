@@ -82,6 +82,7 @@ describe('ViewPlayback routing', () => {
       cloud_upload_status: null,
       has_transcript: true,
       has_summary: false,
+      media_available: false,
       transcript_path: null,
       summary_path: null,
     };

@@ -5,6 +5,7 @@ import {
   formatSessionDuration,
   formatSessionTime,
   sessionIsDisabled,
+  sessionMediaMissing,
   sessionSizeLabel,
 } from './sessionDisplay';
 
@@ -48,6 +49,9 @@ function SessionTags({ session }: { session: LiveSessionSummary }) {
         <span className="tag miss">无摘要</span>
       )}
       {session.pipeline_mode === 'streaming' ? <span className="tag">streaming</span> : null}
+      {sessionMediaMissing(session) ? (
+        <span className="tag miss">文件缺失</span>
+      ) : null}
       {session.cloud_upload_status === 'uploaded' && !session.local_path ? (
         <span className="tag cloud">☁ 仅云端</span>
       ) : null}

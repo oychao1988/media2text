@@ -78,6 +78,7 @@ export type LiveSessionSummary = {
   cloud_upload_status: string | null;
   has_transcript: boolean;
   has_summary: boolean;
+  media_available: boolean;
   transcript_path: string | null;
   summary_path: string | null;
 };
