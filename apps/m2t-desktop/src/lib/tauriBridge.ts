@@ -40,3 +40,15 @@ export function browserDevHint(): string {
     '（可通过 VITE_M2T_API_BASE_URL 覆盖）。'
   );
 }
+
+/** Open http(s) links in the system browser (Tauri) or a new tab (browser dev). */
+export async function openExternalUrl(url: string): Promise<void> {
+  const target = url.trim();
+  if (!target) return;
+  if (isTauri()) {
+    const { openUrl } = await import('@tauri-apps/plugin-opener');
+    await openUrl(target);
+    return;
+  }
+  window.open(target, '_blank', 'noopener,noreferrer');
+}

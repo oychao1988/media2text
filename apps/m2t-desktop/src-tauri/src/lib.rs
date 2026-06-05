@@ -6,6 +6,7 @@ use tauri::{Manager, RunEvent};
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .manage(python_sidecar::new_python_sidecar_state())
         .manage(agent_sidecar::new_agent_sidecar_state())
         .setup(|app| {

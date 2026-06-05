@@ -1,7 +1,8 @@
 import type { Creator } from '../../lib/types';
 import { useDaemonRunning } from '../daemon/DaemonCard';
-import { creatorInitial } from '../creators/creatorUtils';
-import { StatusLight } from '../creators/StatusLight';
+import { CreatorAvatar } from '../creators/CreatorAvatar';
+import { CreatorHoverPopover } from '../creators/CreatorHoverPopover';
+import { isCreatorLive } from '../creators/creatorUtils';
 import { useLayoutStore } from './useLayoutStore';
 import { userDisplayInitial } from './userDisplay';
 
@@ -31,26 +32,33 @@ export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props
       </div>
       <div className="rail-scroll" role="list" aria-label="博主快捷选择">
         {creators.map((creator) => {
-          const live = creator.is_live || creator.status_light === 'green';
+          const live = isCreatorLive(creator);
           return (
-            <div
-              key={creator.id}
-              className={`rail-dot${selectedCreatorId === creator.id ? ' selected' : ''}${live ? ' is-live' : ''}`}
-              role="listitem"
-              tabIndex={0}
-              data-creator={creator.id}
-              title={creator.display_name ?? creator.id}
-              onClick={() => onSelectCreator(creator.id)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault();
-                  onSelectCreator(creator.id);
-                }
-              }}
-            >
-              <span>{creatorInitial(creator.display_name)}</span>
-              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
-            </div>
+            <CreatorHoverPopover key={creator.id} creator={creator}>
+              <div
+                className={`rail-dot${selectedCreatorId === creator.id ? ' selected' : ''}${live ? ' is-live' : ''}`}
+                role="listitem"
+                tabIndex={0}
+                data-creator={creator.id}
+                onClick={() => onSelectCreator(creator.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault();
+                    onSelectCreator(creator.id);
+                  }
+                }}
+              >
+                <CreatorAvatar
+                  variant="list"
+                  creatorId={creator.id}
+                  displayName={creator.display_name}
+                  avatarUrl={creator.avatar_url}
+                  profileSyncedAt={creator.profile_synced_at}
+                  light={creator.status_light}
+                  abbr={creator.status_abbr}
+                />
+              </div>
+            </CreatorHoverPopover>
           );
         })}
       </div>

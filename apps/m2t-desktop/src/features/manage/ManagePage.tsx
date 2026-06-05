@@ -1,14 +1,12 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import { showToast } from '../../lib/toast';
+import { openExternalUrl } from '../../lib/tauriBridge';
 import type { ConfigDto, Creator } from '../../lib/types';
-import {
-  autoRecordPillLabel,
-  creatorInitial,
-  formatCreatorSub,
-  manageStatusText,
-} from '../creators/creatorUtils';
-import { StatusLight } from '../creators/StatusLight';
+import { CreatorAvatar } from '../creators/CreatorAvatar';
+import { CreatorProfileCard } from '../creators/CreatorProfileCard';
+import { autoRecordPillLabel, manageStatusText } from '../creators/creatorUtils';
 import { useCreators } from '../creators/CreatorsContext';
 
 type ManageFilter = 'all' | 'on' | 'off';
@@ -18,7 +16,7 @@ type ManageDrawerProps = {
   globalAutoRecord: boolean;
   syncBusy: string | null;
   onToggleMonitor: (c: Creator) => void;
-  onSetAutoRecord: (value: string) => void;
+  onSetAutoRecord: (value: 'inherit' | 'on' | 'off') => void;
   onRunSync: (kind: 'profile' | 'catalog' | 'dynamics') => void;
   onRemove: () => void;
 };
@@ -36,7 +34,7 @@ function ManageCreatorDrawer({
 
   useEffect(() => {
     const drawer = drawerRef.current;
-    if (!drawer) return;
+    if (!drawer?.scrollIntoView) return;
     drawer.scrollIntoView({ block: 'nearest', behavior: 'auto' });
   }, [creator.id]);
 
@@ -51,35 +49,34 @@ function ManageCreatorDrawer({
     >
       <div className="manage-drawer-collapse">
         <div className="manage-drawer-inner">
-          <div className="inspector-head">
-            <div className="manage-avatar lg" id="detail-avatar" aria-hidden="true">
-              {creatorInitial(creator.display_name)}
-              <StatusLight light={creator.status_light} abbr={creator.status_abbr} />
-            </div>
-            <div className="inspector-head-text">
-              <h3 id="detail-name">{creator.display_name ?? creator.id}</h3>
-              <p className="sub" id="detail-sub">
-                {formatCreatorSub(creator)}
-              </p>
-            </div>
-            <div className="inspector-head-actions">
+          <div className="manage-drawer-toolbar">
+            <h3 className="manage-drawer-title">博主设置</h3>
+            <div className="manage-drawer-actions">
               {creator.profile_url ? (
                 <button
                   type="button"
-                  className="btn"
+                  className="btn btn-sm"
                   id="detail-open-profile"
-                  onClick={() =>
-                    window.open(creator.profile_url!, '_blank', 'noopener,noreferrer')
-                  }
+                  onClick={() => {
+                    void openExternalUrl(creator.profile_url!).catch(() => {
+                      showToast('无法打开主页', 'error');
+                    });
+                  }}
                 >
                   打开主页
                 </button>
               ) : null}
-              <button type="button" className="btn-ghost danger" id="detail-remove" onClick={onRemove}>
+              <button
+                type="button"
+                className="btn-ghost btn-sm danger"
+                id="detail-remove"
+                onClick={onRemove}
+              >
                 移除博主
               </button>
             </div>
           </div>
+          <CreatorProfileCard creator={creator} />
           <div className="inspector-grid">
             <section className="inspector-block">
               <h4>监控</h4>
@@ -136,10 +133,10 @@ function ManageCreatorDrawer({
             </section>
             <section className="inspector-block ops">
               <h4>运维</h4>
-              <div className="detail-actions">
+              <div className="detail-actions detail-actions--row">
                 <button
                   type="button"
-                  className="btn-ghost"
+                  className="btn-ghost btn-sm"
                   id="detail-sync-profile"
                   disabled={syncBusy != null}
                   onClick={() => onRunSync('profile')}
@@ -148,7 +145,7 @@ function ManageCreatorDrawer({
                 </button>
                 <button
                   type="button"
-                  className="btn-ghost"
+                  className="btn-ghost btn-sm"
                   id="detail-sync-catalog"
                   disabled={syncBusy != null}
                   onClick={() => onRunSync('catalog')}
@@ -158,7 +155,7 @@ function ManageCreatorDrawer({
                 {creator.platform === 'bilibili' ? (
                   <button
                     type="button"
-                    className="btn-ghost"
+                    className="btn-ghost btn-sm"
                     id="detail-sync-dynamics"
                     disabled={syncBusy != null}
                     onClick={() => onRunSync('dynamics')}
@@ -184,6 +181,7 @@ export function ManagePage() {
   const [loading, setLoading] = useState(true);
   const [syncBusy, setSyncBusy] = useState<string | null>(null);
   const [globalAutoRecord, setGlobalAutoRecord] = useState(true);
+  const [removeTarget, setRemoveTarget] = useState<{ id: string; label: string } | null>(null);
 
   const load = useCallback(async (opts?: { silent?: boolean }) => {
     if (!opts?.silent) setLoading(true);
@@ -273,7 +271,7 @@ export function ManagePage() {
     }
   };
 
-  const setAutoRecord = async (value: string) => {
+  const setAutoRecord = async (value: 'inherit' | 'on' | 'off') => {
     if (!selected) return;
     try {
       await patchCreator(selected.id, { autoRecordOverride: value }, {
@@ -302,11 +300,17 @@ export function ManagePage() {
     }
   };
 
-  const removeCreator = async () => {
+  const requestRemove = () => {
     if (!selected) return;
-    if (!window.confirm(`确定移除 ${selected.display_name ?? selected.id}？`)) return;
+    setRemoveTarget({ id: selected.id, label: selected.display_name ?? selected.id });
+  };
+
+  const confirmRemove = async () => {
+    if (!removeTarget) return;
+    const { id } = removeTarget;
+    setRemoveTarget(null);
     try {
-      await apiDelete(`/api/creators/${selected.id}`);
+      await apiDelete(`/api/creators/${id}`);
       showToast('已移除博主', 'success');
       setSelectedId(null);
       await load();
@@ -378,10 +382,14 @@ export function ManagePage() {
                   }
                 }}
               >
-                <div className="manage-avatar" aria-hidden="true">
-                  {creatorInitial(c.display_name)}
-                  <StatusLight light={c.status_light} abbr={c.status_abbr} />
-                </div>
+                <CreatorAvatar
+                  creatorId={c.id}
+                  displayName={c.display_name}
+                  avatarUrl={c.avatar_url}
+                  profileSyncedAt={c.profile_synced_at}
+                  light={c.status_light}
+                  abbr={c.status_abbr}
+                />
                 <div className="manage-row-info">
                   <div className="manage-row-name">{c.display_name ?? c.unique_id ?? c.id}</div>
                   <div className="manage-row-meta">
@@ -419,13 +427,23 @@ export function ManagePage() {
                   onToggleMonitor={(creator) => void toggleMonitor(creator)}
                   onSetAutoRecord={(value) => void setAutoRecord(value)}
                   onRunSync={(kind) => void runSync(kind)}
-                  onRemove={() => void removeCreator()}
+                  onRemove={requestRemove}
                 />
               ) : null}
             </Fragment>
           ))}
         </div>
       </div>
+
+      <ConfirmDialog
+        open={removeTarget != null}
+        title="移除博主"
+        message={removeTarget ? `确定移除 ${removeTarget.label}？此操作不可撤销。` : ''}
+        confirmLabel="移除"
+        danger
+        onConfirm={() => void confirmRemove()}
+        onCancel={() => setRemoveTarget(null)}
+      />
     </div>
   );
 }

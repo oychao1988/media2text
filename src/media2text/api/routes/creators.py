@@ -3,11 +3,13 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.schemas.events import EventType, event_payload
+from media2text.api.services import creator_avatar as creator_avatar_svc
 from media2text.api.services import live_snapshot as live_snapshot_svc
 from media2text.api.services import recording as recording_svc
 from media2text.api.services.events_hub import events_hub
@@ -59,6 +61,9 @@ def _enrich_creator(
     lights = compute_status_light(active_session=active, snapshot=snap)
     item.update(lights)
     item["avatar_url"] = row.avatar_url
+    item["signature"] = row.signature
+    item["follower_count"] = row.follower_count
+    item["profile_synced_at"] = row.profile_synced_at
     item["live_snapshot"] = _snapshot_dict(snap)
     item["active_session_id"] = active.session_id if active else None
     return item
@@ -146,6 +151,28 @@ def delete_creator(
     if not result.get("ok"):
         raise HTTPException(status_code=404, detail=result)
     return result
+
+
+@router.get("/{creator_id}/avatar")
+def get_creator_avatar(
+    creator_id: str,
+    conn=Depends(get_db),
+) -> Response:
+    row = CreatorRepo(conn).get(creator_id)
+    if not row or not row.avatar_url:
+        raise HTTPException(status_code=404, detail="avatar not found")
+    try:
+        body, content_type = creator_avatar_svc.fetch_creator_avatar(
+            row.avatar_url,
+            platform=row.platform,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail="avatar fetch failed") from exc
+    return Response(
+        content=body,
+        media_type=content_type,
+        headers={"Cache-Control": "private, max-age=3600"},
+    )
 
 
 @router.post("/{creator_id}/sync-profile")

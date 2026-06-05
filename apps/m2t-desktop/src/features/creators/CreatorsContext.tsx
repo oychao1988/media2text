@@ -10,6 +10,7 @@ import {
 } from 'react';
 import { apiGet } from '../../lib/api';
 import type { Creator } from '../../lib/types';
+import { sortCreatorsLiveFirst } from './creatorUtils';
 import { useEventsWs } from './useEventsWs';
 
 type CreatorsState = {
@@ -49,7 +50,7 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
     setError(null);
     try {
       const res = await apiGet<{ ok: boolean; creators: Creator[] }>('/api/creators', true);
-      const list = res.creators ?? [];
+      const list = sortCreatorsLiveFirst(res.creators ?? []);
       setCreators(list);
       setSelectedId((prev) => {
         if (prev && list.some((c) => c.id === prev)) return prev;
