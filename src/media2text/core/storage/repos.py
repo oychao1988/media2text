@@ -2,6 +2,7 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from media2text.core.platform.douyin.models import AwemeItem
 import json
@@ -500,8 +501,27 @@ class LiveSessionRepo:
     def mark_stale_recordings_failed(self) -> int:
         rows = self.list_active()
         count = 0
+        now = datetime.now(timezone.utc)
         for row in rows:
-            if row.status != "recording" or row.ffmpeg_pid is None:
+            if row.status != "recording":
+                continue
+            if row.ffmpeg_pid is None:
+                try:
+                    started = datetime.fromisoformat(
+                        row.started_at.replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    started = now
+                age_sec = (now - started).total_seconds()
+                temp_missing = not row.temp_path or not Path(row.temp_path).is_file()
+                if age_sec > 10 and temp_missing:
+                    self.update_status(
+                        row.id,
+                        status="failed",
+                        error="recording_never_started",
+                        ended=True,
+                    )
+                    count += 1
                 continue
             if (row.reconnect_attempts or 0) > 0:
                 continue

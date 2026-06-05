@@ -58,6 +58,9 @@ def compute_status_light(
         light = "yellow"
     elif active_session and (active_session.transcribe_status or "").lower() == "degraded":
         light = "yellow"
+    elif active_session and active_session.status in ("recording", "remuxing"):
+        # Active session but ffmpeg not running (startup failure, stale pid, remuxing).
+        light = "yellow"
     elif is_live:
         light = "red"
     else:

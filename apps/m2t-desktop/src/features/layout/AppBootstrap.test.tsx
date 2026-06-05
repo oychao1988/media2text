@@ -23,7 +23,26 @@ describe('AppBootstrap', () => {
 
   it('shows loading then ready when health succeeds', async () => {
     resolveApiBaseUrlMock.mockResolvedValue('http://127.0.0.1:8765');
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/doctor/repair')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ repair_ok: true, checks: [] }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          checks: [
+            { name: 'ffmpeg', ok: true },
+            { name: 'playwright_browser', ok: true },
+          ],
+        }),
+      });
+    });
 
     render(
       <AppBootstrap>
@@ -58,7 +77,26 @@ describe('AppBootstrap', () => {
     });
     expect(screen.queryByTestId('shell')).not.toBeInTheDocument();
 
-    fetchMock.mockResolvedValue({ ok: true, status: 200 });
+    fetchMock.mockImplementation((url: string) => {
+      if (String(url).includes('/api/doctor/repair')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ repair_ok: true, checks: [] }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          ok: true,
+          checks: [
+            { name: 'ffmpeg', ok: true },
+            { name: 'playwright_browser', ok: true },
+          ],
+        }),
+      });
+    });
     await userEvent.click(screen.getByRole('button', { name: '重试' }));
 
     await waitFor(() => {

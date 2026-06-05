@@ -51,6 +51,14 @@ def test_yellow_when_offline_since() -> None:
     assert out["status_light"] == "yellow"
 
 
+def test_yellow_when_active_session_without_ffmpeg() -> None:
+    out = compute_status_light(
+        active_session=_session(ffmpeg_pid=None, status="recording"),
+        snapshot=CreatorLiveSnapshotRow("c1", 0, None, None, "2026-01-01T00:00:00Z"),
+    )
+    assert out["status_light"] == "yellow"
+
+
 def test_gray_when_offline() -> None:
     out = compute_status_light(
         active_session=None,
