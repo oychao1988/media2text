@@ -109,11 +109,3 @@ export function hasSyncedProfile(c: {
   );
 }
 
-export function showFlvBadge(): boolean {
-  if (import.meta.env.DEV) return true;
-  try {
-    return new URLSearchParams(window.location.search).has('debug');
-  } catch {
-    return false;
-  }
-}

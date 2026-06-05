@@ -1,4 +1,11 @@
-import { useEffect, useReducer, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useReducer,
+  useRef,
+  useState,
+  type CSSProperties,
+} from 'react';
 import ReactMarkdown from 'react-markdown';
 import { apiGet, buildWsUrl, getApiBaseUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
@@ -15,6 +22,8 @@ type Props = {
   summaryPath: string | null;
   mode?: 'live' | 'playback';
 };
+
+const LIVE_SCROLL_TAIL_PX = 48;
 
 function paneDisplay(visible: boolean): CSSProperties | undefined {
   return visible ? undefined : { display: 'none' };
@@ -65,11 +74,43 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
   const [summaryMd, setSummaryMd] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const followLiveRef = useRef(true);
 
   const isPlayback = mode === 'playback';
   const showLiveTranscript = !isPlayback && tab === 'transcript';
   const showPlaybackTranscript = isPlayback && tab === 'transcript';
   const showSummaryPlayback = tab === 'summary';
+
+  useEffect(() => {
+    followLiveRef.current = true;
+  }, [sessionId]);
+
+  useEffect(() => {
+    if (mode !== 'live' || tab !== 'transcript' || !followLiveRef.current) return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const id = requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
+    return () => cancelAnimationFrame(id);
+  }, [
+    mode,
+    tab,
+    state.segments,
+    state.text,
+    state.waiting,
+    state.loading,
+    state.partial,
+  ]);
+
+  const handleBodyScroll = useCallback(() => {
+    if (mode !== 'live' || tab !== 'transcript') return;
+    const el = bodyRef.current;
+    if (!el) return;
+    const tail = el.scrollHeight - el.scrollTop - el.clientHeight;
+    followLiveRef.current = tail <= LIVE_SCROLL_TAIL_PX;
+  }, [mode, tab]);
 
   useEffect(() => {
     dispatch({ type: 'reset' });
@@ -229,7 +270,12 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
         </div>
       ) : null}
 
-      <div className="transcript-body" id="transcript-body">
+      <div
+        className="transcript-body"
+        id="transcript-body"
+        ref={bodyRef}
+        onScroll={handleBodyScroll}
+      >
         <div id="transcript-live" style={paneDisplay(showLiveTranscript)}>
           <TranscriptContent state={state} sessionId={sessionId} />
         </div>

@@ -1,20 +1,29 @@
 import flvjs from 'flv.js';
 import { useEffect, useRef, useState } from 'react';
 import { getApiBaseUrl } from '../../lib/api';
-import { showFlvBadge } from '../creators/creatorUtils';
 import { RecordBanner } from './RecordBanner';
 import { StreamUnavailable } from './StreamUnavailable';
 
 type Props = {
   creatorId: string | null;
   sessionId: string | null;
+  attachStream?: boolean;
+  visible?: boolean;
   showRecordBanner: boolean;
   onRecordingStarted?: () => void;
+};
+
+const FLV_LIVE_CONFIG: flvjs.Config = {
+  enableStashBuffer: false,
+  lazyLoad: false,
+  autoCleanupSourceBuffer: true,
 };
 
 export function LivePlayer({
   creatorId,
   sessionId,
+  attachStream = true,
+  visible = true,
   showRecordBanner,
   onRecordingStarted,
 }: Props) {
@@ -24,9 +33,23 @@ export function LivePlayer({
   const [streamError, setStreamError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
 
+  const shouldStream = Boolean(sessionId) && attachStream;
+  const showIdlePlaceholder =
+    !sessionId || (showRecordBanner && !loading && !streamError);
+
   useEffect(() => {
+    if (!visible) return;
     const video = videoRef.current;
-    if (!video || !sessionId) {
+    if (!video) return;
+    if (video.paused && playerRef.current) {
+      void playerRef.current.play().catch(() => undefined);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (!shouldStream) {
+      setLoading(false);
+      setStreamError(false);
       if (playerRef.current) {
         playerRef.current.destroy();
         playerRef.current = null;
@@ -36,12 +59,23 @@ export function LivePlayer({
 
     if (!flvjs.isSupported()) {
       setStreamError(true);
+      setLoading(false);
       return undefined;
     }
+
+    const video = videoRef.current;
+    if (!video) return undefined;
 
     let cancelled = false;
     setLoading(true);
     setStreamError(false);
+
+    const markReady = () => {
+      if (!cancelled) setLoading(false);
+    };
+
+    const onVideoReady = () => markReady();
+    video.addEventListener('loadeddata', onVideoReady);
 
     void (async () => {
       try {
@@ -54,19 +88,40 @@ export function LivePlayer({
           playerRef.current = null;
         }
 
-        const player = flvjs.createPlayer({ type: 'flv', url, isLive: true });
+        const player = flvjs.createPlayer(
+          { type: 'flv', url, isLive: true },
+          FLV_LIVE_CONFIG,
+        );
         player.attachMediaElement(video);
-        player.load();
-        player.play().catch(() => {
-          /* autoplay may fail */
-        });
-
+        player.on(flvjs.Events.MEDIA_INFO, markReady);
         player.on(flvjs.Events.ERROR, () => {
-          if (!cancelled) setStreamError(true);
+          if (!cancelled) {
+            setStreamError(true);
+            setLoading(false);
+          }
         });
 
-        playerRef.current = player;
-        setLoading(false);
+        player.load();
+        video.muted = false;
+        video.defaultMuted = false;
+        try {
+          await player.play();
+        } catch {
+          video.muted = true;
+          try {
+            await player.play();
+            video.muted = false;
+          } catch {
+            /* user can press play in controls */
+          }
+        }
+
+        if (!cancelled) {
+          playerRef.current = player;
+          markReady();
+        } else {
+          player.destroy();
+        }
       } catch {
         if (!cancelled) {
           setStreamError(true);
@@ -77,33 +132,40 @@ export function LivePlayer({
 
     return () => {
       cancelled = true;
+      video.removeEventListener('loadeddata', onVideoReady);
       if (playerRef.current) {
         playerRef.current.destroy();
         playerRef.current = null;
       }
     };
-  }, [sessionId, retryKey]);
-
-  const showBadge = showFlvBadge();
-  const flvHint = sessionId
-    ? `flv.js · /api/sessions/${sessionId}/stream/proxy`
-    : 'flv.js · /api/sessions/…/stream/proxy';
-
-  const showPlaceholder = !sessionId || (showRecordBanner && !loading && !streamError);
+  }, [sessionId, retryKey, shouldStream]);
 
   return (
     <div className="video-area">
       <div className="video-viewport">
         <div className="video-frame">
-          <div className="video-overlay-top">
-            {showBadge ? <span className="flv-badge">{flvHint}</span> : null}
-          </div>
-          {loading ? (
-            <div className="video-placeholder">
-              <div className="app-bootstrap-spinner" aria-hidden="true" />
-              <p>连接直播流…</p>
-            </div>
-          ) : showPlaceholder ? (
+          {shouldStream ? (
+            <>
+              <video
+                ref={videoRef}
+                className="live-video"
+                controls
+                autoPlay
+                playsInline
+              />
+              {loading ? (
+                <div className="video-overlay video-placeholder" aria-busy="true">
+                  <div className="app-bootstrap-spinner" aria-hidden="true" />
+                  <p>连接直播流…</p>
+                </div>
+              ) : null}
+              {streamError && !loading ? (
+                <div className="video-overlay">
+                  <StreamUnavailable onRetry={() => setRetryKey((k) => k + 1)} />
+                </div>
+              ) : null}
+            </>
+          ) : showIdlePlaceholder ? (
             <div className="video-placeholder">
               <div className="play-icon" aria-hidden="true">
                 ▶
@@ -113,11 +175,7 @@ export function LivePlayer({
                 平台流经 API 反向代理 · 与 ffmpeg 录制并行
               </p>
             </div>
-          ) : streamError ? (
-            <StreamUnavailable onRetry={() => setRetryKey((k) => k + 1)} />
-          ) : (
-            <video ref={videoRef} className="live-video" controls muted playsInline />
-          )}
+          ) : null}
         </div>
       </div>
       {creatorId ? (

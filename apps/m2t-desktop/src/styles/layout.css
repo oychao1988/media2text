@@ -1105,6 +1105,21 @@ body.resize-col-active * {
 
 .center-view.active {
   display: flex;
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  min-height: 0;
+}
+
+/* 历史 Tab 时保持直播流连接，避免 display:none 断开播放器 */
+.center-view.pinned {
+  display: flex;
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
+  z-index: 0;
+  overflow: hidden;
 }
 
 .center-view.settings-page.active,
@@ -1117,26 +1132,47 @@ body.resize-col-active * {
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
   padding: 16px var(--center-edge-pad);
   gap: 12px;
   min-height: 0;
 }
 
 .video-viewport {
-  flex: 1;
+  --video-max-h: calc(100vh - 220px);
+  flex-shrink: 0;
+  margin: 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 200px;
+  background: var(--video-stage-bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  position: relative;
+}
+
+/* 直播 / 回放：抖音/B 站竖屏流，视窗本身 9:16 */
+#view-live .video-viewport,
+#view-playback .video-viewport {
+  aspect-ratio: 9 / 16;
+  width: min(100%, 480px, calc(var(--video-max-h) * 9 / 16));
+  max-height: var(--video-max-h);
+}
+
+#view-playback .video-viewport {
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+#view-live .video-area {
+  justify-content: center;
 }
 
 .video-frame {
   position: relative;
   width: 100%;
-  max-width: var(--center-max-w);
-  aspect-ratio: 16 / 9;
-  background: var(--video-stage-bg);
-  border-radius: var(--radius);
+  height: 100%;
+  background: #000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1163,6 +1199,17 @@ body.resize-col-active * {
   background: rgba(0, 0, 0, 0.7);
   border-radius: 4px;
   color: #a5b4fc;
+}
+
+.video-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
 }
 
 .video-placeholder {
@@ -1463,10 +1510,6 @@ body.resize-col-active * {
 
 .playback-video-area {
   padding-top: 12px;
-}
-
-#view-playback .video-frame {
-  max-width: var(--center-max-w);
 }
 
 .settings-page,
@@ -3533,9 +3576,14 @@ body.confirm-open {
 
 .live-video,
 .history-video {
+  display: block;
   width: 100%;
   height: 100%;
+  max-width: 100%;
+  max-height: 100%;
   background: #000;
+  object-fit: contain;
+  object-position: center;
 }
 
 .transcript-banner.warn {

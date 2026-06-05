@@ -1,7 +1,6 @@
 import flvjs from 'flv.js';
 import { useEffect, useRef, useState } from 'react';
 import { mediaUrl } from '../../lib/api';
-import { showFlvBadge } from '../creators/creatorUtils';
 import type { LiveSessionSummary } from '../../lib/types';
 import { useLayoutStore } from '../layout/useLayoutStore';
 import {
@@ -25,7 +24,6 @@ export function ViewPlayback({ active, creatorName, session }: Props) {
 
   const mediaPath = session?.media_path ?? session?.local_path ?? session?.temp_path ?? null;
   const isFlv = Boolean(mediaPath?.toLowerCase().endsWith('.flv'));
-  const showBadge = showFlvBadge();
 
   useEffect(() => {
     if (!active) return undefined;
@@ -79,10 +77,6 @@ export function ViewPlayback({ active, creatorName, session }: Props) {
 
   const duration = session ? formatSessionDuration(session.started_at, session.ended_at) : null;
   const breadcrumb = session ? sessionPlaybackLabel(session) : '—';
-  const badgeText = mediaPath
-    ? `<video> · GET /api/media?path=…`
-    : '无媒体文件';
-
   return (
     <div className={`center-view${active ? ' active' : ''}`} id="view-playback">
       <div className="breadcrumb-bar">
@@ -107,9 +101,6 @@ export function ViewPlayback({ active, creatorName, session }: Props) {
       <div className="video-area playback-video-area">
         <div className="video-viewport">
           <div className="video-frame">
-            <div className="video-overlay-top">
-              {showBadge ? <span className="flv-badge">{badgeText}</span> : null}
-            </div>
             {!session || !mediaPath ? (
               <div className="video-placeholder">
                 <div className="play-icon" aria-hidden="true">
