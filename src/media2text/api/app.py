@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import asyncio
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 
 from media2text.api.cors import install_desktop_cors
@@ -17,10 +20,22 @@ from media2text.api.routes import (
     media,
     sessions,
 )
+from media2text.api.services.state_event_drain import run_drain_loop
+from media2text.core.config import AppConfig
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    cfg = AppConfig.load()
+    stop = asyncio.Event()
+    task = asyncio.create_task(run_drain_loop(cfg, stop))
+    yield
+    stop.set()
+    await task
 
 
 def create_app() -> FastAPI:
-    app = FastAPI(title="media2text-desktop-api", version="0.1.0")
+    app = FastAPI(title="media2text-desktop-api", version="0.1.0", lifespan=lifespan)
     install_desktop_cors(app)
     api = FastAPI()
     api.include_router(health.router)

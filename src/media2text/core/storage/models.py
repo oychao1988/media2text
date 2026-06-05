@@ -26,6 +26,17 @@ class CreatorLiveSnapshotRow:
     room_id: str | None
     title: str | None
     checked_at: str
+    probe_error: str | None = None
+
+
+@dataclass
+class DesktopEventRow:
+    id: str
+    event_type: str
+    creator_id: str | None
+    payload_json: str | None
+    created_at: str
+    delivered_at: str | None
 
 
 @dataclass

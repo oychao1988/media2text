@@ -28,7 +28,8 @@ def get_daemon_logs(
 def post_daemon_start(cfg: AppConfig = Depends(get_cfg)) -> dict:
     result = daemon_svc.start_daemon(cfg)
     if not result.get("ok"):
-        raise HTTPException(status_code=409, detail=result)
+        status = 409 if result.get("already_running") else 503
+        raise HTTPException(status_code=status, detail=result)
     events_hub.publish(
         event_payload(
             EventType.DAEMON_STARTED,

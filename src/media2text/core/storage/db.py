@@ -335,6 +335,32 @@ def _migrate_desktop_v1(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_desktop_v2(conn: sqlite3.Connection) -> None:
+    snap_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(creator_live_snapshots)").fetchall()
+    }
+    if "probe_error" not in snap_cols:
+        conn.execute(
+            "ALTER TABLE creator_live_snapshots ADD COLUMN probe_error TEXT"
+        )
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS desktop_events (
+          id TEXT PRIMARY KEY,
+          event_type TEXT NOT NULL,
+          creator_id TEXT,
+          payload_json TEXT,
+          created_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_desktop_events_pending
+          ON desktop_events(delivered_at, created_at)
+          WHERE delivered_at IS NULL;
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -347,6 +373,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_live_sessions_v3(conn)
         _migrate_live_sessions_v4(conn)
         _migrate_desktop_v1(conn)
+        _migrate_desktop_v2(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)
