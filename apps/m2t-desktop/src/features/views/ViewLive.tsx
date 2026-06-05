@@ -9,13 +9,13 @@ type Props = {
 };
 
 export function ViewLive({ active, creatorId, showRecordBanner = false, onRecordingStarted }: Props) {
-  const { activeSessionId, refresh } = useLiveStatus(creatorId);
+  const { refresh } = useLiveStatus(creatorId);
 
   return (
     <div className={`center-view${active ? ' active' : ''}`} id="view-live">
       <LivePlayer
         creatorId={creatorId}
-        sessionId={activeSessionId}
+        sessionId={null}
         showRecordBanner={showRecordBanner}
         onRecordingStarted={() => {
           void refresh();

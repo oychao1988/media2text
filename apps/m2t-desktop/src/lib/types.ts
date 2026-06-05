@@ -16,6 +16,7 @@ export type Creator = {
   badge_class: string;
   status_abbr: string;
   avatar_url: string | null;
+  active_session_id: string | null;
   live_snapshot?: {
     is_live: boolean;
     room_id: string | null;

@@ -57,7 +57,7 @@ export function AppShell() {
 
   const [playbackSession, setPlaybackSession] = useState<LiveSessionSummary | null>(null);
   const previewLoading = readLoadingPreview();
-  const { activeSessionId, refresh: refreshLive } = useLiveStatus(
+  const { refresh: refreshLive } = useLiveStatus(
     centerView === 'live' || centerView === 'history' || centerView === 'playback'
       ? selectedId
       : null,
@@ -87,9 +87,9 @@ export function AppShell() {
 
   const transcriptSessionId = useMemo(() => {
     if (centerView === 'playback' && playbackSession) return playbackSession.session_id;
-    if (centerView === 'live' || centerTab === 'live') return activeSessionId;
+    if (centerView === 'live' || centerTab === 'live') return selected?.active_session_id ?? null;
     return null;
-  }, [centerView, centerTab, playbackSession, activeSessionId]);
+  }, [centerView, centerTab, playbackSession, selected]);
 
   const summaryPath = useMemo(() => {
     if (centerView === 'playback' && playbackSession) return playbackSession.summary_path;

@@ -60,6 +60,7 @@ def _enrich_creator(
     item.update(lights)
     item["avatar_url"] = row.avatar_url
     item["live_snapshot"] = _snapshot_dict(snap)
+    item["active_session_id"] = active.session_id if active else None
     return item
 
 
