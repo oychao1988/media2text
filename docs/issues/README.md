@@ -123,15 +123,19 @@
 
 **并行提示**：#127 与 #128 可并行；#129/#130 可在 #126 后 mock API 并行；#132 建议在 #131 前或同 PR 联调；**#143** 建议在 #131/#132 合并后、#133 冒烟前完成 Phase A–D。
 
-### Desktop Runtime — 内嵌监控 + 统一状态（2026-06-05）
+### Desktop Runtime — 内嵌监控 + 统一状态（2026-06-05，已交付）
 
 规格：[desktop-runtime-design](../superpowers/specs/2026-06-05-desktop-runtime-design.md)
 
-**建议合并顺序**：#158 → #159 →（#160 ∥ #161）
+| 顺序 | GitHub | PR | 规格正文 | 分支 |
+|------|--------|-----|----------|------|
+| 1–4 | [#158](https://github.com/oychao1988/media2text/issues/158)–[#161](https://github.com/oychao1988/media2text/issues/161)（已关闭） | [#162](https://github.com/oychao1988/media2text/pull/162) | [pr1](./desktop-runtime-pr1-supervisor-api.md) · [pr2](./desktop-runtime-pr2-ws-frontend.md) · [pr3](./desktop-runtime-pr3-daemon-ui.md) · [pr4](./desktop-runtime-pr4-pipeline-api.md) | `issue-159-desktop-runtime-pr2` |
+
+### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
+
+规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)
 
 | 顺序 | GitHub | 规格正文 | 分支 |
 |------|--------|----------|------|
-| 1 | [#158](https://github.com/oychao1988/media2text/issues/158) | [desktop-runtime-pr1-supervisor-api.md](./desktop-runtime-pr1-supervisor-api.md) | `issue-158-desktop-runtime-pr1` |
-| 2 | [#159](https://github.com/oychao1988/media2text/issues/159) | [desktop-runtime-pr2-ws-frontend.md](./desktop-runtime-pr2-ws-frontend.md) | `issue-159-desktop-runtime-pr2` |
-| 3 | [#160](https://github.com/oychao1988/media2text/issues/160) | [desktop-runtime-pr3-daemon-ui.md](./desktop-runtime-pr3-daemon-ui.md) | `issue-160-desktop-runtime-pr3` |
-| 4 | [#161](https://github.com/oychao1988/media2text/issues/161) | [desktop-runtime-pr4-pipeline-api.md](./desktop-runtime-pr4-pipeline-api.md) | `issue-161-desktop-runtime-pr4` |
+| 1 | [#145](https://github.com/oychao1988/media2text/issues/145) | [monitor-daemon-v3-phase1.md](./monitor-daemon-v3-phase1.md) | `issue-145-monitor-daemon-v3-phase1` |
+| 2 | （待开单） | [monitor-daemon-v3-phase2.md](./monitor-daemon-v3-phase2.md) | `issue-*-monitor-daemon-v3-phase2` |
