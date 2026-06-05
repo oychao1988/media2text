@@ -101,3 +101,29 @@ def test_manifest_not_found(api_client, workspace) -> None:
     conn.close()
     r = api_client.get(f"/api/creators/{cid}/manifest")
     assert r.status_code == 404
+
+
+def test_session_summary_empty_when_missing(api_client, workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_sum_empty",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    flv = workspace / "creators" / "sec_sum_empty" / "live" / "x.flv"
+    flv.parent.mkdir(parents=True)
+    flv.write_bytes(b"x")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(flv),
+    )
+    LiveSessionRepo(conn).update_status(sid, local_path=str(flv), status="completed")
+    conn.close()
+
+    r = api_client.get(f"/api/sessions/{sid}/summary")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["text"] == ""

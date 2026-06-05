@@ -90,6 +90,27 @@ def post_runtime_stop(
     return result
 
 
+@router.post("/takeover")
+def post_runtime_takeover(
+    request: Request,
+    cfg: AppConfig = Depends(get_cfg),
+) -> dict:
+    result = runtime_svc.takeover_runtime(cfg, _supervisor(request))
+    start = result.get("start") or {}
+    if not result.get("ok"):
+        if result.get("error") == "stop_timeout":
+            raise HTTPException(status_code=409, detail=result)
+        status = 409 if start.get("already_running") else 503
+        raise HTTPException(status_code=status, detail=result)
+    events_hub.publish(
+        event_payload(
+            EventType.DAEMON_STARTED,
+            extra={"managed_by": "embedded", "takeover": True},
+        )
+    )
+    return result
+
+
 @router.post("/restart")
 def post_runtime_restart(
     request: Request,

@@ -137,6 +137,12 @@
 |------|--------|-----|------|------|
 | 1 | [#164](https://github.com/oychao1988/media2text/issues/164) | （本 PR） | [m2t-desktop-history-media-ops.md](./m2t-desktop-history-media-ops.md) | `issue-164-desktop-history-media-ops` |
 
+### m2t-desktop 历史手动摘要/重试 + Runtime 接管（2026-06-06）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#166](https://github.com/oychao1988/media2text/issues/166) | （本 PR） | [m2t-desktop-history-ops-runtime-takeover.md](./m2t-desktop-history-ops-runtime-takeover.md) | `issue-166-desktop-history-ops-runtime` |
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)

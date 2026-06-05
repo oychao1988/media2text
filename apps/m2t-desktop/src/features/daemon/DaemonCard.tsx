@@ -3,8 +3,7 @@ import { apiGet, apiPost, ApiError } from '../../lib/api';
 import type { RuntimeHealth, RuntimeStatus } from '../../lib/types';
 import { useRuntime } from '../runtime/RuntimeContext';
 import {
-  HEALTH_HINT,
-  HEALTH_TITLE,
+  DAEMON_CARD_TITLE,
   buildDaemonStats,
   formatRunningSec,
   healthAriaLabel,
@@ -33,7 +32,7 @@ type Props = {
 };
 
 export function DaemonCard({ onSelectCreator }: Props) {
-  const { runtime, loading, fetchError, startRuntime, stopRuntime, refresh } = useRuntime();
+  const { runtime, loading, fetchError, startRuntime, stopRuntime, takeoverRuntime, refresh } = useRuntime();
   const [busy, setBusy] = useState(false);
   const [recoverBusy, setRecoverBusy] = useState(false);
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('logs');
@@ -41,8 +40,6 @@ export function DaemonCard({ onSelectCreator }: Props) {
   const [workQueue, setWorkQueue] = useState<WorkQueue | null>(null);
 
   const health: RuntimeHealth = runtime?.health ?? 'stopped';
-  const title = HEALTH_TITLE[health];
-  const hint = HEALTH_HINT[health];
   const running = runtime?.daemon.running ?? false;
   const external = runtime?.managed_by === 'external';
   const canControl = !external;
@@ -97,6 +94,16 @@ export function DaemonCard({ onSelectCreator }: Props) {
     document.getElementById('app')?.classList.toggle('daemon-stopped', health === 'stopped' && !loading);
   }, [health, loading]);
 
+  const onTakeover = async () => {
+    if (busy || !runtime) return;
+    setBusy(true);
+    try {
+      await takeoverRuntime();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onStart = async () => {
     if (busy || !runtime || !canControl) return;
     setBusy(true);
@@ -142,18 +149,25 @@ export function DaemonCard({ onSelectCreator }: Props) {
           <span
             className={`status-dot health-${health}${running ? ' live' : ''}`}
             role="img"
-            aria-label={healthAriaLabel(health)}
+            aria-label={healthAriaLabel(health, running)}
           />
           <div className="daemon-status-text">
-            <strong>{title}</strong>
-            <span className="daemon-hint">{loading ? '加载中…' : fetchError ?? hint}</span>
+            <strong>{DAEMON_CARD_TITLE}</strong>
+            {fetchError ? <span className="daemon-hint">{fetchError}</span> : null}
           </div>
         </div>
         <div className="daemon-card-actions">
           {external ? (
-            <span className="daemon-external-hint" title="由外部 CLI 守护进程管理">
-              外部
-            </span>
+            <button
+              type="button"
+              className="btn btn-sm"
+              id="btn-daemon-takeover"
+              title="停止终端里单独启动的 monitor watch，改由 Desktop 启停"
+              disabled={busy}
+              onClick={() => void onTakeover()}
+            >
+              改用 Desktop 管理
+            </button>
           ) : running ? (
             <button
               type="button"
@@ -334,6 +348,7 @@ export function useDaemonActions() {
 }
 
 export {
+  DAEMON_CARD_TITLE,
   HEALTH_TITLE,
   formatHealthReason,
   buildDaemonStats,

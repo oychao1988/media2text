@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { apiGet, buildWsUrl, mediaUrl } from '../../lib/api';
+import { apiGet, apiPost, buildWsUrl, mediaUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { TranscriptPayload } from '../../lib/types';
 import {
@@ -23,6 +23,14 @@ type Props = {
   transcriptPath?: string | null;
   mode?: 'live' | 'playback';
   playbackTime?: number;
+  playbackItem?: {
+    creatorId: string;
+    kind: 'live' | 'vod';
+    itemId: string;
+    hasTranscript: boolean;
+    hasSummary: boolean;
+  } | null;
+  onSummaryUpdated?: (summaryPath: string | null) => void;
 };
 
 const LIVE_SCROLL_TAIL_PX = 48;
@@ -77,11 +85,15 @@ export function TranscriptPane({
   transcriptPath = null,
   mode = 'live',
   playbackTime = 0,
+  playbackItem = null,
+  onSummaryUpdated,
 }: Props) {
   const [tab, setTab] = useState<'transcript' | 'summary'>('transcript');
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
   const [summaryMd, setSummaryMd] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
+  const [summaryBusy, setSummaryBusy] = useState(false);
+  const [activeSummaryPath, setActiveSummaryPath] = useState<string | null>(summaryPath);
   const bodyRef = useRef<HTMLDivElement>(null);
   const followLiveRef = useRef(true);
   const followPlaybackRef = useRef(true);
@@ -90,6 +102,10 @@ export function TranscriptPane({
   const showLiveTranscript = !isPlayback && tab === 'transcript';
   const showPlaybackTranscript = isPlayback && tab === 'transcript';
   const showSummaryPlayback = tab === 'summary';
+
+  useEffect(() => {
+    setActiveSummaryPath(summaryPath);
+  }, [summaryPath]);
 
   useEffect(() => {
     followLiveRef.current = true;
@@ -264,14 +280,14 @@ export function TranscriptPane({
 
   useEffect(() => {
     if (tab !== 'summary') return;
-    if (!sessionId && !summaryPath) return;
+    if (!sessionId && !activeSummaryPath) return;
     let cancelled = false;
     setSummaryLoading(true);
     setSummaryMd(null);
     void (async () => {
       try {
-        if (mode === 'playback' && summaryPath) {
-          const url = await mediaUrl(summaryPath);
+        if (mode === 'playback' && activeSummaryPath) {
+          const url = await mediaUrl(activeSummaryPath);
           const res = await fetch(url);
           if (!res.ok) throw new Error('摘要不可用');
           const text = await res.text();
@@ -286,11 +302,11 @@ export function TranscriptPane({
           if (!cancelled) setSummaryMd(res.text?.trim() ? res.text : null);
           return;
         }
-        if (!summaryPath) {
+        if (!activeSummaryPath) {
           if (!cancelled) setSummaryMd(null);
           return;
         }
-        const url = await mediaUrl(summaryPath);
+        const url = await mediaUrl(activeSummaryPath);
         const res = await fetch(url);
         if (!res.ok) throw new Error('摘要不可用');
         const text = await res.text();
@@ -304,7 +320,55 @@ export function TranscriptPane({
     return () => {
       cancelled = true;
     };
-  }, [tab, summaryPath, sessionId, mode]);
+  }, [tab, activeSummaryPath, sessionId, mode]);
+
+  const canSummarize =
+    mode === 'playback' && playbackItem != null && playbackItem.hasTranscript;
+
+  const runSummarize = async (force: boolean) => {
+    if (!playbackItem || summaryBusy) return;
+    setSummaryBusy(true);
+    try {
+      const res = await apiPost<{
+        ok: boolean;
+        skipped?: boolean;
+        summary_path?: string | null;
+        detail?: string;
+        error?: string;
+      }>(
+        `/api/creators/${playbackItem.creatorId}/history/${playbackItem.kind}/${playbackItem.itemId}/summarize?force=${force ? 'true' : 'false'}`,
+        undefined,
+        true,
+      );
+      const nextPath = res.summary_path ?? activeSummaryPath;
+      setActiveSummaryPath(nextPath);
+      onSummaryUpdated?.(nextPath);
+      if (nextPath) {
+        const url = await mediaUrl(nextPath);
+        const textRes = await fetch(url);
+        if (textRes.ok) {
+          const text = await textRes.text();
+          setSummaryMd(text.trim() ? text : null);
+        }
+      }
+      if (res.skipped) {
+        showToast('摘要已存在', 'info');
+      } else {
+        showToast(force ? '摘要已重新生成' : '摘要已生成', 'success');
+      }
+      setTab('summary');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : '摘要生成失败';
+      showToast(
+        msg.includes('404') || msg === 'Not Found'
+          ? 'API 版本过旧，请完全退出并重启 Desktop（或 dev 下重启 tauri dev）'
+          : msg,
+        'error',
+      );
+    } finally {
+      setSummaryBusy(false);
+    }
+  };
 
   const copyTranscript = async () => {
     const text = state.text || state.segments.map((s) => s.text).join('\n');
@@ -350,6 +414,17 @@ export function TranscriptPane({
         >
           复制
         </button>
+        {canSummarize ? (
+          <button
+            className="btn"
+            type="button"
+            style={{ padding: '4px 8px', fontSize: 11 }}
+            disabled={summaryBusy}
+            onClick={() => void runSummarize(Boolean(playbackItem?.hasSummary || summaryMd))}
+          >
+            {summaryBusy ? '生成中…' : playbackItem?.hasSummary || summaryMd ? '重新摘要' : '生成摘要'}
+          </button>
+        ) : null}
       </div>
 
       {state.disconnected && showLiveTranscript ? (
@@ -380,11 +455,23 @@ export function TranscriptPane({
           ) : summaryMd ? (
             <ReactMarkdown>{summaryMd}</ReactMarkdown>
           ) : (
-            <p className="hint">
-              {summaryPath || sessionId
-                ? '暂无摘要'
-                : '选择有摘要的场次以查看'}
-            </p>
+            <>
+              <p className="hint">
+                {activeSummaryPath || sessionId
+                  ? '暂无摘要'
+                  : '选择有摘要的场次以查看'}
+              </p>
+              {canSummarize ? (
+                <button
+                  className="btn"
+                  type="button"
+                  disabled={summaryBusy}
+                  onClick={() => void runSummarize(false)}
+                >
+                  {summaryBusy ? '生成中…' : '生成摘要'}
+                </button>
+              ) : null}
+            </>
           )}
         </div>
       </div>

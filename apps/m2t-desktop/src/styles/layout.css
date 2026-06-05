@@ -790,6 +790,18 @@ body.resize-col-active * {
   min-width: 0;
 }
 
+@keyframes daemon-dot-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.88);
+  }
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -800,12 +812,14 @@ body.resize-col-active * {
 .status-dot.live {
   background: var(--green);
   box-shadow: 0 0 8px rgba(34, 197, 94, 0.5);
+  animation: daemon-dot-breathe 2.4s ease-in-out infinite;
 }
 
 .status-dot.health-degraded,
 .status-dot.health-degraded.live {
   background: #eab308;
   box-shadow: 0 0 8px rgba(234, 179, 8, 0.45);
+  animation: daemon-dot-breathe 2.4s ease-in-out infinite;
 }
 
 .status-dot.health-stopped,
@@ -840,10 +854,6 @@ body.resize-col-active * {
   color: var(--text-dim);
   padding: 0 6px;
   align-self: center;
-}
-
-.daemon-card.degraded strong {
-  color: #fbbf24;
 }
 
 .daemon-alerts {
@@ -1048,6 +1058,8 @@ body.resize-col-active * {
 
 .daemon-tasks-panel .daemon-work-queue-body {
   padding: 0;
+  max-height: none;
+  overflow: visible;
 }
 
 .daemon-meta {

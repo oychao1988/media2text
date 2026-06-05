@@ -79,11 +79,12 @@ describe('DaemonCard', () => {
       startRuntime: async () => {},
       stopRuntime: async () => {},
       restartRuntime: async () => {},
+      takeoverRuntime: async () => {},
     });
     render(<DaemonCard />);
-    expect(screen.getByText('运行正常')).toBeInTheDocument();
-    expect(screen.getByText('正在自动检测直播并同步作品')).toBeInTheDocument();
-    expect(screen.getByLabelText(/监控状态：运行正常/)).toBeInTheDocument();
+    expect(screen.getByText('后台监控')).toBeInTheDocument();
+    expect(screen.queryByText('正在自动检测直播并同步作品')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/后台监控：运行正常/)).toBeInTheDocument();
   });
 
   it('renders degraded state without inline alert list', () => {
@@ -101,12 +102,36 @@ describe('DaemonCard', () => {
       startRuntime: async () => {},
       stopRuntime: async () => {},
       restartRuntime: async () => {},
+      takeoverRuntime: async () => {},
     });
     render(<DaemonCard />);
-    expect(screen.getByText('需要关注')).toBeInTheDocument();
+    expect(screen.getByText('后台监控')).toBeInTheDocument();
+    expect(screen.queryByText('需要关注')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/后台监控：异常/)).toBeInTheDocument();
     expect(screen.queryByText(/心跳超时/)).not.toBeInTheDocument();
     expect(screen.queryByText('清理卡住任务')).not.toBeInTheDocument();
     expect(screen.getByLabelText('任务详情')).toBeInTheDocument();
+  });
+
+  it('shows takeover when external daemon', () => {
+    vi.mocked(useRuntime).mockReturnValue({
+      runtime: {
+        ...baseRuntime,
+        managed_by: 'external',
+        daemon: { ...baseRuntime.daemon, running: true, pid: 999 },
+      },
+      loading: false,
+      fetchError: null,
+      connected: true,
+      refresh: async () => {},
+      startRuntime: async () => {},
+      stopRuntime: async () => {},
+      restartRuntime: async () => {},
+      takeoverRuntime: async () => {},
+    });
+    render(<DaemonCard />);
+    expect(screen.getByRole('button', { name: '改用 Desktop 管理' })).toBeInTheDocument();
+    expect(screen.getByText('终端独立进程（非 Desktop）')).toBeInTheDocument();
   });
 
   it('renders stopped state', () => {
@@ -124,9 +149,11 @@ describe('DaemonCard', () => {
       startRuntime: async () => {},
       stopRuntime: async () => {},
       restartRuntime: async () => {},
+      takeoverRuntime: async () => {},
     });
     render(<DaemonCard />);
-    expect(screen.getByText('已停止')).toBeInTheDocument();
-    expect(screen.getByText('未检测直播，也不会同步新作品')).toBeInTheDocument();
+    expect(screen.getByText('后台监控')).toBeInTheDocument();
+    expect(screen.queryByText('已停止')).not.toBeInTheDocument();
+    expect(screen.getByLabelText(/后台监控：已停止/)).toBeInTheDocument();
   });
 });

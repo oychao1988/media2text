@@ -95,9 +95,19 @@ def get_summary(
     media = _media_path_for_session(row)
     if media is None:
         raise HTTPException(status_code=404, detail="no media path for session")
-    text = read_summary_text(media)
     ws = cfg.ensure_workspace()
     summary_path = workspace_rel(ws, _summary_sidecar_path(str(media)))
+    try:
+        text = read_summary_text(media)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return {
+                "ok": True,
+                "session_id": session_id,
+                "summary_path": summary_path,
+                "text": "",
+            }
+        raise
     return {
         "ok": True,
         "session_id": session_id,

@@ -232,6 +232,56 @@ def list_sessions(
     return result
 
 
+@router.post("/{creator_id}/history/{kind}/{item_id}/summarize")
+def post_history_summarize(
+    creator_id: str,
+    kind: str,
+    item_id: str,
+    force: bool = Query(False),
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=400, detail="kind must be live or vod")
+    result = history_media_svc.summarize_history_item(
+        cfg,
+        conn,
+        creator_id=creator_id,
+        kind=kind,  # type: ignore[arg-type]
+        item_id=item_id,
+        force=force,
+    )
+    if not result.get("ok"):
+        err = result.get("error")
+        code = 404 if err == "not_found" else 400
+        if err in ("summarize_disabled", "summarize_unavailable"):
+            code = 503
+        elif err == "no_transcript":
+            code = 400
+        raise HTTPException(status_code=code, detail=result)
+    return result
+
+
+@router.post("/{creator_id}/history/vod/{item_id}/retry-download")
+def post_history_retry_vod_download(
+    creator_id: str,
+    item_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    result = history_media_svc.retry_vod_download(
+        cfg,
+        conn,
+        creator_id=creator_id,
+        item_id=item_id,
+    )
+    if not result.get("ok"):
+        err = result.get("error")
+        code = 404 if err in ("not_found", "creator_not_found") else 409 if err == "invalid_status" else 400
+        raise HTTPException(status_code=code, detail=result)
+    return result
+
+
 @router.post("/{creator_id}/history/{kind}/{item_id}/delete-local")
 def post_history_delete_local(
     creator_id: str,

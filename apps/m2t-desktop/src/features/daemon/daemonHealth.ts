@@ -91,8 +91,16 @@ export function buildHealthAlerts(reasons: string[]): HealthAlert[] {
   });
 }
 
-export function healthAriaLabel(health: RuntimeHealth): string {
-  return `监控状态：${HEALTH_TITLE[health]}。${HEALTH_HINT[health]}`;
+export const DAEMON_CARD_TITLE = '后台监控';
+
+export function healthAriaLabel(health: RuntimeHealth, running: boolean): string {
+  if (!running || health === 'stopped') {
+    return `${DAEMON_CARD_TITLE}：已停止`;
+  }
+  if (health === 'degraded') {
+    return `${DAEMON_CARD_TITLE}：异常，部分检测可能偏慢`;
+  }
+  return `${DAEMON_CARD_TITLE}：运行正常`;
 }
 
 export function formatTickAge(
@@ -130,7 +138,10 @@ export function buildDaemonStats(runtime: RuntimeStatus): DaemonStat[] {
     });
   }
   if (runtime.managed_by === 'external') {
-    stats.push({ label: '管理模式', value: '外部 CLI 守护进程' });
+    stats.push({
+      label: '管理模式',
+      value: '终端独立进程（非 Desktop）',
+    });
   }
   return stats;
 }
