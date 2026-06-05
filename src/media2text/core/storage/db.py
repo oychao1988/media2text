@@ -361,6 +361,32 @@ def _migrate_desktop_v2(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_monitor_v1(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS monitor_tasks (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL,
+          task_type TEXT NOT NULL,
+          payload_json TEXT,
+          priority INTEGER NOT NULL DEFAULT 10,
+          status TEXT NOT NULL DEFAULT 'pending',
+          dedupe_key TEXT,
+          created_at TEXT NOT NULL,
+          started_at TEXT,
+          finished_at TEXT,
+          error TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_monitor_tasks_status_prio
+          ON monitor_tasks(status, priority, created_at);
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_monitor_tasks_dedupe_active
+          ON monitor_tasks(dedupe_key)
+          WHERE dedupe_key IS NOT NULL AND status IN ('pending', 'running');
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -374,6 +400,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_live_sessions_v4(conn)
         _migrate_desktop_v1(conn)
         _migrate_desktop_v2(conn)
+        _migrate_monitor_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

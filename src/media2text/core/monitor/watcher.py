@@ -1,19 +1,17 @@
 from __future__ import annotations
 
+import json
 import time
 
 import structlog
 
 from media2text.core.config import AppConfig
-from media2text.core.errors import AuthRequired
-from media2text.core.notify import EventKind, NotifyEvent, NotifyService
-from media2text.core.notify.labels import creator_label
-from media2text.core.pipeline.runner import run_pipeline
-from media2text.core.platform.bilibili.dynamic import run_dynamic_tick
+from media2text.core.live.monitor_executor import run_monitor_task
+from media2text.core.notify import EventKind, NotifyService
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
-from media2text.core.storage.repos import CreatorRepo
+from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo
 from media2text.core.transcribe.factory import transcribe_engine_available
 from media2text.core.live.scheduler import MonitorScheduler
 from media2text.core.workspace import open_db
@@ -65,9 +63,10 @@ class MonitorWatcher:
 
         vod_result = self._run_vod_tick(creator_id=creator_id)
         archive_result = self._run_archive_tick(creator_id=creator_id)
-        dynamic_result = run_dynamic_tick(
-            self._cfg, creator_id=creator_id, notify=self._notify
+        dynamic_result = self._run_dynamic_tick(
+            creator_id=creator_id,
         )
+        self._drain_monitor_tasks_sync()
         errors = (
             list(live_result.get("errors") or [])
             + list(vod_result.get("errors") or [])
@@ -122,6 +121,62 @@ class MonitorWatcher:
             new_content_kind=EventKind.NEW_ARCHIVE,
         )
 
+    def _run_dynamic_tick(self, *, creator_id: str | None = None) -> dict:
+        targets = [
+            c for c in self._creators.list_monitored() if c.platform == "bilibili"
+        ]
+        if creator_id:
+            row = self._creators.get(creator_id)
+            targets = (
+                [row]
+                if row and row.monitor_enabled and row.platform == "bilibili"
+                else []
+            )
+        enqueued = 0
+        for creator in targets:
+            task_id = MonitorTaskRepo(self._conn).enqueue(
+                creator_id=creator.id,
+                task_type="sync_dynamic",
+                dedupe_key=f"sync_dynamic:{creator.id}",
+                priority=10,
+            )
+            if task_id:
+                enqueued += 1
+        return {
+            "platform": "bilibili",
+            "creators": len(targets),
+            "enqueued": enqueued,
+            "errors": [],
+            "auth_required": False,
+            "platform_changed": False,
+            "interval_sec": self._cfg.platforms.bilibili.dynamic_poll_interval_sec,
+        }
+
+    def _drain_monitor_tasks_sync(self, *, max_rounds: int = 100) -> None:
+        """Single-shot monitor watch: drain enqueued tasks inline."""
+        repo = MonitorTaskRepo(self._conn)
+        for _ in range(max_rounds):
+            repo.reset_stale_running(older_than_sec=self._cfg.monitor.stale_running_sec)
+            claimed = repo.claim_pending(limit=self._cfg.monitor.executor_max_parallel)
+            if not claimed:
+                break
+            for task in claimed:
+                if task.priority <= 0:
+                    conn = self._conn
+                else:
+                    conn = open_db(self._cfg)
+                try:
+                    run_monitor_task(
+                        self._cfg,
+                        conn,
+                        task_id=task.id,
+                        watcher=self,
+                        notify=self._notify,
+                    )
+                finally:
+                    if conn is not self._conn:
+                        conn.close()
+
     def _run_pipeline_tick(
         self,
         *,
@@ -146,36 +201,31 @@ class MonitorWatcher:
         results: list[dict] = []
         errors: list[dict] = []
         auth_required = False
+        enqueued = 0
         available, skip_reason = transcribe_engine_available(self._cfg)
         transcribe_skipped = not available
 
         for creator in targets:
-            try:
-                outcome = run_pipeline(self._cfg, creator_id=creator.id)
-            except AuthRequired as exc:
-                auth_required = True
-                err = {"creator_id": creator.id, "error": str(exc), "auth_required": True}
-                errors.append(err)
-                results.append({"creator_id": creator.id, "ok": False, **err})
-                continue
-            except Exception as exc:  # noqa: BLE001
-                err = {"creator_id": creator.id, "error": str(exc)}
-                errors.append(err)
-                results.append({"creator_id": creator.id, "ok": False, **err})
-                continue
-
-            if outcome.get("auth_required"):
-                auth_required = True
-            if outcome.get("errors"):
-                for item in outcome["errors"]:
-                    errors.append({"creator_id": creator.id, **item})
-            self._emit_pipeline_notifications(creator, outcome, new_content_kind=new_content_kind)
+            payload = json.dumps({"platform": platform})
+            task_id = MonitorTaskRepo(self._conn).enqueue(
+                creator_id=creator.id,
+                task_type="sync_catalog",
+                dedupe_key=f"sync_catalog:{creator.id}",
+                priority=10,
+                payload_json=payload,
+            )
+            if task_id:
+                enqueued += 1
+                log.info(
+                    "monitor_task_enqueued",
+                    task_type="sync_catalog",
+                    creator_id=creator.id,
+                    task_id=task_id,
+                )
             entry = {
                 "creator_id": creator.id,
-                "ok": outcome.get("ok", False),
-                "sync": outcome.get("sync"),
-                "download": outcome.get("download"),
-                "transcribed": outcome.get("transcribed", 0),
+                "ok": True,
+                "enqueued": bool(task_id),
             }
             if transcribe_skipped:
                 entry["transcribe_skipped"] = True
@@ -186,6 +236,7 @@ class MonitorWatcher:
         payload: dict = {
             "platform": platform,
             "creators": len(targets),
+            "enqueued": enqueued,
             "results": results,
             "errors": errors,
             "auth_required": auth_required,
@@ -196,32 +247,3 @@ class MonitorWatcher:
         if transcribe_skipped and skip_reason:
             payload["transcribe_skip_reason"] = skip_reason
         return payload
-
-    def _emit_pipeline_notifications(
-        self,
-        creator,
-        outcome: dict,
-        *,
-        new_content_kind: EventKind,
-    ) -> None:
-        label = creator_label(creator)
-        sync = outcome.get("sync") or {}
-        new_count = int(sync.get("new_count") or 0)
-        if new_count > 0:
-            noun = "新投稿" if new_content_kind == EventKind.NEW_ARCHIVE else "新作品"
-            self._notify.emit(
-                NotifyEvent(
-                    kind=new_content_kind,
-                    title=label,
-                    body=f"同步到 {new_count} 个{noun}",
-                )
-            )
-        transcribed = int(outcome.get("transcribed") or 0)
-        if transcribed > 0:
-            self._notify.emit(
-                NotifyEvent(
-                    kind=EventKind.TRANSCRIBE_COMPLETED,
-                    title=label,
-                    body=f"作品转录完成 {transcribed} 条",
-                )
-            )

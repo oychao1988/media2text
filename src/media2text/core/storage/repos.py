@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
@@ -15,6 +16,7 @@ from media2text.core.storage.models import (
     DesktopEventRow,
     DynamicRow,
     LiveSessionRow,
+    MonitorTaskRow,
     PipelineEventRow,
     PostProcessJobRow,
 )
@@ -894,6 +896,164 @@ class PostProcessJobRepo:
             """
             SELECT status, COUNT(*) AS n
             FROM post_process_jobs
+            GROUP BY status
+            """
+        ).fetchall()
+        return {str(r["status"]): int(r["n"]) for r in rows}
+
+
+class MonitorTaskRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def enqueue(
+        self,
+        *,
+        creator_id: str,
+        task_type: str,
+        dedupe_key: str | None = None,
+        priority: int = 10,
+        payload_json: str | None = None,
+    ) -> str | None:
+        task_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        try:
+            self._conn.execute(
+                """
+                INSERT INTO monitor_tasks
+                  (id, creator_id, task_type, payload_json, priority, status,
+                   dedupe_key, created_at)
+                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (
+                    task_id,
+                    creator_id,
+                    task_type,
+                    payload_json,
+                    priority,
+                    dedupe_key,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return task_id
+        except sqlite3.IntegrityError:
+            return None
+
+    def get(self, task_id: str) -> MonitorTaskRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM monitor_tasks WHERE id = ?",
+            (task_id,),
+        ).fetchone()
+        return MonitorTaskRow(**dict(row)) if row else None
+
+    def claim_pending(
+        self,
+        *,
+        limit: int = 1,
+        max_priority: int | None = None,
+        min_priority: int = 0,
+    ) -> list[MonitorTaskRow]:
+        claimed: list[MonitorTaskRow] = []
+        now = datetime.now(timezone.utc).isoformat()
+        for _ in range(limit):
+            if max_priority is not None:
+                row = self._conn.execute(
+                    """
+                    SELECT id FROM monitor_tasks
+                    WHERE status = 'pending'
+                      AND priority >= ?
+                      AND priority <= ?
+                    ORDER BY priority ASC, created_at ASC
+                    LIMIT 1
+                    """,
+                    (min_priority, max_priority),
+                ).fetchone()
+            else:
+                row = self._conn.execute(
+                    """
+                    SELECT id FROM monitor_tasks
+                    WHERE status = 'pending' AND priority >= ?
+                    ORDER BY priority ASC, created_at ASC
+                    LIMIT 1
+                    """,
+                    (min_priority,),
+                ).fetchone()
+            if not row:
+                break
+            cur = self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'running', started_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now, row["id"]),
+            )
+            if cur.rowcount != 1:
+                continue
+            task = self.get(row["id"])
+            if task:
+                claimed.append(task)
+        self._conn.commit()
+        return claimed
+
+    def mark_done(self, task_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'done', finished_at = ?
+            WHERE id = ?
+            """,
+            (now, task_id),
+        )
+        self._conn.commit()
+
+    def mark_failed(self, task_id: str, *, error: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'failed', error = ?, finished_at = ?
+            WHERE id = ?
+            """,
+            (error, now, task_id),
+        )
+        self._conn.commit()
+
+    def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
+        cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
+        rows = self._conn.execute(
+            "SELECT id, started_at FROM monitor_tasks WHERE status = 'running'"
+        ).fetchall()
+        count = 0
+        for row in rows:
+            started = row["started_at"]
+            if not started:
+                continue
+            try:
+                started_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
+            except ValueError:
+                started_dt = datetime.now(timezone.utc)
+            if started_dt.timestamp() > cutoff:
+                continue
+            self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'pending', started_at = NULL, error = NULL
+                WHERE id = ?
+                """,
+                (row["id"],),
+            )
+            count += 1
+        self._conn.commit()
+        return count
+
+    def count_by_status(self) -> dict[str, int]:
+        rows = self._conn.execute(
+            """
+            SELECT status, COUNT(*) AS n
+            FROM monitor_tasks
             GROUP BY status
             """
         ).fetchall()

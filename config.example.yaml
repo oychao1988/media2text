@@ -18,6 +18,9 @@ monitor:
   vod_poll_interval_sec: 300
   max_creators_per_vod_tick: 2  # 0 = no limit; v2 default 2 to avoid long Playwright VOD sync blocking SlowTick
   profile_stale_days: 7
+  # Playwright sync/download workers; keep at 1 unless you accept multi-Chromium OOM risk
+  executor_max_parallel: 1
+  stale_running_sec: 3600
 
 live:
   auto_record: true               # false = poll only updates snapshots; manual start via desktop API

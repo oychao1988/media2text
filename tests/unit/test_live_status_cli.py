@@ -33,6 +33,7 @@ def test_live_status_json(tmp_path, monkeypatch) -> None:
     assert '"ok": true' in result.stdout
     assert "active_recordings" in result.stdout
     assert "post_process" in result.stdout
+    assert "monitor_tasks" in result.stdout
 
 
 def test_live_timeline_json(tmp_path, monkeypatch) -> None:
