@@ -19,6 +19,8 @@ type CreatorsState = {
   error: string | null;
   selectedId: string | null;
   selected: Creator | null;
+  /** Bumped after WS/reconnect refresh so live status hooks can re-poll. */
+  revision: number;
   refresh: () => Promise<void>;
   setSelectedId: (id: string | null) => void;
 };
@@ -35,6 +37,7 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [revision, setRevision] = useState(0);
   const hasLoadedRef = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -70,10 +73,10 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
 
   useEventsWs({
     onEvent: () => {
-      void refresh();
+      void refresh().then(() => setRevision((n) => n + 1));
     },
     onReconnect: () => {
-      void refresh();
+      void refresh().then(() => setRevision((n) => n + 1));
     },
   });
 
@@ -89,10 +92,11 @@ export function CreatorsProvider({ children, forceEmpty }: ProviderProps) {
       error,
       selectedId,
       selected,
+      revision,
       refresh,
       setSelectedId,
     }),
-    [creators, loading, error, selectedId, selected, refresh],
+    [creators, loading, error, selectedId, selected, revision, refresh],
   );
 
   return <CreatorsContext.Provider value={value}>{children}</CreatorsContext.Provider>;

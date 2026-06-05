@@ -27,6 +27,7 @@ from media2text.core.ffmpeg import (
     concat_to_mp4,
     record_stream_copy,
     remux_to_mp4,
+    stop_pid,
     stop_process,
 )
 from media2text.core.live.protocol import LivePlatformAdapter
@@ -975,7 +976,7 @@ class LiveRecordingCore:
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         elif pid and self._process_alive(pid):
-            os.kill(pid, 15)
+            stop_pid(pid, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
 
         stt = self._stt_sessions.pop(session_id, None)
         self._stream_urls.pop(session_id, None)
@@ -1156,7 +1157,7 @@ class LiveRecordingCore:
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         elif pid and self._process_alive(pid):
-            os.kill(pid, 15)
+            stop_pid(pid, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
 
         stt = self._stt_sessions.pop(session_id, None)
         if stt is not None:

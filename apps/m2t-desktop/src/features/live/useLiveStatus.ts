@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { apiGet } from '../../lib/api';
 import type { ActiveRecording } from '../../lib/types';
+import { useCreators } from '../creators/CreatorsContext';
 
 type LiveStatusResponse = {
   ok: boolean;
@@ -8,6 +9,7 @@ type LiveStatusResponse = {
 };
 
 export function useLiveStatus(creatorId: string | null) {
+  const { revision } = useCreators();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [recording, setRecording] = useState<ActiveRecording | null>(null);
 
@@ -36,7 +38,7 @@ export function useLiveStatus(creatorId: string | null) {
 
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+  }, [refresh, revision]);
 
   return { activeSessionId, recording, refresh };
 }

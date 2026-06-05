@@ -52,10 +52,11 @@ def compute_status_light(
     """Return status_light, is_live, badge fields for API JSON."""
     is_live = bool(snapshot and snapshot.is_live)
 
-    if active_session and _ffmpeg_alive(active_session):
-        light = "green"
-    elif active_session and active_session.offline_since_at:
+    if active_session and active_session.offline_since_at:
+        # Platform offline confirmed; ffmpeg may still drain CDN tail.
         light = "yellow"
+    elif active_session and _ffmpeg_alive(active_session):
+        light = "green"
     elif active_session and (active_session.transcribe_status or "").lower() == "degraded":
         light = "yellow"
     elif active_session and active_session.status in ("recording", "remuxing"):

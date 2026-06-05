@@ -1,4 +1,7 @@
+import os
+import signal
 import subprocess
+import time
 from pathlib import Path
 
 
@@ -32,6 +35,31 @@ def stop_process(proc: subprocess.Popen, *, timeout: int = 30) -> None:
     except subprocess.TimeoutExpired:
         proc.kill()
         proc.wait()
+
+
+def stop_pid(pid: int, *, timeout: int = 30) -> None:
+    """SIGTERM then SIGKILL for a child ffmpeg not tracked in a Popen handle."""
+    if pid <= 0:
+        return
+    try:
+        os.kill(pid, 0)
+    except OSError:
+        return
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return
+        time.sleep(0.2)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        return
 
 
 def remux_to_mp4(*, ffmpeg: str, src: Path, dst: Path) -> None:
