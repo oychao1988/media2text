@@ -87,9 +87,9 @@ export function AppShell() {
 
   const transcriptSessionId = useMemo(() => {
     if (centerView === 'playback' && playbackSession) return playbackSession.session_id;
-    if (centerView === 'live' || centerTab === 'live') return activeSessionId;
+    if (centerView === 'live' || centerTab === 'live') return selected?.active_session_id ?? null;
     return null;
-  }, [centerView, centerTab, playbackSession, activeSessionId]);
+  }, [centerView, centerTab, playbackSession, selected]);
 
   const summaryPath = useMemo(() => {
     if (centerView === 'playback' && playbackSession) return playbackSession.summary_path;

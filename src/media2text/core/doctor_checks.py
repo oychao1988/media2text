@@ -54,18 +54,20 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
     bilibili_session_ok = bilibili_session_exists(ws)
 
     checks: list[dict] = [
-        {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path))},
+        {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path)), "auto_repairable": True},
         {
             "name": "playwright",
             "ok": _playwright_import_ok(),
             "hint": "pip install playwright（bundled slim 版需自行安装）",
+            "auto_repairable": True,
         },
         {
             "name": "playwright_browser",
             "ok": _playwright_browser_ok(),
             "hint": "playwright install chromium",
+            "auto_repairable": True,
         },
-        {"name": "disk", "ok": _disk_ok(ws)},
+        {"name": "disk", "ok": _disk_ok(ws), "auto_repairable": False},
     ]
     if has_douyin or not has_bilibili:
         checks.append(
@@ -113,6 +115,7 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
                 "name": "streaming_stt_deepgram",
                 "ok": dg_ok and dg_installed,
                 "relevant": True,
+                "auto_repairable": True,
                 "hint": (
                     f'pip install -e ".[transcribe-deepgram]" and export {dg_env}'
                     + (

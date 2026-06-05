@@ -1,4 +1,56 @@
-export type BootstrapPhase = 'loading' | 'error' | 'ready';
+export type BootstrapPhase = 'loading' | 'repairing' | 'error' | 'ready';
+
+export type DoctorCheck = {
+  name: string;
+  ok: boolean;
+  hint?: string;
+  auto_repairable?: boolean;
+};
+
+export type HealthResponse = {
+  ok?: boolean;
+  doctor_ok?: boolean;
+  checks?: DoctorCheck[];
+};
+
+export type RepairAction = {
+  name: string;
+  action?: string;
+  ok: boolean;
+  message?: string;
+};
+
+export type RepairResponse = HealthResponse & {
+  repair_ok?: boolean;
+  actions?: RepairAction[];
+};
+
+const BOOTSTRAP_REQUIRED = new Set(['ffmpeg', 'playwright_browser']);
+
+export function needsEnvironmentRepair(checks: DoctorCheck[] | undefined): boolean {
+  if (!checks?.length) return false;
+  const byName = new Map(checks.map((c) => [c.name, c]));
+  return [...BOOTSTRAP_REQUIRED].some((name) => !byName.get(name)?.ok);
+}
+
+function formatRepairFailure(checks: DoctorCheck[] | undefined, actions: RepairAction[] | undefined): string {
+  const failedActions = (actions ?? []).filter((a) => !a.ok);
+  const lines: string[] = [];
+  if (failedActions.length) {
+    for (const a of failedActions) {
+      lines.push(`${a.name}: ${a.message ?? '修复失败'}`);
+    }
+  }
+  const checksByName = new Map((checks ?? []).map((c) => [c.name, c]));
+  for (const name of BOOTSTRAP_REQUIRED) {
+    const c = checksByName.get(name);
+    if (c && !c.ok) {
+      const hint = c.hint ? `（${c.hint}）` : '';
+      lines.push(`${name} 仍不可用${hint}`);
+    }
+  }
+  return lines.length ? lines.join('\n') : '环境依赖未就绪';
+}
 
 export async function pollApiHealth(
   baseUrl: string,
@@ -26,4 +78,46 @@ export async function pollApiHealth(
   }
 
   throw new Error(lastError);
+}
+
+export async function ensureEnvironmentReady(
+  baseUrl: string,
+  options?: {
+    fetchFn?: typeof fetch;
+    onStatus?: (message: string) => void;
+  },
+): Promise<void> {
+  const fetchFn = options?.fetchFn ?? fetch;
+  const prefix = baseUrl.replace(/\/$/, '');
+
+  options?.onStatus?.('正在检查运行环境…');
+  const healthRes = await fetchFn(`${prefix}/api/health`, { method: 'GET' });
+  if (!healthRes.ok) {
+    throw new Error(`环境检查 HTTP ${healthRes.status}`);
+  }
+  const health = (await healthRes.json()) as HealthResponse;
+  if (!needsEnvironmentRepair(health.checks)) return;
+
+  options?.onStatus?.('正在安装缺失依赖（Chromium 首次下载可能需数分钟）…');
+  const repairRes = await fetchFn(`${prefix}/api/doctor/repair`, { method: 'POST' });
+  if (!repairRes.ok) {
+    throw new Error(`环境修复 HTTP ${repairRes.status}`);
+  }
+  const repair = (await repairRes.json()) as RepairResponse;
+  if (repair.repair_ok) return;
+
+  throw new Error(formatRepairFailure(repair.checks, repair.actions));
+}
+
+export async function runBootstrap(
+  baseUrl: string,
+  options?: {
+    fetchFn?: typeof fetch;
+    maxAttempts?: number;
+    intervalMs?: number;
+    onStatus?: (message: string) => void;
+  },
+): Promise<void> {
+  await pollApiHealth(baseUrl, options);
+  await ensureEnvironmentReady(baseUrl, options);
 }

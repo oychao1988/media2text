@@ -36,8 +36,6 @@ export function useLiveStatus(creatorId: string | null) {
 
   useEffect(() => {
     void refresh();
-    const id = window.setInterval(() => void refresh(), 4000);
-    return () => window.clearInterval(id);
   }, [refresh]);
 
   return { activeSessionId, recording, refresh };

@@ -679,6 +679,35 @@ class LiveRecordingCore:
             platform_live_started_at=live_info.platform_live_started_at,
             pipeline_mode=self._cfg.live.snapshot_pipeline_mode(),
         )
+        try:
+            return self._start_recording_after_session(
+                session_id,
+                creator_id=creator_id,
+                sec_uid=sec_uid,
+                room_id=room_id,
+                live_info=live_info,
+                temp_path=temp_path,
+            )
+        except Exception as exc:
+            self._sessions.update_status(
+                session_id,
+                status="failed",
+                error=str(exc)[:500],
+                ended=True,
+            )
+            enqueue_creator_updated(self._conn, creator_id)
+            raise
+
+    def _start_recording_after_session(
+        self,
+        session_id: str,
+        *,
+        creator_id: str,
+        sec_uid: str,
+        room_id: str | None,
+        live_info: LiveRoomInfo,
+        temp_path: Path,
+    ) -> dict:
         record_event(
             self._conn,
             session_id=session_id,

@@ -9,7 +9,7 @@ type Props = {
 };
 
 export function ViewLive({ active, creatorId, showRecordBanner = false, onRecordingStarted }: Props) {
-  const { activeSessionId, refresh } = useLiveStatus(creatorId);
+  const { activeSessionId } = useLiveStatus(creatorId);
 
   return (
     <div className={`center-view${active ? ' active' : ''}`} id="view-live">
@@ -18,7 +18,6 @@ export function ViewLive({ active, creatorId, showRecordBanner = false, onRecord
         sessionId={activeSessionId}
         showRecordBanner={showRecordBanner}
         onRecordingStarted={() => {
-          void refresh();
           onRecordingStarted?.();
         }}
       />
