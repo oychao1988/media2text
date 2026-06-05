@@ -39,7 +39,18 @@ def test_upsert_returns_false_when_unchanged(tmp_path) -> None:
     )
     live = LiveRoomInfo(room_id="r1", is_live=True, stream_flv_url="http://x/a.flv")
     assert upsert_live_snapshot(conn, cid, live) is True
-    assert upsert_live_snapshot(conn, cid, live) is False
+    first_checked = LiveSnapshotRepo(conn).get(cid)
+    assert first_checked is not None
+    later = "2099-01-01T00:00:00+00:00"
+    assert (
+        LiveSnapshotRepo(conn).upsert(
+            cid, is_live=True, room_id="r1", title=None, checked_at=later
+        )
+        is False
+    )
+    snap = LiveSnapshotRepo(conn).get(cid)
+    assert snap is not None
+    assert snap.checked_at == later
     conn.close()
 
 

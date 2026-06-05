@@ -1288,12 +1288,11 @@ class LiveSnapshotRepo:
         live_int = 1 if is_live else 0
         existing = self.get(creator_id)
         if existing is not None:
-            if (
+            unchanged = (
                 existing.is_live == live_int
                 and existing.room_id == room_id
                 and existing.title == title
-            ):
-                return False
+            )
             self._conn.execute(
                 """
                 UPDATE creator_live_snapshots
@@ -1303,7 +1302,7 @@ class LiveSnapshotRepo:
                 (live_int, room_id, title, now, creator_id),
             )
             self._conn.commit()
-            return True
+            return not unchanged
         self._conn.execute(
             """
             INSERT INTO creator_live_snapshots (
