@@ -118,6 +118,21 @@ class LiveSessionRow:
 
 
 @dataclass
+class MonitorTaskRow:
+    id: str
+    creator_id: str
+    task_type: str
+    payload_json: str | None
+    priority: int
+    status: str
+    dedupe_key: str | None
+    created_at: str
+    started_at: str | None
+    finished_at: str | None
+    error: str | None
+
+
+@dataclass
 class PostProcessJobRow:
     id: str
     session_id: str

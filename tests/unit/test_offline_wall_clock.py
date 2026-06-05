@@ -57,10 +57,10 @@ def test_first_offline_emits_live_ended_without_finalize(tmp_path, monkeypatch) 
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_finalize_recording") as mock_fin,
+        patch.object(core, "_enqueue_finalize") as mock_enqueue,
     ):
         core.poll_active_recordings()
-        mock_fin.assert_not_called()
+        mock_enqueue.assert_not_called()
         row = sessions.get(sid)
         assert row is not None
         assert row.offline_since_at is not None
@@ -81,10 +81,11 @@ def test_finalize_after_offline_confirm_sec(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_finalize_recording") as mock_fin,
+        patch.object(core, "_enqueue_finalize") as mock_enqueue,
     ):
         core.poll_active_recordings()
-        mock_fin.assert_called_once()
+        mock_enqueue.assert_called_once()
+        assert mock_enqueue.call_args[0][0] == sid
         notify.emit.assert_not_called()
 
 
@@ -102,10 +103,10 @@ def test_live_resume_clears_offline_since(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_finalize_recording") as mock_fin,
+        patch.object(core, "_enqueue_finalize") as mock_enqueue,
     ):
         core.poll_active_recordings()
-        mock_fin.assert_not_called()
+        mock_enqueue.assert_not_called()
         row = sessions.get(sid)
         assert row is not None
         assert row.offline_since_at is None
@@ -116,7 +117,7 @@ def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_finalize_recording"),
+        patch.object(core, "_enqueue_finalize"),
     ):
         core.poll_active_recordings()
         core.poll_active_recordings()

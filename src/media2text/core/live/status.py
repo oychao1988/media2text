@@ -8,7 +8,7 @@ from typing import Any
 
 from media2text.core.config import AppConfig
 from media2text.core.live.post_process_pool import resolve_post_process_workers
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
 
 
 def _parse_iso(value: str | None) -> datetime | None:
@@ -48,6 +48,7 @@ def build_live_status(
     sessions = LiveSessionRepo(conn)
     creators = CreatorRepo(conn)
     jobs = PostProcessJobRepo(conn)
+    tasks = MonitorTaskRepo(conn)
 
     active_rows = sessions.list_active()
     if creator_id:
@@ -88,6 +89,8 @@ def build_live_status(
             }
         )
 
+    task_counts = tasks.count_by_status()
+
     return {
         "ok": True,
         "command": command,
@@ -101,5 +104,10 @@ def build_live_status(
             "pending": counts.get("pending", 0),
             "running": counts.get("running", 0),
             "jobs": job_items,
+        },
+        "monitor_tasks": {
+            "pending": task_counts.get("pending", 0),
+            "running": task_counts.get("running", 0),
+            "failed": task_counts.get("failed", 0),
         },
     }

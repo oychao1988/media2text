@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from datetime import datetime, timezone
@@ -41,7 +42,7 @@ from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
 
 log = structlog.get_logger()
 FFMPEG_STARTUP_GRACE_SEC = 2
@@ -327,19 +328,34 @@ class LiveRecordingCore:
             if elapsed < confirm_sec:
                 continue
 
-            meta = self._finalize_recording(row.id, row.temp_path, pid)
-            if meta:
-                finalized.append(meta)
-                enqueue_creator_updated(self._conn, creator.id)
+            self._enqueue_finalize(row.id, creator.id)
+            continue
 
         return finalized
+
+    def _enqueue_finalize(self, session_id: str, creator_id: str) -> None:
+        task_id = MonitorTaskRepo(self._conn).enqueue(
+            creator_id=creator_id,
+            task_type="finalize",
+            dedupe_key=f"finalize:{session_id}",
+            priority=0,
+            payload_json=json.dumps({"session_id": session_id}),
+        )
+        if task_id:
+            log.info(
+                "monitor_task_enqueued",
+                task_type="finalize",
+                session_id=session_id,
+                task_id=task_id,
+            )
 
     def _handle_ffmpeg_exit(self, row, creator) -> dict | None:
         session_id = row.id
         temp_path = row.temp_path
         pid = row.ffmpeg_pid
         if pid is None:
-            return self._finalize_recording(session_id, temp_path, 0)
+            self._enqueue_finalize(session_id, creator.id)
+            return None
 
         if self._cfg.live.ffmpeg_exit_recheck:
             try:
@@ -362,7 +378,8 @@ class LiveRecordingCore:
         ):
             return self._reconnect_segment(session_id, creator, temp_path, pid)
 
-        return self._finalize_recording(session_id, temp_path, pid)
+        self._enqueue_finalize(session_id, creator.id)
+        return None
 
     def _transcript_anchor(self, session_id: str, temp_path: str | None) -> Path:
         anchor = self._streaming_transcript_anchor.get(session_id)

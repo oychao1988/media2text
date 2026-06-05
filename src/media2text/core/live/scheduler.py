@@ -7,8 +7,8 @@ from typing import TYPE_CHECKING
 import structlog
 
 from media2text.core.config import AppConfig
+from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
-from media2text.core.platform.bilibili.dynamic import run_dynamic_tick
 
 if TYPE_CHECKING:
     from media2text.core.monitor.watcher import MonitorWatcher
@@ -32,6 +32,7 @@ class LiveTickLoop:
         watcher: MonitorWatcher,
         cfg: AppConfig,
         post_pool: PostProcessExecutor,
+        monitor_pool: MonitorExecutor,
         *,
         creator_id: str | None,
         stop: threading.Event,
@@ -39,6 +40,7 @@ class LiveTickLoop:
         self._watcher = watcher
         self._cfg = cfg
         self._post_pool = post_pool
+        self._monitor_pool = monitor_pool
         self._creator_id = creator_id
         self._stop = stop
         self._thread: threading.Thread | None = None
@@ -61,6 +63,14 @@ class LiveTickLoop:
         while not self._stop.is_set():
             self._watcher._douyin_live.run_once(creator_id=self._creator_id)
             self._watcher._bilibili_live.run_once(creator_id=self._creator_id)
+            finalized = self._monitor_pool.drain_priority_zero(
+                self._cfg,
+                self._watcher._conn,
+                notify=self._watcher._notify,
+                watcher=self._watcher,
+            )
+            if finalized:
+                log.info("monitor_finalize_drained", count=len(finalized))
             now = time.time()
             if now - last_post >= self._cfg.live.post_process_poll_interval_sec:
                 self._post_pool.drain_pending(
@@ -80,12 +90,14 @@ class SlowTickLoop:
         self,
         watcher: MonitorWatcher,
         cfg: AppConfig,
+        monitor_pool: MonitorExecutor,
         *,
         creator_id: str | None,
         stop: threading.Event,
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
+        self._monitor_pool = monitor_pool
         self._creator_id = creator_id
         self._stop = stop
         self._thread: threading.Thread | None = None
@@ -118,12 +130,15 @@ class SlowTickLoop:
                 self._watcher._run_archive_tick(creator_id=self._creator_id)
                 last_archive = now
             if now - last_dynamic >= dynamic_poll:
-                run_dynamic_tick(
-                    self._cfg,
-                    creator_id=self._creator_id,
-                    notify=self._watcher._notify,
-                )
+                self._watcher._run_dynamic_tick(creator_id=self._creator_id)
                 last_dynamic = now
+            self._monitor_pool.drain_pending(
+                self._cfg,
+                self._watcher._conn,
+                notify=self._watcher._notify,
+                watcher=self._watcher,
+                limit=self._cfg.monitor.executor_max_parallel,
+            )
             self._stop.wait(timeout=1.0)
 
 
@@ -134,6 +149,7 @@ class MonitorScheduler:
         self._stop = threading.Event()
         max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
+        self._monitor_pool = MonitorExecutor(max_workers=cfg.monitor.executor_max_parallel)
         self._live_loop: LiveTickLoop | None = None
         self._slow_loop: SlowTickLoop | None = None
 
@@ -147,17 +163,20 @@ class MonitorScheduler:
             archive_poll=_bilibili_archive_poll_sec(self._cfg),
             dynamic_poll=bcfg.dynamic_poll_interval_sec,
             post_process_poll=self._cfg.live.post_process_poll_interval_sec,
+            monitor_executor_parallel=self._cfg.monitor.executor_max_parallel,
         )
         self._live_loop = LiveTickLoop(
             self._watcher,
             self._cfg,
             self._post_pool,
+            self._monitor_pool,
             creator_id=creator_id,
             stop=self._stop,
         )
         self._slow_loop = SlowTickLoop(
             self._watcher,
             self._cfg,
+            self._monitor_pool,
             creator_id=creator_id,
             stop=self._stop,
         )
@@ -170,4 +189,5 @@ class MonitorScheduler:
             self._live_loop.join(timeout=5.0)
         if self._slow_loop is not None:
             self._slow_loop.join(timeout=5.0)
+        self._monitor_pool.shutdown(wait=True)
         self._post_pool.shutdown(wait=True)

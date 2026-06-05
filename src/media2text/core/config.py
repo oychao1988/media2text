@@ -49,6 +49,8 @@ class MonitorConfig(BaseModel):
     vod_poll_interval_sec: int = 300
     max_creators_per_vod_tick: int = 0
     profile_stale_days: int = 7
+    executor_max_parallel: int = 1
+    stale_running_sec: int = 3600
 
 
 class StreamingSttConfig(BaseModel):

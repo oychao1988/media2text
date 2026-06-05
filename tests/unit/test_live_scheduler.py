@@ -17,6 +17,7 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
     watcher = MonitorWatcher(cfg)
     stop = threading.Event()
     post_pool = MagicMock()
+    monitor_pool = MagicMock()
     run_counts: list[int] = []
 
     def count_run_once(**_kwargs) -> dict:
@@ -32,12 +33,14 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
             watcher,
             cfg,
             post_pool,
+            monitor_pool,
             creator_id=None,
             stop=stop,
         )
         slow_loop = SlowTickLoop(
             watcher,
             cfg,
+            monitor_pool,
             creator_id=None,
             stop=stop,
         )
@@ -65,8 +68,82 @@ def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
         patch.object(watcher._bilibili_live, "run_once", return_value={}),
         patch.object(watcher, "_run_vod_tick", return_value={}),
         patch.object(watcher, "_run_archive_tick", return_value={}),
-        patch("media2text.core.live.scheduler.run_dynamic_tick", return_value={}),
+        patch.object(watcher, "_run_dynamic_tick", return_value={}),
     ):
         scheduler.start()
         time.sleep(0.2)
         scheduler.stop()
+
+
+def test_finalize_enqueued_once_and_drained_inline(tmp_path, monkeypatch) -> None:
+    """Offline timeline: poll enqueues finalize; LiveTick drain runs it once."""
+    from datetime import datetime, timedelta, timezone
+
+    from media2text.core.live.monitor_executor import MonitorExecutor
+    from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(live_poll_interval_sec=1, offline_confirm_sec=10),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAfin",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    flv = tmp_path / "data/creators/MS4wLjABAAAAfin/live/x.flv"
+    flv.parent.mkdir(parents=True, exist_ok=True)
+    flv.write_bytes(b"x")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(flv),
+        ffmpeg_pid=999,
+    )
+    past_start = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    past_offline = (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat()
+    conn.execute(
+        "UPDATE live_sessions SET offline_since_at = ?, started_at = ? WHERE id = ?",
+        (past_offline, past_start, sid),
+    )
+    conn.commit()
+
+    watcher = MonitorWatcher(cfg)
+    core = watcher._douyin_live._core
+    pool = MonitorExecutor(max_workers=1)
+    finalize_calls: list[str] = []
+
+    def fake_finalize(session_id, temp_path, pid):
+        finalize_calls.append(session_id)
+        LiveSessionRepo(conn).update_status(session_id, status="completed")
+        return {"session_id": session_id}
+
+    core._finalize_recording = fake_finalize
+
+    with (
+        patch.object(core, "_process_alive", return_value=True),
+        patch.object(core, "_recording_still_live", return_value=False),
+    ):
+        core.poll_active_recordings()
+        pool.drain_priority_zero(
+            cfg,
+            conn,
+            notify=watcher._notify,
+            watcher=watcher,
+        )
+        core.poll_active_recordings()
+        pool.drain_priority_zero(
+            cfg,
+            conn,
+            notify=watcher._notify,
+            watcher=watcher,
+        )
+
+    tasks = MonitorTaskRepo(conn).count_by_status()
+    assert finalize_calls == [sid]
+    assert tasks.get("done", 0) == 1
+    pool.shutdown(wait=False)
