@@ -65,7 +65,7 @@ def _enrich_creator(
     item["follower_count"] = row.follower_count
     item["profile_synced_at"] = row.profile_synced_at
     item["live_snapshot"] = _snapshot_dict(snap)
-    item["active_session_id"] = active.session_id if active else None
+    item["active_session_id"] = active.id if active else None
     return item
 
 

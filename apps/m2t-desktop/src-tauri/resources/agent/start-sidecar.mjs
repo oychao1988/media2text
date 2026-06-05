@@ -20,6 +20,19 @@ function findRepoRoot(start) {
   return null;
 }
 
+/** pnpm often keeps tsx under package-local or .pnpm store bins, not repo root .bin. */
+function resolveTsxBin(repoRoot) {
+  const candidates = [
+    join(repoRoot, 'node_modules/.bin/tsx'),
+    join(repoRoot, 'packages/m2t-agent-sidecar/node_modules/.bin/tsx'),
+    join(repoRoot, 'node_modules/.pnpm/node_modules/.bin/tsx'),
+  ];
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
 function resolveLaunch() {
   const repoFromEnv = process.env.M2T_REPO_ROOT?.trim();
   const repoRoot =
@@ -28,9 +41,9 @@ function resolveLaunch() {
     findRepoRoot(process.cwd());
 
   if (repoRoot) {
-    const tsxBin = join(repoRoot, 'node_modules/.bin/tsx');
+    const tsxBin = resolveTsxBin(repoRoot);
     const mainTs = join(repoRoot, 'packages/m2t-agent-sidecar/src/main.ts');
-    if (existsSync(tsxBin) && existsSync(mainTs)) {
+    if (tsxBin && existsSync(mainTs)) {
       return { command: tsxBin, args: [mainTs], cwd: repoRoot };
     }
   }
@@ -47,6 +60,16 @@ function resolveLaunch() {
   process.exit(1);
 }
 
+function ignoreEpipe(stream) {
+  stream.on('error', (err) => {
+    if (err?.code === 'EPIPE') return;
+    throw err;
+  });
+}
+
+ignoreEpipe(process.stdout);
+ignoreEpipe(process.stdin);
+
 const launch = resolveLaunch();
 const child = spawn(launch.command, launch.args, {
   cwd: launch.cwd,
@@ -54,6 +77,8 @@ const child = spawn(launch.command, launch.args, {
   stdio: ['pipe', 'pipe', 'inherit'],
 });
 
+ignoreEpipe(child.stdout);
+ignoreEpipe(child.stdin);
 child.stdout.pipe(process.stdout);
 process.stdin.pipe(child.stdin);
 

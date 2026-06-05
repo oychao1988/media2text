@@ -27,6 +27,10 @@ await build({
   target: 'node20',
   sourcemap: true,
   external: [],
+  // CJS deps (cross-spawn) call require(); default import avoids clashing with bundled createRequire imports.
+  banner: {
+    js: "import nodeModule from 'node:module'; const require = nodeModule.createRequire(import.meta.url);",
+  },
 });
 
 console.log(`Built ${outFile}`);
