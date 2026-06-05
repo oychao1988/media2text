@@ -39,7 +39,7 @@ source .venv/bin/activate
 pip install -e ".[desktop,dev]"
 pnpm install
 
-media2text serve --port 8765          # 仅 API sidecar（127.0.0.1）
+media2text serve --port 8765          # 仅 API sidecar（127.0.0.1）；内嵌 MonitorSupervisor + `GET /api/runtime`
 pnpm --filter m2t-desktop tauri dev   # 完整 Tauri 壳 + 双 sidecar
 pnpm --filter m2t-desktop test        # Vitest（layout a11y / responsive）
 pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop

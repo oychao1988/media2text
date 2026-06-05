@@ -3,6 +3,8 @@ import { ToastHost } from './components/ToastHost';
 import { AppBootstrap } from './features/layout/AppBootstrap';
 import { AppShell } from './features/layout/AppShell';
 import { initLayoutStore, useLayoutStore } from './features/layout/useLayoutStore';
+import { EventsProvider } from './features/events/EventsProvider';
+import { RuntimeProvider } from './features/runtime/RuntimeContext';
 import { CreatorsProvider } from './features/creators/CreatorsContext';
 import { installDesktopInputGuards } from './lib/desktopInputGuards';
 import { initThemeFromStorage } from './lib/theme';
@@ -18,10 +20,14 @@ function readEmptyListPreview(): boolean {
 function AppRoot() {
   const showEmptyCreators = useLayoutStore().showEmptyCreators || readEmptyListPreview();
   return (
-    <CreatorsProvider forceEmpty={showEmptyCreators}>
-      <ToastHost />
-      <AppShell />
-    </CreatorsProvider>
+    <EventsProvider>
+      <RuntimeProvider>
+        <CreatorsProvider forceEmpty={showEmptyCreators}>
+          <ToastHost />
+          <AppShell />
+        </CreatorsProvider>
+      </RuntimeProvider>
+    </EventsProvider>
   );
 }
 

@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from playwright.sync_api import Response, sync_playwright
 
 from media2text.core.errors import AuthRequired, ParseFailed
+from media2text.core.playwright_env import launch_chromium
 from media2text.core.platform.douyin.parse import _user_sec_uid, map_http_error
 
 _PROFILE_API_MARKER = "user/profile/other"
@@ -102,7 +103,7 @@ def fetch_json(
         url = f"{url}?{urlencode(params)}"
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         try:
             response = context.request.get(
@@ -168,7 +169,7 @@ def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
             captured.append(response)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()
         page.on("response", on_response)
@@ -231,7 +232,7 @@ def fetch_aweme_post_snapshots_until_cursor(
         _store_aweme_post_snapshot(snapshots, url=response.url, payload=data)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()
         page.on("response", on_response)
@@ -272,7 +273,7 @@ def fetch_aweme_post_snapshots_via_page(session_path: Path, sec_uid: str) -> dic
         _store_aweme_post_snapshot(snapshots, url=response.url, payload=data)
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()
         page.on("response", on_response)
@@ -323,7 +324,7 @@ def fetch_aweme_post_via_page(
 def fetch_profile_html(session_path: Path, sec_uid: str) -> str:
     url = f"https://www.douyin.com/user/{sec_uid}"
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()
         try:

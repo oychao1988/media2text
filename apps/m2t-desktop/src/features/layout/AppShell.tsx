@@ -158,7 +158,7 @@ export function AppShell() {
             )}
           </div>
           <div className="left-daemon-wrap">
-            <DaemonCard />
+            <DaemonCard onSelectCreator={handleSelectCreator} />
           </div>
           <div className="left-user-wrap">
             <button

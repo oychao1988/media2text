@@ -122,3 +122,16 @@
 | 1 | [#156](https://github.com/oychao1988/media2text/issues/156) | （本 PR） | [m2t-desktop-config-ai-provider.md](./m2t-desktop-config-ai-provider.md) | `issue-156-m2t-desktop-config-ai-provider` |
 
 **并行提示**：#127 与 #128 可并行；#129/#130 可在 #126 后 mock API 并行；#132 建议在 #131 前或同 PR 联调；**#143** 建议在 #131/#132 合并后、#133 冒烟前完成 Phase A–D。
+
+### Desktop Runtime — 内嵌监控 + 统一状态（2026-06-05）
+
+规格：[desktop-runtime-design](../superpowers/specs/2026-06-05-desktop-runtime-design.md)
+
+**建议合并顺序**：#158 → #159 →（#160 ∥ #161）
+
+| 顺序 | GitHub | 规格正文 | 分支 |
+|------|--------|----------|------|
+| 1 | [#158](https://github.com/oychao1988/media2text/issues/158) | [desktop-runtime-pr1-supervisor-api.md](./desktop-runtime-pr1-supervisor-api.md) | `issue-158-desktop-runtime-pr1` |
+| 2 | [#159](https://github.com/oychao1988/media2text/issues/159) | [desktop-runtime-pr2-ws-frontend.md](./desktop-runtime-pr2-ws-frontend.md) | `issue-159-desktop-runtime-pr2` |
+| 3 | [#160](https://github.com/oychao1988/media2text/issues/160) | [desktop-runtime-pr3-daemon-ui.md](./desktop-runtime-pr3-daemon-ui.md) | `issue-160-desktop-runtime-pr3` |
+| 4 | [#161](https://github.com/oychao1988/media2text/issues/161) | [desktop-runtime-pr4-pipeline-api.md](./desktop-runtime-pr4-pipeline-api.md) | `issue-161-desktop-runtime-pr4` |

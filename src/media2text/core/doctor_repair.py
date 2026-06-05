@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import subprocess
 import sys
+import os
 from typing import Any
 
 from media2text.core.config import AppConfig
@@ -13,6 +14,7 @@ from media2text.core.doctor_checks import (
     _playwright_import_ok,
     build_doctor_report,
 )
+from media2text.core.playwright_env import ensure_playwright_browsers_path
 
 FIXABLE_CHECKS = frozenset(
     {"ffmpeg", "playwright", "playwright_browser", "streaming_stt_deepgram"}
@@ -20,7 +22,12 @@ FIXABLE_CHECKS = frozenset(
 BOOTSTRAP_REQUIRED = frozenset({"ffmpeg", "playwright_browser"})
 
 
-def _run_cmd(args: list[str], *, timeout: float = 600) -> tuple[bool, str]:
+def _run_cmd(
+    args: list[str],
+    *,
+    timeout: float = 600,
+    env: dict[str, str] | None = None,
+) -> tuple[bool, str]:
     try:
         proc = subprocess.run(
             args,
@@ -28,6 +35,7 @@ def _run_cmd(args: list[str], *, timeout: float = 600) -> tuple[bool, str]:
             text=True,
             timeout=timeout,
             check=False,
+            env=env,
         )
         if proc.returncode == 0:
             out = (proc.stdout or proc.stderr or "").strip()
@@ -48,9 +56,12 @@ def _pip_install(spec: str) -> tuple[bool, str]:
 
 
 def _playwright_install_chromium() -> tuple[bool, str]:
+    ensure_playwright_browsers_path()
+    env = os.environ.copy()
     return _run_cmd(
         [sys.executable, "-m", "playwright", "install", "chromium"],
         timeout=900,
+        env=env,
     )
 
 
@@ -73,6 +84,7 @@ def _deepgram_installed() -> bool:
 
 def repair_environment(cfg: AppConfig, conn) -> dict[str, Any]:
     """Attempt to fix auto-repairable checks; return actions + refreshed doctor report."""
+    ensure_playwright_browsers_path()
     actions: list[dict[str, Any]] = []
 
     if not _playwright_import_ok():

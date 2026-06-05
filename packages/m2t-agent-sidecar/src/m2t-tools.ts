@@ -38,8 +38,12 @@ export function createM2tTools(client: M2tApiClient, ctx: RuntimeContext) {
       }),
       async execute(_id, params) {
         const cid = params.creator_id ?? creatorId();
-        const q = cid ? `?creator=${encodeURIComponent(cid)}` : '';
-        return wrapExecute(() => client.request('GET', `/api/live/status${q}`))();
+        if (cid) {
+          return wrapExecute(() =>
+            client.request('GET', `/api/live/status?creator=${encodeURIComponent(cid)}`),
+          )();
+        }
+        return wrapExecute(() => client.request('GET', '/api/runtime'))();
       },
     }),
     defineTool({
@@ -115,7 +119,7 @@ export function createM2tTools(client: M2tApiClient, ctx: RuntimeContext) {
       description: '启动 monitor watch 守护进程',
       parameters: Type.Object({}),
       async execute() {
-        return wrapExecute(() => client.request('POST', '/api/daemon/start'))();
+        return wrapExecute(() => client.request('POST', '/api/runtime/start'))();
       },
     }),
     defineTool({
@@ -124,7 +128,43 @@ export function createM2tTools(client: M2tApiClient, ctx: RuntimeContext) {
       description: '停止 monitor watch 守护进程',
       parameters: Type.Object({}),
       async execute() {
-        return wrapExecute(() => client.request('POST', '/api/daemon/stop'))();
+        return wrapExecute(() => client.request('POST', '/api/runtime/stop'))();
+      },
+    }),
+    defineTool({
+      name: 'm2t_post_process_run',
+      label: 'Post Process Run',
+      description: '消化直播后处理队列',
+      parameters: Type.Object({
+        limit: Type.Optional(Type.Number({ description: '最多处理条数，默认 10' })),
+      }),
+      async execute(_id, params) {
+        return wrapExecute(() =>
+          client.request('POST', '/api/post-process/run', {
+            limit: params.limit ?? 10,
+          }),
+        )();
+      },
+    }),
+    defineTool({
+      name: 'm2t_pipeline_run',
+      label: 'Pipeline Run',
+      description: '异步入队博主作品 sync+download+transcribe 流水线',
+      parameters: Type.Object({
+        creator_id: Type.Optional(Type.String()),
+      }),
+      async execute(_id, params) {
+        const cid = params.creator_id ?? creatorId();
+        if (!cid) {
+          const err: ToolResultPayload = {
+            ok: false,
+            error: { code: 'MISSING_CREATOR', message: '未指定 creator_id' },
+          };
+          return wrapExecute(async () => err)();
+        }
+        return wrapExecute(() =>
+          client.request('POST', `/api/creators/${encodeURIComponent(cid)}/pipeline/run`),
+        )();
       },
     }),
     defineTool({
@@ -212,6 +252,8 @@ export function m2tToolNames(): string[] {
     'm2t_stop_recording',
     'm2t_daemon_start',
     'm2t_daemon_stop',
+    'm2t_post_process_run',
+    'm2t_pipeline_run',
     'm2t_read_transcript',
     'm2t_read_summary',
     'm2t_read_manifest',

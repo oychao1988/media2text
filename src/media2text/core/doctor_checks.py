@@ -9,6 +9,7 @@ from pathlib import Path
 from media2text.core.archive.health import is_index_stale, monitor_lock_pid
 from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
+from media2text.core.playwright_env import smoke_launch_chromium
 from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
 from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
 from media2text.core.cloud.aliyundrive import load_token
@@ -32,16 +33,8 @@ def _playwright_import_ok() -> bool:
 
 
 def _playwright_browser_ok() -> bool:
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError:
-        return False
-    try:
-        with sync_playwright() as p:
-            exe = p.chromium.executable_path
-            return bool(exe and Path(exe).exists())
-    except Exception:
-        return False
+    ok, _hint = smoke_launch_chromium()
+    return ok
 
 
 def build_doctor_report(cfg: AppConfig, conn) -> dict:

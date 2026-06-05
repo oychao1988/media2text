@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import threading
 import time
+from collections.abc import Callable
 
 import structlog
 
@@ -92,17 +94,32 @@ class MonitorWatcher:
             "platform_changed": platform_changed,
         }
 
+    def _run_daemon_locked(
+        self,
+        *,
+        creator_id: str | None = None,
+        on_live_tick: Callable[[], None] | None = None,
+        stop_event: threading.Event | None = None,
+    ) -> None:
+        scheduler = MonitorScheduler(self, self._cfg, on_live_tick=on_live_tick)
+        scheduler.start(creator_id=creator_id)
+        try:
+            if stop_event is None:
+                while True:
+                    time.sleep(3600)
+            else:
+                stop_event.wait()
+        finally:
+            try:
+                scheduler.stop()
+            except Exception as exc:
+                log.warning("monitor_scheduler_stop_failed", error=str(exc))
+
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):
-                scheduler = MonitorScheduler(self, self._cfg)
-                scheduler.start(creator_id=creator_id)
-                try:
-                    while True:
-                        time.sleep(3600)
-                finally:
-                    scheduler.stop()
+                self._run_daemon_locked(creator_id=creator_id)
         except LockError:
             log.error("monitor_watch_lock_held")
             raise

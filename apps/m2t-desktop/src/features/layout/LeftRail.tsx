@@ -1,5 +1,5 @@
 import type { Creator } from '../../lib/types';
-import { useDaemonRunning } from '../daemon/DaemonCard';
+import { useMonitorActive } from '../runtime/RuntimeContext';
 import { CreatorAvatar } from '../creators/CreatorAvatar';
 import { CreatorHoverPopover } from '../creators/CreatorHoverPopover';
 import { isCreatorLive } from '../creators/creatorUtils';
@@ -14,7 +14,7 @@ type Props = {
 
 export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props) {
   const { expandLeftPanel, setUserMenuOpen, userMenuOpen } = useLayoutStore();
-  const daemonRunning = useDaemonRunning();
+  const daemonRunning = useMonitorActive();
 
   return (
     <div className="left-rail rail" aria-label="折叠快捷栏">

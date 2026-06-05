@@ -7,6 +7,8 @@ from pathlib import Path
 from media2text.core.errors import ParseFailed
 from playwright.sync_api import sync_playwright
 
+from media2text.core.playwright_env import launch_chromium
+
 
 def flv_from_room_dict(room: dict) -> str | None:
     stream_url = room.get("stream_url") or {}
@@ -45,7 +47,7 @@ def resolve_stream_via_web_enter(
     enter_payload: dict | None = None
 
     with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
+        browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session))
         page = context.new_page()
 

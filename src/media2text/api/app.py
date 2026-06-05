@@ -18,20 +18,41 @@ from media2text.api.routes import (
     health,
     live,
     media,
+    monitor_tasks,
+    post_process,
+    runtime,
     sessions,
 )
+from media2text.api.services.runtime_health_loop import run_runtime_health_loop
 from media2text.api.services.state_event_drain import run_drain_loop
 from media2text.core.config import AppConfig
+from media2text.core.runtime.supervisor import MonitorSupervisor
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from media2text.core.playwright_env import ensure_playwright_browsers_path
+
+    ensure_playwright_browsers_path()
     cfg = AppConfig.load()
+    from media2text.core.logging import enable_monitor_log_sink
+
+    enable_monitor_log_sink(cfg.ensure_workspace())
+    supervisor = MonitorSupervisor()
+    app.state.supervisor = supervisor
+    # Mounted ``/api`` sub-app does not inherit parent ``app.state``.
+    api_app = getattr(app.state, "api_app", None)
+    if api_app is not None:
+        api_app.state.supervisor = supervisor
+    if cfg.desktop.auto_start_monitor:
+        supervisor.start(cfg)
     stop = asyncio.Event()
-    task = asyncio.create_task(run_drain_loop(cfg, stop))
+    drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
+    health_task = asyncio.create_task(run_runtime_health_loop(app, cfg, stop))
     yield
     stop.set()
-    await task
+    supervisor.stop(cfg)
+    await asyncio.gather(drain_task, health_task)
 
 
 def create_app() -> FastAPI:
@@ -41,12 +62,16 @@ def create_app() -> FastAPI:
     api.include_router(health.router)
     api.include_router(config.router)
     api.include_router(daemon.router)
+    api.include_router(runtime.router)
     api.include_router(creators.router)
     api.include_router(auth.router)
     api.include_router(sessions.router)
     api.include_router(media.router)
     api.include_router(live.router)
+    api.include_router(post_process.router)
+    api.include_router(monitor_tasks.router)
     api.include_router(chat.router)
     api.include_router(events.router)
+    app.state.api_app = api
     app.mount("/api", api)
     return app

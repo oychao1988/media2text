@@ -9,6 +9,7 @@ const API_PORT: u16 = 8765;
 const API_BASE_URL: &str = "http://127.0.0.1:8765";
 const HEALTH_URL: &str = "http://127.0.0.1:8765/api/health";
 const CONFIG_URL: &str = "http://127.0.0.1:8765/api/config";
+const RUNTIME_URL: &str = "http://127.0.0.1:8765/api/runtime";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -43,7 +44,7 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
             return Ok(());
         }
         eprintln!(
-            "[python-sidecar] API on :{API_PORT} is stale (missing provider api_key); restarting sidecar"
+            "[python-sidecar] API on :{API_PORT} is stale (missing /api/runtime or provider api_key); restarting sidecar"
         );
         try_kill_media2text_serve_on_port(API_PORT);
         thread::sleep(Duration::from_millis(500));
@@ -57,6 +58,8 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+
+    apply_playwright_env(&mut cmd);
 
     let mut child = cmd
         .spawn()
@@ -134,7 +137,14 @@ fn config_response_compatible(body: &serde_json::Value) -> bool {
     }
 }
 
+fn runtime_api_available(client: &reqwest::blocking::Client) -> bool {
+    matches!(client.get(RUNTIME_URL).send(), Ok(resp) if resp.status().is_success())
+}
+
 fn existing_api_compatible(client: &reqwest::blocking::Client) -> bool {
+    if !runtime_api_available(client) {
+        return false;
+    }
     match client.get(CONFIG_URL).send() {
         Ok(resp) if resp.status().is_success() => resp
             .json::<serde_json::Value>()
@@ -256,6 +266,45 @@ fn resolve_python_executable(project_root: &Path) -> Result<PathBuf, String> {
         "no Python executable found (expected {} or M2T_PYTHON)",
         project_root.join(".venv/bin/python").display()
     ))
+}
+
+fn playwright_path_untrusted(path: &str) -> bool {
+    let lowered = path.to_lowercase();
+    lowered.contains("cursor-sandbox-cache") || lowered.contains("/tmp/cursor-")
+}
+
+fn default_playwright_browsers_path() -> Option<PathBuf> {
+    let home = std::env::var("HOME")
+        .ok()
+        .or_else(|| std::env::var("USERPROFILE").ok())?;
+    #[cfg(target_os = "macos")]
+    {
+        return Some(PathBuf::from(home).join("Library/Caches/ms-playwright"));
+    }
+    #[cfg(target_os = "windows")]
+    {
+        return std::env::var("LOCALAPPDATA")
+            .ok()
+            .map(|local| PathBuf::from(local).join("ms-playwright"))
+            .or_else(|| Some(PathBuf::from(home).join("AppData/Local/ms-playwright")));
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        if let Ok(xdg) = std::env::var("XDG_CACHE_HOME") {
+            return Some(PathBuf::from(xdg).join("ms-playwright"));
+        }
+        return Some(PathBuf::from(home).join(".cache/ms-playwright"));
+    }
+}
+
+fn apply_playwright_env(cmd: &mut Command) {
+    let current = std::env::var("PLAYWRIGHT_BROWSERS_PATH").unwrap_or_default();
+    if !current.is_empty() && !playwright_path_untrusted(&current) {
+        return;
+    }
+    if let Some(path) = default_playwright_browsers_path() {
+        cmd.env("PLAYWRIGHT_BROWSERS_PATH", path);
+    }
 }
 
 #[cfg(test)]

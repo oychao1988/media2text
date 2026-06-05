@@ -1,7 +1,7 @@
 import os
 import sqlite3
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from media2text.core.platform.douyin.models import AwemeItem
@@ -1117,6 +1117,21 @@ class MonitorTaskRepo:
         self._conn.commit()
         return cur.rowcount == 1
 
+    def list_in_flight(self, *, limit: int = 50) -> list[MonitorTaskRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM monitor_tasks
+            WHERE status IN ('pending', 'running')
+            ORDER BY
+              CASE status WHEN 'running' THEN 0 ELSE 1 END,
+              priority ASC,
+              created_at ASC
+            LIMIT ?
+            """,
+            (limit,),
+        ).fetchall()
+        return [MonitorTaskRow(**dict(r)) for r in rows]
+
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
         rows = self._conn.execute(
@@ -1154,6 +1169,22 @@ class MonitorTaskRepo:
             """
         ).fetchall()
         return {str(r["status"]): int(r["n"]) for r in rows}
+
+    def count_failed_recent_24h(self) -> int:
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(hours=24)
+        ).isoformat()
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS n
+            FROM monitor_tasks
+            WHERE status = 'failed'
+              AND finished_at IS NOT NULL
+              AND finished_at >= ?
+            """,
+            (cutoff,),
+        ).fetchone()
+        return int(row["n"]) if row else 0
 
 
 class PipelineEventRepo:

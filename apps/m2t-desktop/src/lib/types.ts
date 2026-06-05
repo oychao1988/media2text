@@ -49,6 +49,47 @@ export type DaemonStatus = {
   log_path: string;
 };
 
+export type RuntimeHealth = 'stopped' | 'degraded' | 'healthy';
+
+export type RuntimeStatus = {
+  ok: boolean;
+  health: RuntimeHealth;
+  health_reasons: string[];
+  managed_by: 'embedded' | 'external' | 'none';
+  daemon: {
+    running: boolean;
+    pid: number | null;
+    lock_pid: number | null;
+    started_at: string | null;
+    last_tick_at: string | null;
+    tick_age_sec: number | null;
+    live_poll_interval_sec: number;
+  };
+  recordings: {
+    active_count: number;
+    items: ActiveRecording[];
+  };
+  queues: {
+    post_process: {
+      pending: number;
+      running: number;
+      max_workers: number;
+    };
+    monitor_tasks: {
+      pending: number;
+      running: number;
+      failed_total: number;
+      failed_recent_24h: number;
+      dlq: number;
+    };
+  };
+  observability: {
+    snapshots_stale_count: number;
+    monitored_creators: number;
+  };
+  log_path: string;
+};
+
 export type TranscriptSegment = {
   start: number;
   end: number;

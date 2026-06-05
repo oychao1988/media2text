@@ -98,6 +98,8 @@ def _dispatch_task(
         return _run_download(cfg, conn, task, notify=notify)
     if task.task_type == "sync_dynamic":
         return _run_sync_dynamic(cfg, conn, task, notify=notify)
+    if task.task_type == "pipeline_run":
+        return _run_pipeline_run(cfg, task)
     raise ValueError(f"unknown_monitor_task_type:{task.task_type}")
 
 
@@ -224,6 +226,12 @@ def _run_sync_dynamic(
     return {"dynamic": outcome}
 
 
+def _run_pipeline_run(cfg: AppConfig, task) -> dict[str, Any]:
+    from media2text.core.pipeline.runner import run_pipeline
+
+    return run_pipeline(cfg, creator_id=task.creator_id)
+
+
 def _emit_sync_notifications(
     creator,
     outcome: dict,
@@ -315,5 +323,5 @@ class MonitorExecutor:
             )
         return results
 
-    def shutdown(self, *, wait: bool = True) -> None:
-        self._executor.shutdown(wait=wait)
+    def shutdown(self, *, wait: bool = True, cancel_futures: bool = False) -> None:
+        self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)
