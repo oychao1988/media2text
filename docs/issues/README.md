@@ -131,6 +131,12 @@
 |------|--------|-----|----------|------|
 | 1–4 | [#158](https://github.com/oychao1988/media2text/issues/158)–[#161](https://github.com/oychao1988/media2text/issues/161)（已关闭） | [#162](https://github.com/oychao1988/media2text/pull/162) | [pr1](./desktop-runtime-pr1-supervisor-api.md) · [pr2](./desktop-runtime-pr2-ws-frontend.md) · [pr3](./desktop-runtime-pr3-daemon-ui.md) · [pr4](./desktop-runtime-pr4-pipeline-api.md) | `issue-159-desktop-runtime-pr2` |
 
+### m2t-desktop 历史列表媒体与云盘（2026-06-06）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#164](https://github.com/oychao1988/media2text/issues/164) | （本 PR） | [m2t-desktop-history-media-ops.md](./m2t-desktop-history-media-ops.md) | `issue-164-desktop-history-media-ops` |
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)

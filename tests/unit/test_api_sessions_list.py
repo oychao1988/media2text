@@ -51,6 +51,8 @@ def test_list_sessions_normalizes_paths_and_media_available(workspace) -> None:
 
     assert payload["ok"] is True
     session = payload["sessions"][0]
+    assert session["kind"] == "live"
+    assert session["item_id"] == sid
     assert session["media_path"] == "creators/sec_paths/live/20260604T100000Z.flv"
     assert session["media_available"] is True
     assert session["has_summary"] is True

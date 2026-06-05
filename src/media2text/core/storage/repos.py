@@ -253,12 +253,38 @@ class AwemeRepo:
         )
         self._conn.commit()
 
+    def get(self, aweme_id: str) -> AwemeRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM awemes WHERE aweme_id = ?",
+            (aweme_id,),
+        ).fetchone()
+        return AwemeRow(**dict(row)) if row else None
+
     def list_for_creator(self, creator_id: str) -> list[AwemeRow]:
         rows = self._conn.execute(
             "SELECT * FROM awemes WHERE creator_id = ? ORDER BY create_time DESC",
             (creator_id,),
         ).fetchall()
         return [AwemeRow(**dict(r)) for r in rows]
+
+    def clear_local_path(self, aweme_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE awemes SET local_path = NULL, updated_at = ?
+            WHERE aweme_id = ?
+            """,
+            (now, aweme_id),
+        )
+        self._conn.commit()
+
+    def delete(self, aweme_id: str) -> bool:
+        cur = self._conn.execute(
+            "DELETE FROM awemes WHERE aweme_id = ?",
+            (aweme_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
 
     def mark_transcribed(self, aweme_id: str, *, transcript_path: str) -> None:
         now = datetime.now(timezone.utc).isoformat()
@@ -572,6 +598,37 @@ class LiveSessionRepo:
             (creator_id,),
         ).fetchall()
         return [LiveSessionRow(**dict(r)) for r in rows]
+
+    def clear_local_path(self, session_id: str) -> None:
+        self._conn.execute(
+            """
+            UPDATE live_sessions
+            SET local_path = NULL, temp_path = NULL
+            WHERE id = ?
+            """,
+            (session_id,),
+        )
+        self._conn.commit()
+
+    def delete(self, session_id: str) -> bool:
+        self._conn.execute(
+            "DELETE FROM cloud_uploads WHERE session_id = ?",
+            (session_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM post_process_jobs WHERE session_id = ?",
+            (session_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM pipeline_events WHERE session_id = ?",
+            (session_id,),
+        )
+        cur = self._conn.execute(
+            "DELETE FROM live_sessions WHERE id = ?",
+            (session_id,),
+        )
+        self._conn.commit()
+        return cur.rowcount > 0
 
     def update_status(
         self,

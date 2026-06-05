@@ -1674,6 +1674,38 @@ body.resize-col-active * {
   flex-shrink: 0;
 }
 
+.session-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+  flex-shrink: 0;
+  max-width: 148px;
+}
+
+.session-row.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.session-action {
+  font-size: 10px;
+  padding: 2px 6px;
+  line-height: 1.4;
+}
+
+.session-action-danger {
+  color: #fca5a5;
+}
+
+.dot-vod {
+  background: #a78bfa;
+}
+
+.tag.kind {
+  color: #c4b5fd;
+}
+
 .tag {
   font-size: 10px;
   padding: 1px 6px;

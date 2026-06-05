@@ -105,8 +105,14 @@ export type TranscriptPayload = {
   markdown?: string;
 };
 
+export type HistoryKind = 'live' | 'vod';
+
 export type LiveSessionSummary = {
+  kind: HistoryKind;
+  item_id: string;
   session_id: string;
+  aweme_id: string | null;
+  title: string | null;
   creator_id: string;
   started_at: string | null;
   ended_at: string | null;
@@ -117,6 +123,9 @@ export type LiveSessionSummary = {
   pipeline_mode: string | null;
   transcribe_status: string | null;
   cloud_upload_status: string | null;
+  cloud_file_id: string | null;
+  cloud_relative_path: string | null;
+  cloud_available: boolean;
   has_transcript: boolean;
   has_summary: boolean;
   media_available: boolean;

@@ -7,6 +7,7 @@ import {
   sessionMediaMissing,
   sessionMediaPath,
   sessionPlaybackLabel,
+  sessionCloudAvailable,
 } from './sessionDisplay';
 
 type Props = {
@@ -124,8 +125,8 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
               <div className="video-placeholder">
                 <p>视频文件缺失</p>
                 <p className="video-placeholder-hint">
-                  {session.cloud_upload_status === 'uploaded'
-                    ? '本地文件已删除，可从云盘查看'
+                  {sessionCloudAvailable(session)
+                    ? '本地文件已删除，可在历史列表从云端下载'
                     : '录制路径存在但文件不可用，仍可查看转写与摘要'}
                 </p>
               </div>
