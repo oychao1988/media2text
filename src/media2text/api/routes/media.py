@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from media2text.api.deps import get_cfg
-from media2text.api.security import safe_workspace_path
+from media2text.api.security import safe_workspace_path, workspace_rel
 from media2text.core.config import AppConfig
 
 router = APIRouter(tags=["media"])
@@ -21,6 +21,8 @@ _EXT_MEDIA_TYPES = {
     ".md": "text/markdown; charset=utf-8",
     ".json": "application/json",
 }
+
+_GALLERY_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 
 
 def _content_type(path: Path) -> str:
@@ -57,6 +59,24 @@ def _parse_range_header(
     if start < 0 or end >= size or start > end:
         raise HTTPException(status_code=416, detail="range not satisfiable")
     return start, end
+
+
+@router.get("/media/gallery")
+def list_gallery_images(
+    path: str = Query(..., description="Workspace-relative gallery directory"),
+    cfg: AppConfig = Depends(get_cfg),
+) -> dict:
+    ws = cfg.ensure_workspace()
+    target = safe_workspace_path(ws, path)
+    if not target.is_dir():
+        raise HTTPException(status_code=404, detail="gallery not found")
+    images: list[str] = []
+    for child in sorted(target.iterdir(), key=lambda p: p.name):
+        if child.is_file() and child.suffix.lower() in _GALLERY_SUFFIXES:
+            rel = workspace_rel(ws, child)
+            if rel:
+                images.append(rel)
+    return {"ok": True, "path": path, "images": images}
 
 
 @router.get("/media")

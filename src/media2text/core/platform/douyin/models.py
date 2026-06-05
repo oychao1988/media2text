@@ -27,3 +27,5 @@ class AwemeItem:
     title: str | None
     create_time: int | None
     media_type: str = "video"
+    download_url: str | None = None
+    media_urls: list[str] | None = None

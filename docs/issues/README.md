@@ -143,6 +143,12 @@
 |------|--------|-----|------|------|
 | 1 | [#166](https://github.com/oychao1988/media2text/issues/166) | [#167](https://github.com/oychao1988/media2text/pull/167) | [m2t-desktop-history-ops-runtime-takeover.md](./m2t-desktop-history-ops-runtime-takeover.md) | `issue-166-desktop-history-ops-runtime` |
 
+### 抖音图文下载 + Desktop 作品下载 UX（2026-06-06）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#168](https://github.com/oychao1988/media2text/issues/168) | （本 PR） | [douyin-gallery-desktop-vod-ux.md](./douyin-gallery-desktop-vod-ux.md) | `issue-168-douyin-gallery-desktop-vod` |
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)

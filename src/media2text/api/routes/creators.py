@@ -14,6 +14,7 @@ from media2text.api.services import history_media as history_media_svc
 from media2text.api.services import live_snapshot as live_snapshot_svc
 from media2text.api.services import recording as recording_svc
 from media2text.api.services.events_hub import events_hub
+from media2text.api.services import creator_tasks as creator_tasks_svc
 from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
@@ -194,6 +195,7 @@ def sync_profile(
 @router.post("/{creator_id}/sync")
 def sync_catalog(
     creator_id: str,
+    enqueue_download: bool = Query(False, description="同步成功后加入作品下载队列"),
     cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
 ) -> dict:
@@ -203,7 +205,33 @@ def sync_catalog(
     if not result.get("ok"):
         code = 401 if result.get("auth_required") else 400
         raise HTTPException(status_code=code, detail=result)
+    if enqueue_download:
+        dl = creator_tasks_svc.enqueue_creator_download(conn, creator_id=creator_id)
+        result["download_queued"] = dl.get("queued", False)
+        if dl.get("task_id"):
+            result["download_task_id"] = dl["task_id"]
     return result
+
+
+@router.post("/{creator_id}/download", status_code=202)
+def post_enqueue_download(
+    creator_id: str,
+    conn=Depends(get_db),
+) -> dict:
+    result = creator_tasks_svc.enqueue_creator_download(conn, creator_id=creator_id)
+    if not result.get("ok"):
+        raise HTTPException(status_code=404, detail=result)
+    if not result.get("queued"):
+        raise HTTPException(
+            status_code=409,
+            detail={"ok": False, "error": "already_queued", "creator_id": creator_id},
+        )
+    return {
+        "ok": True,
+        "creator_id": creator_id,
+        "job_id": result["task_id"],
+        "status": "queued",
+    }
 
 
 @router.get("/{creator_id}/sessions")

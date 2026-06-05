@@ -17,7 +17,7 @@ type ManageDrawerProps = {
   syncBusy: string | null;
   onToggleMonitor: (c: Creator) => void;
   onSetAutoRecord: (value: 'inherit' | 'on' | 'off') => void;
-  onRunSync: (kind: 'profile' | 'catalog' | 'dynamics') => void;
+  onRunSync: (kind: 'profile' | 'catalog' | 'catalog-download' | 'download' | 'dynamics') => void;
   onRemove: () => void;
 };
 
@@ -152,6 +152,24 @@ function ManageCreatorDrawer({
                 >
                   同步作品
                 </button>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  id="detail-sync-catalog-download"
+                  disabled={syncBusy != null}
+                  onClick={() => onRunSync('catalog-download')}
+                >
+                  同步并下载
+                </button>
+                <button
+                  type="button"
+                  className="btn-ghost btn-sm"
+                  id="detail-download-pending"
+                  disabled={syncBusy != null}
+                  onClick={() => onRunSync('download')}
+                >
+                  下载作品
+                </button>
                 {creator.platform === 'bilibili' ? (
                   <button
                     type="button"
@@ -282,19 +300,33 @@ export function ManagePage() {
     }
   };
 
-  const runSync = async (kind: 'profile' | 'catalog' | 'dynamics') => {
+  const runSync = async (
+    kind: 'profile' | 'catalog' | 'catalog-download' | 'download' | 'dynamics',
+  ) => {
     if (!selected) return;
     const key = `${selected.id}:${kind}`;
     setSyncBusy(key);
     try {
-      if (kind === 'profile') await apiPost(`/api/creators/${selected.id}/sync-profile`);
-      else if (kind === 'catalog') await apiPost(`/api/creators/${selected.id}/sync`);
-      else await apiPost(`/api/creators/${selected.id}/sync-dynamics`);
-      showToast('同步完成', 'success');
+      if (kind === 'profile') {
+        await apiPost(`/api/creators/${selected.id}/sync-profile`);
+        showToast('资料同步完成', 'success');
+      } else if (kind === 'catalog') {
+        await apiPost(`/api/creators/${selected.id}/sync`);
+        showToast('作品列表已同步', 'success');
+      } else if (kind === 'catalog-download') {
+        await apiPost(`/api/creators/${selected.id}/sync?enqueue_download=true`);
+        showToast('同步完成，已加入下载队列（需开启监控）', 'success');
+      } else if (kind === 'download') {
+        await apiPost(`/api/creators/${selected.id}/download`);
+        showToast('已加入下载队列（需开启监控）', 'success');
+      } else {
+        await apiPost(`/api/creators/${selected.id}/sync-dynamics`);
+        showToast('动态同步完成', 'success');
+      }
       await load({ silent: true });
       await refreshSidebar();
     } catch {
-      showToast('同步失败', 'error');
+      showToast(kind === 'download' ? '加入下载队列失败' : '同步失败', 'error');
     } finally {
       setSyncBusy(null);
     }

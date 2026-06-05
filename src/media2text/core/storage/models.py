@@ -75,6 +75,8 @@ class AwemeRow:
     transcribe_status: str | None
     transcript_path: str | None
     updated_at: str
+    download_url: str | None = None
+    media_urls: str | None = None
 
 
 @dataclass

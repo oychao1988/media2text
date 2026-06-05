@@ -3,12 +3,53 @@
     {
       "aweme_id": "7123456789012345678",
       "desc": "test video one",
-      "create_time": 1710000000
+      "create_time": 1710000000,
+      "video": {
+        "play_addr": {
+          "url_list": ["https://example.com/video-one.mp4"]
+        }
+      }
     },
     {
       "aweme_id": "7123456789012345679",
       "desc": "test video two",
-      "create_time": 1710001000
+      "create_time": 1710001000,
+      "video": {
+        "bit_rate": [
+          {
+            "bit_rate": 1000000,
+            "play_addr": {
+              "width": 720,
+              "url_list": ["https://cdn.example.com/low.mp4?watermark=1"]
+            }
+          },
+          {
+            "bit_rate": 3000000,
+            "play_addr": {
+              "width": 1080,
+              "url_list": ["https://douyinvod.com/high.mp4?watermark=0"]
+            }
+          }
+        ],
+        "play_addr": {
+          "url_list": ["https://example.com/video-two-fallback.mp4"]
+        }
+      }
+    },
+    {
+      "aweme_id": "7578146088285768692",
+      "desc": "gallery note",
+      "create_time": 1710002000,
+      "aweme_type": 68,
+      "images": [
+        {
+          "display_image": {
+            "url_list": [
+              "https://example.com/gallery-1.jpeg?watermark=0"
+            ]
+          }
+        }
+      ]
     }
   ],
   "max_cursor": "cursor_page_2",

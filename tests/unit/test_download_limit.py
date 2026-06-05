@@ -30,7 +30,7 @@ def test_download_pending_respects_limit(tmp_path, monkeypatch) -> None:
 
     submitted: list[str] = []
 
-    def fake_download_one(*, adapter, aweme_id, dest, session_file):
+    def fake_download_one(*, adapter, aweme_id, dest, session_file, download_url=None, **kwargs):
         submitted.append(aweme_id)
         return aweme_id, True, str(dest)
 

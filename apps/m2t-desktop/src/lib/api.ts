@@ -149,3 +149,14 @@ export async function mediaUrl(relPath: string): Promise<string> {
   const q = new URLSearchParams({ path: relPath });
   return `${base}/api/media?${q.toString()}`;
 }
+
+export async function listGalleryImages(
+  relDir: string,
+): Promise<{ ok: boolean; images: string[] }> {
+  const base = await getApiBaseUrl();
+  const q = new URLSearchParams({ path: relDir });
+  return apiFetch<{ ok: boolean; images: string[] }>(
+    `/api/media/gallery?${q.toString()}`,
+    { silent: true },
+  );
+}

@@ -397,6 +397,17 @@ def _migrate_monitor_v2(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+_AWEME_COLUMNS = (("download_url", "TEXT"), ("media_urls", "TEXT"))
+
+
+def _migrate_awemes_v1(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(awemes)").fetchall()}
+    for name, col_type in _AWEME_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE awemes ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -411,6 +422,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_desktop_v1(conn)
         _migrate_desktop_v2(conn)
         _migrate_monitor_v1(conn)
+        _migrate_awemes_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

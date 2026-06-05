@@ -117,6 +117,7 @@ export type LiveSessionSummary = {
   started_at: string | null;
   ended_at: string | null;
   status: string | null;
+  media_type?: string | null;
   local_path: string | null;
   temp_path: string | null;
   media_path: string | null;

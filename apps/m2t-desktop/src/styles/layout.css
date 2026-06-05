@@ -3897,6 +3897,68 @@ body.confirm-open {
   object-position: center;
 }
 
+.gallery-viewer {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  box-sizing: border-box;
+}
+
+.gallery-image {
+  flex: 1;
+  min-height: 0;
+  max-width: 100%;
+  max-height: calc(100% - 88px);
+  object-fit: contain;
+  background: #111;
+  border-radius: 6px;
+}
+
+.gallery-controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.gallery-counter {
+  font-size: 12px;
+  color: var(--text-muted, #888);
+}
+
+.gallery-thumbs {
+  display: flex;
+  gap: 8px;
+  max-width: 100%;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.gallery-thumb {
+  flex: 0 0 auto;
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  overflow: hidden;
+  cursor: pointer;
+  background: #222;
+}
+
+.gallery-thumb.active {
+  border-color: var(--accent, #3b82f6);
+}
+
+.gallery-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
 .transcript-banner.warn {
   margin: 8px 12px 0;
   padding: 8px 10px;

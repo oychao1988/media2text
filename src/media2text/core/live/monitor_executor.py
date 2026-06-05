@@ -181,7 +181,11 @@ def _run_download(
             for row in awemes.list_downloaded_without_transcript(creator_id=task.creator_id):
                 if not row.local_path:
                     continue
+                if (row.media_type or "video") == "gallery":
+                    continue
                 media = Path(row.local_path)
+                if media.is_dir():
+                    continue
                 try:
                     result = backend.transcribe(media, language=cfg.transcribe.language)
                     json_path, _ = write_transcript_outputs(media, result)
