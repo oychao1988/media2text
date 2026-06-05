@@ -115,4 +115,10 @@
 |------|--------|-----|------|------|
 | 1 | [#154](https://github.com/oychao1988/media2text/issues/154) | [#155](https://github.com/oychao1988/media2text/pull/155) | [m2t-desktop-manage-creator-ux.md](./m2t-desktop-manage-creator-ux.md) | `issue-154-m2t-desktop-manage-creator-ux` |
 
+### m2t-desktop 系统配置 AI Provider（2026-06-05）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#156](https://github.com/oychao1988/media2text/issues/156) | （本 PR） | [m2t-desktop-config-ai-provider.md](./m2t-desktop-config-ai-provider.md) | `issue-156-m2t-desktop-config-ai-provider` |
+
 **并行提示**：#127 与 #128 可并行；#129/#130 可在 #126 后 mock API 并行；#132 建议在 #131 前或同 PR 联调；**#143** 建议在 #131/#132 合并后、#133 冒烟前完成 Phase A–D。

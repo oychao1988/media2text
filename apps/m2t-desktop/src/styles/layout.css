@@ -2066,8 +2066,54 @@ textarea.config-input.wide {
   align-items: center;
   gap: 10px;
   margin-bottom: 12px;
-  max-width: 640px;
+  flex-wrap: wrap;
+}
+
+.provider-detail-head .provider-detail-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.provider-detail-head #btn-provider-save {
+  margin-left: auto;
+}
+
+.secret-input-wrap {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
   width: 100%;
+  max-width: 100%;
+}
+
+.secret-input-wrap .secret-input {
+  flex: 1;
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+.secret-input-toggle {
+  flex-shrink: 0;
+  width: 40px;
+  border: 1px solid var(--border-subtle);
+  border-left: none;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.secret-input-toggle:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+}
+
+.secret-input-toggle:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 .provider-detail-head .btn-ghost {

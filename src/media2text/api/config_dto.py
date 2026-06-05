@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import urllib.error
 import urllib.request
 from typing import Any
@@ -10,7 +12,10 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from media2text.core.config import AppConfig, SummarizeLlmProviderConfig
+from media2text.core.env_file import read_env_var, reload_dotenv, upsert_env_var
 from media2text.core.errors import ConfigError
+
+_MASKED_SECRET = "***"
 
 
 class ConfigPatchDto(BaseModel):
@@ -68,46 +73,185 @@ def _mask_feishu(cfg: AppConfig) -> str | None:
     return None
 
 
-def _probe_provider_connected(p: SummarizeLlmProviderConfig) -> bool | None:
-    """Lightweight GET /models probe; None when key or base URL missing."""
+def _default_api_key_env(provider_name: str) -> str:
+    slug = re.sub(r"[^A-Za-z0-9]+", "_", (provider_name or "").strip().upper()).strip("_")
+    return f"M2T_LLM_{slug}_API_KEY" if slug else "M2T_LLM_API_KEY"
+
+
+def _primary_api_key_env(p: SummarizeLlmProviderConfig) -> str:
+    if p.api_key_envs:
+        return p.api_key_envs[0]
+    return _default_api_key_env(p.name)
+
+
+def _provider_api_key_envs(p: SummarizeLlmProviderConfig) -> list[str]:
+    if p.api_key_envs:
+        return list(p.api_key_envs)
+    return [_default_api_key_env(p.name)]
+
+
+def _provider_api_key(p: SummarizeLlmProviderConfig) -> str:
+    """Prefer `.env` on disk over stale ``os.environ`` (desktop saves update `.env`` first)."""
+    for env in _provider_api_key_envs(p):
+        api_key = read_env_var(env).strip()
+        if api_key:
+            os.environ[env] = api_key
+            return api_key
+        api_key = os.environ.get(env, "").strip()
+        if api_key:
+            return api_key
+    return ""
+
+
+def _probe_http_auth(
+    req: urllib.request.Request,
+    *,
+    timeout: float = 3,
+) -> bool | None:
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return 200 <= resp.status < 300
+    except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            return False
+        if exc.code >= 500:
+            return None
+        return False
+    except urllib.error.URLError:
+        return None
+    except TimeoutError:
+        return None
+    except Exception:
+        return None
+
+
+def _probe_provider_connected(
+    p: SummarizeLlmProviderConfig,
+    *,
+    api_key: str | None = None,
+) -> bool | None:
+    """Probe OpenAI-compatible endpoint auth; None when key/base URL missing or network unreachable."""
     base = (p.base_url or "").strip().rstrip("/")
     if not base:
         return None
-    api_key = ""
-    for env in p.api_key_envs:
-        api_key = os.environ.get(env, "").strip()
-        if api_key:
-            break
-    if not api_key:
+    resolved_key = (api_key or "").strip() or _provider_api_key(p)
+    if not resolved_key:
         return None
-    url = f"{base}/models"
-    req = urllib.request.Request(url, headers={"Authorization": f"Bearer {api_key}"})
-    try:
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
-            return 200 <= resp.status < 500
-    except urllib.error.HTTPError as exc:
-        return exc.code < 500
-    except Exception:
-        return False
+    headers = {
+        "Authorization": f"Bearer {resolved_key}",
+        "User-Agent": "media2text-config-probe/1.0",
+    }
+
+    model = next((m.strip() for m in p.models if m and m.strip()), "")
+    if model:
+        chat_url = f"{base}/chat/completions"
+        body = json.dumps(
+            {
+                "model": model,
+                "messages": [{"role": "user", "content": "."}],
+                "max_tokens": 1,
+            }
+        ).encode("utf-8")
+        chat_req = urllib.request.Request(
+            chat_url,
+            data=body,
+            headers={**headers, "Content-Type": "application/json"},
+            method="POST",
+        )
+        chat_result = _probe_http_auth(chat_req)
+        if chat_result is not None:
+            return chat_result
+
+    models_req = urllib.request.Request(
+        f"{base}/models",
+        headers=headers,
+        method="GET",
+    )
+    return _probe_http_auth(models_req)
 
 
-def _llm_providers_dto(cfg: AppConfig) -> list[dict[str, Any]]:
+def _llm_providers_dto(cfg: AppConfig, *, probe: bool = False) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     for p in cfg.summarize.llm.providers:
+        api_key = _provider_api_key(p)
+        configured = bool(api_key)
+        connected = (
+            _probe_provider_connected(p, api_key=api_key or None) if probe else None
+        )
         out.append(
             {
                 "name": p.name,
                 "base_url": p.base_url,
                 "api_key_envs": list(p.api_key_envs),
                 "models": list(p.models),
-                "configured": any(_env_configured(e) for e in p.api_key_envs),
-                "connected": _probe_provider_connected(p),
+                "configured": configured,
+                "connected": connected,
+                "api_key": api_key or None,
             }
         )
     return out
 
 
-def config_to_dto(cfg: AppConfig) -> dict[str, Any]:
+def _apply_llm_provider_api_key(p: SummarizeLlmProviderConfig, api_key: Any) -> None:
+    if api_key is None:
+        return
+    if not isinstance(api_key, str):
+        return
+    trimmed = api_key.strip()
+    if not trimmed or trimmed == _MASKED_SECRET:
+        return
+    env_name = _primary_api_key_env(p) if p.api_key_envs else _default_api_key_env(p.name)
+    p.api_key_envs = [env_name]
+    upsert_env_var(env_name, trimmed)
+    reload_dotenv(override=True)
+
+
+def _consolidate_provider_api_key_envs(p: SummarizeLlmProviderConfig) -> None:
+    """Keep a single env var name; prefer the first env that already has a value."""
+    envs = _provider_api_key_envs(p)
+    chosen = ""
+    for env in envs:
+        if read_env_var(env).strip() or os.environ.get(env, "").strip():
+            chosen = env
+            break
+    if not chosen:
+        chosen = envs[0] if envs else _default_api_key_env(p.name)
+    p.api_key_envs = [chosen]
+
+
+def _normalize_llm_provider_patch(raw: dict[str, Any]) -> SummarizeLlmProviderConfig:
+    api_key = raw.get("api_key")
+    cleaned = {
+        k: v
+        for k, v in raw.items()
+        if k not in ("configured", "connected", "api_key")
+    }
+    provider = SummarizeLlmProviderConfig.model_validate(cleaned)
+    if not provider.api_key_envs:
+        provider.api_key_envs = [_default_api_key_env(provider.name)]
+    _consolidate_provider_api_key_envs(provider)
+    _apply_llm_provider_api_key(provider, api_key)
+    return provider
+
+
+def _resolve_summarize_selection(cfg: AppConfig) -> tuple[str, str]:
+    """Fill null default_provider/default_model for desktop selects."""
+    providers = cfg.summarize.llm.providers
+    provider_id = (cfg.summarize.llm.default_provider or "").strip()
+    if not provider_id and providers:
+        provider_id = providers[0].name
+    prov = next((p for p in providers if p.name == provider_id), None)
+    if prov is None and providers:
+        prov = providers[0]
+        provider_id = prov.name
+    model = (cfg.summarize.llm.default_model or "").strip()
+    if not model and prov and prov.models:
+        model = next((m.strip() for m in prov.models if m and m.strip()), "")
+    return provider_id, model
+
+
+def config_to_dto(cfg: AppConfig, *, probe_providers: bool = False) -> dict[str, Any]:
+    summarize_provider_id, summarize_model = _resolve_summarize_selection(cfg)
     engine = cfg.transcribe.engine
     if engine == "deepgram":
         stt_model = cfg.transcribe.deepgram.model
@@ -137,8 +281,8 @@ def config_to_dto(cfg: AppConfig) -> dict[str, Any]:
         "flushIntervalSec": cfg.live.streaming_stt.flush_interval_sec,
         "offlineConfirmSec": cfg.live.offline_confirm_sec,
         "summarizeEnabled": cfg.summarize.enabled,
-        "summarizeProviderId": cfg.summarize.llm.default_provider,
-        "summarizeModel": cfg.summarize.llm.default_model,
+        "summarizeProviderId": summarize_provider_id,
+        "summarizeModel": summarize_model,
         "aliyunEnabled": cfg.aliyundrive.enabled,
         "aliyunRootFolder": cfg.aliyundrive.root_folder,
         "aliyunDeleteLocal": cfg.aliyundrive.delete_local_after_upload,
@@ -148,8 +292,8 @@ def config_to_dto(cfg: AppConfig) -> dict[str, Any]:
         "feishuConfigured": _feishu_configured(cfg),
         "deepgramConfigured": _env_configured(dg_env),
         "deepgramApiKeyEnv": dg_env,
-        "llmProviders": _llm_providers_dto(cfg),
-        "activeProviderId": cfg.summarize.llm.default_provider,
+        "llmProviders": _llm_providers_dto(cfg, probe=probe_providers),
+        "activeProviderId": summarize_provider_id,
         "agentModel": cfg.desktop.chat.default_model,
         "maxContextChars": cfg.desktop.chat.max_context_chars,
     }
@@ -256,10 +400,8 @@ def apply_dto_patch(cfg: AppConfig, patch: ConfigPatchDto) -> tuple[list[str], l
             cfg.transcribe.whisper.model = patch.streamingSttModel
 
     if patch.llmProviders is not None:
-        from media2text.core.config import SummarizeLlmProviderConfig
-
         cfg.summarize.llm.providers = [
-            SummarizeLlmProviderConfig.model_validate(p) for p in patch.llmProviders
+            _normalize_llm_provider_patch(dict(p)) for p in patch.llmProviders
         ]
     if patch.activeProviderId is not None:
         cfg.summarize.llm.default_provider = patch.activeProviderId

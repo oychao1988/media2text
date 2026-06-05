@@ -1,10 +1,4 @@
-import {
-  firstConfiguredModel,
-  parsePiEventLine,
-  type LlmProfile,
-  type PiEvent,
-  type PiUserMessagePayload,
-} from '@m2t/shared';
+import { parsePiEventLine, type LlmProfile, type PiEvent, type PiUserMessagePayload } from '@m2t/shared';
 import { apiGet, getApiBaseUrl } from '../../lib/api';
 import type { ConfigDto, LlmProvider } from '../../lib/types';
 
@@ -17,6 +11,30 @@ function isTauri(): boolean {
 }
 
 export type AgentSidecarEnv = Record<string, string>;
+
+/** @internal exported for unit tests */
+export function buildLlmKeysFromProviders(providers: LlmProvider[]): Record<string, string> {
+  const keys: Record<string, string> = {};
+  for (const p of providers) {
+    const key = p.api_key?.trim();
+    if (key) keys[p.name] = key;
+  }
+  return keys;
+}
+
+/** Mirror .env vars so agent sidecar can resolve keys without reading project files. */
+export function buildProviderEnvVars(providers: LlmProvider[]): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const p of providers) {
+    const key = p.api_key?.trim();
+    if (!key) continue;
+    for (const envName of p.api_key_envs ?? []) {
+      const name = envName.trim();
+      if (name) env[name] = key;
+    }
+  }
+  return env;
+}
 
 function providersToProfiles(providers: LlmProvider[]): LlmProfile[] {
   return providers.map((p) => {
@@ -52,7 +70,9 @@ export async function buildAgentSidecarEnv(ctx: AgentContext = {}): Promise<Agen
     config = null;
   }
 
-  const profiles = config ? providersToProfiles(config.llmProviders) : [];
+  const providers = config?.llmProviders ?? [];
+  const profiles = providers.length ? providersToProfiles(providers) : [];
+  const llmKeys = buildLlmKeysFromProviders(providers);
   const env: AgentSidecarEnv = {
     M2T_AGENT_SIDECAR_VERSION,
     M2T_API_BASE_URL: await getApiBaseUrl(),
@@ -61,18 +81,10 @@ export async function buildAgentSidecarEnv(ctx: AgentContext = {}): Promise<Agen
     M2T_SESSION_ID: ctx.sessionId ?? '',
     M2T_THREAD_ID: ctx.threadId ?? '',
     M2T_LLM_PROFILES: JSON.stringify(profiles),
-    M2T_LLM_KEYS: JSON.stringify({}),
+    M2T_LLM_KEYS: JSON.stringify(llmKeys),
     M2T_LLM_DEFAULT_PROVIDER_ID: config?.activeProviderId ?? '',
+    ...buildProviderEnvVars(providers),
   };
-
-  const defaultProfile =
-    profiles.find((p) => p.id === config?.activeProviderId) ?? profiles[0];
-  if (defaultProfile) {
-    const modelId = firstConfiguredModel(defaultProfile);
-    if (modelId) {
-      env.OPENAI_API_KEY = env.OPENAI_API_KEY ?? '';
-    }
-  }
 
   if (isTauri()) {
     const { resolveResource } = await import('@tauri-apps/api/path');
@@ -267,6 +279,9 @@ export async function startAgentSidecar(
         clearTimeout(rt.recoverTimer);
         rt.recoverTimer = undefined;
       }
+      // React Strict Mode remounts immediately; defer stop to avoid EPIPE mid-handshake.
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      if (rt.subscriberCount > 0) return;
       await invokeStop();
     }
   };

@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ConfigAiPanel, type ConfigAiPanelHandle } from './ConfigAiPanel';
+import { ConfigAiPanel, type ConfigAiPanelHandle, llmProvidersForPatch } from './ConfigAiPanel';
 import { requestAgentReload } from '../agent/agentSidecar';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
 import { showToast } from '../../lib/toast';
-import type { AuthPlatformStatus, ConfigDto } from '../../lib/types';
+import type { AuthPlatformStatus, ConfigDto, LlmProvider } from '../../lib/types';
 import { writeStoredTheme, type ThemeMode } from '../../lib/theme';
 import { useDaemonActions } from '../daemon/DaemonCard';
 
@@ -90,6 +90,32 @@ function PlatformAuthStatus({
   );
 }
 
+function normalizeConfigDto(cfg: ConfigDto): ConfigDto {
+  const providers = cfg.llmProviders ?? [];
+  const providerId =
+    cfg.summarizeProviderId?.trim() ||
+    cfg.activeProviderId?.trim() ||
+    providers[0]?.name ||
+    '';
+  const provider =
+    providers.find((p) => p.name === providerId) ?? providers[0];
+  const resolvedProviderId = provider?.name ?? providerId;
+  const models = provider?.models ?? [];
+  const model =
+    (cfg.summarizeModel?.trim() && models.includes(cfg.summarizeModel.trim())
+      ? cfg.summarizeModel.trim()
+      : '') ||
+    models[0] ||
+    cfg.summarizeModel?.trim() ||
+    '';
+  return {
+    ...cfg,
+    summarizeProviderId: resolvedProviderId,
+    summarizeModel: model,
+    activeProviderId: cfg.activeProviderId?.trim() || resolvedProviderId,
+  };
+}
+
 export function ConfigForm() {
   const [segment, setSegment] = useState<Segment>('user');
   const [saved, setSaved] = useState<ConfigDto | null>(null);
@@ -109,8 +135,8 @@ export function ConfigForm() {
       apiGet<{ ok: boolean; config: ConfigDto }>('/api/config', true),
       apiGet<{ ok: boolean; platforms: Record<string, AuthPlatformStatus> }>('/api/auth/status', true),
     ]);
-    setSaved(cfgRes.config);
-    setDraft(cfgRes.config);
+    setSaved(normalizeConfigDto(cfgRes.config));
+    setDraft(normalizeConfigDto(cfgRes.config));
     setAuth(authRes.platforms ?? {});
   }, []);
 
@@ -141,6 +167,60 @@ export function ConfigForm() {
     }
   };
 
+  const applyConfigResponse = async (res: {
+    ok: boolean;
+    config: ConfigDto;
+    requires_daemon_restart?: string[];
+    requires_agent_reload?: string[];
+  }) => {
+    setSaved(normalizeConfigDto(res.config));
+    setDraft(normalizeConfigDto(res.config));
+    if (res.requires_daemon_restart?.length) {
+      showToast('部分配置需重启守护进程后生效', 'info', 6000);
+      if (window.confirm('是否立即重启守护进程？')) void restartDaemon();
+    }
+    if (res.requires_agent_reload?.length) {
+      showToast('Agent 配置已更新，当前轮次结束后将重载', 'info');
+      requestAgentReload();
+    }
+  };
+
+  const providerConnLabel = (connected: boolean | null | undefined) => {
+    if (connected === true) return '已连通';
+    if (connected === false) return '未连通';
+    return '未检测';
+  };
+
+  const saveLlmProviders = async () => {
+    if (!draft) return;
+    setSaving(true);
+    setFieldErrors(new Set());
+    try {
+      const res = await apiPatch<{
+        ok: boolean;
+        config: ConfigDto;
+        requires_daemon_restart?: string[];
+        requires_agent_reload?: string[];
+      }>('/api/config', {
+        llmProviders: llmProvidersForPatch(draft.llmProviders),
+        activeProviderId: draft.activeProviderId,
+        summarizeProviderId: draft.summarizeProviderId,
+      });
+      await applyConfigResponse(res);
+      const statuses = res.config.llmProviders
+        .map((p) => `${p.name}: ${providerConnLabel(p.connected)}`)
+        .join(' · ');
+      showToast(`Provider 已保存（${statuses}）`, 'success', 7000);
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 400) {
+        setFieldErrors(new Set(['llmProviders']));
+      }
+      showToast('Provider 保存失败', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const save = async () => {
     if (!draft || !saved || !dirty) return;
     setSaving(true);
@@ -149,6 +229,9 @@ export function ConfigForm() {
     (Object.keys(draft) as (keyof ConfigDto)[]).forEach((k) => {
       if (draft[k] !== saved[k]) (body as Record<string, unknown>)[k] = draft[k];
     });
+    if (body.llmProviders) {
+      body.llmProviders = llmProvidersForPatch(body.llmProviders as LlmProvider[]) as ConfigDto['llmProviders'];
+    }
     try {
       const res = await apiPatch<{
         ok: boolean;
@@ -156,17 +239,8 @@ export function ConfigForm() {
         requires_daemon_restart?: string[];
         requires_agent_reload?: string[];
       }>('/api/config', body);
-      setSaved(res.config);
-      setDraft(res.config);
+      await applyConfigResponse(res);
       showToast('配置已保存', 'success');
-      if (res.requires_daemon_restart?.length) {
-        showToast('部分配置需重启守护进程后生效', 'info', 6000);
-        if (window.confirm('是否立即重启守护进程？')) void restartDaemon();
-      }
-      if (res.requires_agent_reload?.length) {
-        showToast('Agent 配置已更新，当前轮次结束后将重载', 'info');
-        requestAgentReload();
-      }
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         setFieldErrors(new Set(Object.keys(body)));
@@ -202,9 +276,26 @@ export function ConfigForm() {
 
   const summarizeModels = useMemo(() => {
     if (!draft) return [];
-    const p = draft.llmProviders.find((x) => x.name === draft.summarizeProviderId);
-    return p?.models ?? [];
+    const provider =
+      draft.llmProviders.find((x) => x.name === draft.summarizeProviderId) ??
+      draft.llmProviders[0];
+    const models = provider?.models ?? [];
+    const current = draft.summarizeModel?.trim();
+    if (current && !models.includes(current)) {
+      return [current, ...models];
+    }
+    return models;
   }, [draft]);
+
+  const patchSummarizeProvider = (providerId: string) => {
+    setDraft((d) => {
+      if (!d) return d;
+      const provider =
+        d.llmProviders.find((p) => p.name === providerId) ?? d.llmProviders[0];
+      const nextModel = provider?.models?.[0] ?? d.summarizeModel ?? '';
+      return { ...d, summarizeProviderId: providerId, summarizeModel: nextModel };
+    });
+  };
 
   const agentModelOptions = useMemo(() => {
     if (!draft) return [];
@@ -631,8 +722,9 @@ export function ConfigForm() {
                     <select
                       id="cfg-summarize-provider"
                       className="config-select"
-                      value={draft.summarizeProviderId}
-                      onChange={(e) => patchDraft('summarizeProviderId', e.target.value)}
+                      value={draft.summarizeProviderId || draft.llmProviders[0]?.name || ''}
+                      onChange={(e) => patchSummarizeProvider(e.target.value)}
+                      disabled={draft.llmProviders.length === 0}
                     >
                       {draft.llmProviders.map((p) => (
                         <option key={p.name} value={p.name}>
@@ -648,8 +740,9 @@ export function ConfigForm() {
                     <select
                       id="cfg-summarize-model-live"
                       className="config-select"
-                      value={draft.summarizeModel}
+                      value={draft.summarizeModel || summarizeModels[0] || ''}
                       onChange={(e) => patchDraft('summarizeModel', e.target.value)}
+                      disabled={summarizeModels.length === 0}
                     >
                       {summarizeModels.map((m) => (
                         <option key={m} value={m}>
@@ -759,7 +852,10 @@ export function ConfigForm() {
               <ConfigAiPanel
                 ref={aiPanelRef}
                 draft={draft}
+                saving={saving}
+                onRefresh={load}
                 onEditingChange={setAiProviderEditing}
+                onSaveProvider={async () => saveLlmProviders()}
                 onChange={(providers, activeId) => {
                   patchDraft('llmProviders', providers);
                   if (activeId != null) {

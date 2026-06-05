@@ -95,6 +95,8 @@ export type LlmProvider = {
   api_key_envs: string[];
   models: string[];
   configured: boolean;
+  /** Plaintext key for desktop config UI (loopback only). */
+  api_key?: string | null;
   /** API reachability from GET /models probe; null = not tested (no key). */
   connected?: boolean | null;
 };

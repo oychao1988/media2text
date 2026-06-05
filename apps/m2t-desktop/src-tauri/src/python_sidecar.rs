@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 const API_PORT: u16 = 8765;
 const API_BASE_URL: &str = "http://127.0.0.1:8765";
 const HEALTH_URL: &str = "http://127.0.0.1:8765/api/health";
+const CONFIG_URL: &str = "http://127.0.0.1:8765/api/config";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 
@@ -32,6 +33,19 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
 
     if guard.child.is_some() {
         return wait_for_health();
+    }
+
+    // Reuse manual `media2text serve` only when it exposes desktop config secrets.
+    if wait_for_health().is_ok() {
+        let client = blocking_http_client()?;
+        if existing_api_compatible(&client) {
+            return Ok(());
+        }
+        eprintln!(
+            "[python-sidecar] API on :{API_PORT} is stale (missing provider api_key); restarting sidecar"
+        );
+        try_kill_media2text_serve_on_port(API_PORT);
+        thread::sleep(Duration::from_millis(500));
     }
 
     let project_root = resolve_project_root()?;
@@ -90,11 +104,66 @@ fn reap_dead_child(inner: &mut PythonSidecarInner) {
     }
 }
 
-fn wait_for_health() -> Result<(), String> {
-    let client = reqwest::blocking::Client::builder()
+fn blocking_http_client() -> Result<reqwest::blocking::Client, String> {
+    reqwest::blocking::Client::builder()
         .timeout(Duration::from_secs(2))
         .build()
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())
+}
+
+fn existing_api_compatible(client: &reqwest::blocking::Client) -> bool {
+    match client.get(CONFIG_URL).send() {
+        Ok(resp) if resp.status().is_success() => {
+            let Ok(body) = resp.json::<serde_json::Value>() else {
+                return false;
+            };
+            match body
+                .get("config")
+                .and_then(|c| c.get("llmProviders"))
+                .and_then(|p| p.as_array())
+            {
+                None => true,
+                Some(arr) if arr.is_empty() => true,
+                Some(arr) => arr
+                    .first()
+                    .and_then(|prov| prov.get("api_key"))
+                    .is_some(),
+            }
+        }
+        _ => false,
+    }
+}
+
+fn try_kill_media2text_serve_on_port(port: u16) {
+    #[cfg(unix)]
+    {
+        let Ok(output) = Command::new("lsof")
+            .args(["-ti", &format!("tcp:{port}")])
+            .output()
+        else {
+            return;
+        };
+        let pids = String::from_utf8_lossy(&output.stdout);
+        for pid_text in pids.split_whitespace() {
+            let Ok(pid) = pid_text.parse::<i32>() else {
+                continue;
+            };
+            let Ok(ps_out) = Command::new("ps")
+                .args(["-p", &pid.to_string(), "-o", "command="])
+                .output()
+            else {
+                continue;
+            };
+            let cmdline = String::from_utf8_lossy(&ps_out.stdout);
+            if cmdline.contains("media2text") && cmdline.contains("serve") {
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+        }
+    }
+}
+
+fn wait_for_health() -> Result<(), String> {
+    let client = blocking_http_client()?;
 
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     let mut last_error = String::from("sidecar not ready");

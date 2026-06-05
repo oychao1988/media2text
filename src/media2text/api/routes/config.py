@@ -26,7 +26,8 @@ def patch_config(
         cfg.save()
     except (ConfigError, ValidationError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    out: dict = {"ok": True, "config": config_to_dto(cfg)}
+    probe = body.llmProviders is not None
+    out: dict = {"ok": True, "config": config_to_dto(cfg, probe_providers=probe)}
     if daemon_restart:
         out["requires_daemon_restart"] = daemon_restart
     if agent_reload:

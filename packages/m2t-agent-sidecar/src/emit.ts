@@ -1,6 +1,19 @@
 import type { ToolResultPayload, TurnPhaseKind } from '@m2t/shared';
 
+let stdoutErrorHooked = false;
+
+/** Tauri / start-sidecar may close the read end during React Strict Mode remount. */
+function ensureStdoutErrorHook(): void {
+  if (stdoutErrorHooked) return;
+  stdoutErrorHooked = true;
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') return;
+    throw err;
+  });
+}
+
 export function emit(event: { type: string; payload: unknown }): void {
+  ensureStdoutErrorHook();
   process.stdout.write(`${JSON.stringify(event)}\n`);
 }
 

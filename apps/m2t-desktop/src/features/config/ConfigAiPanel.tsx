@@ -2,6 +2,17 @@ import { forwardRef, useImperativeHandle, useState } from 'react';
 import { showToast } from '../../lib/toast';
 import type { ConfigDto, LlmProvider } from '../../lib/types';
 
+export function llmProvidersForPatch(providers: LlmProvider[]): Record<string, unknown>[] {
+  return providers.map((p) => {
+    const { configured, connected, ...rest } = p;
+    const out: Record<string, unknown> = { ...rest };
+    if (p.api_key?.trim()) {
+      out.api_key = p.api_key.trim();
+    }
+    return out;
+  });
+}
+
 function providerConnStatus(connected: boolean | null | undefined): {
   label: string;
   className: string;
@@ -28,18 +39,44 @@ type Props = {
   draft: ConfigDto;
   onChange: (providers: LlmProvider[], activeProviderId?: string) => void;
   onEditingChange?: (editing: boolean) => void;
+  onSaveProvider?: (index: number) => Promise<void>;
+  onRefresh?: () => Promise<void>;
+  saving?: boolean;
 };
 
 export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function ConfigAiPanel(
-  { draft, onChange, onEditingChange },
+  { draft, onChange, onEditingChange, onSaveProvider, onRefresh, saving = false },
   ref,
 ) {
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const providers = draft.llmProviders;
 
-  const setEditing = (index: number | null) => {
+  const openEdit = async (index: number) => {
+    const target = providers[index];
+    const needsKeyRefresh = Boolean(target?.configured && !target?.api_key?.trim());
+    if (onRefresh && needsKeyRefresh) {
+      try {
+        await onRefresh();
+      } catch {
+        showToast('刷新 Provider 配置失败', 'error');
+      }
+    }
     setEditingIndex(index);
-    onEditingChange?.(index != null);
+    onEditingChange?.(true);
+  };
+
+  const openNewEdit = (index: number) => {
+    setEditingIndex(index);
+    onEditingChange?.(true);
+  };
+
+  const setEditing = (index: number | null) => {
+    if (index != null) {
+      void openEdit(index);
+      return;
+    }
+    setEditingIndex(null);
+    onEditingChange?.(false);
   };
 
   const addProvider = () => {
@@ -50,10 +87,11 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
       models: [],
       configured: false,
       connected: null,
+      api_key: null,
     };
     const list = [...providers, next];
     onChange(list);
-    setEditing(list.length - 1);
+    openNewEdit(list.length - 1);
   };
 
   useImperativeHandle(ref, () => ({ addProvider }), [providers.length]);
@@ -63,7 +101,13 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
     if (!src) return;
     onChange([
       ...providers,
-      { ...src, name: `${src.name}_copy`, configured: false, connected: null },
+      {
+        ...src,
+        name: `${src.name}_copy`,
+        configured: false,
+        connected: null,
+        api_key: null,
+      },
     ]);
   };
 
@@ -79,6 +123,12 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
     onChange(list, active || undefined);
     setEditing(null);
     showToast(`已删除 Provider「${removed ?? ''}」`, 'success');
+  };
+
+  const handleSaveProvider = async () => {
+    if (editingIndex == null || !onSaveProvider) return;
+    await onSaveProvider(editingIndex);
+    setEditing(null);
   };
 
   const editing = editingIndex != null ? providers[editingIndex] : null;
@@ -97,59 +147,59 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
             providers.map((p, pi) => {
               const conn = providerConnStatus(p.connected);
               return (
-              <article key={`${p.name}-${pi}`} className="provider-row" data-provider-index={pi}>
-                <span className="provider-row-drag" aria-hidden="true" title="排序（暂未实现）">
-                  ⋮⋮
-                </span>
-                <div className="provider-row-icon" aria-hidden="true">
-                  {providerInitials(p.name)}
-                </div>
-                <div className="provider-row-body">
-                  <div className="provider-row-name">{p.name || '未命名'}</div>
-                  <div className="provider-row-url">{p.base_url || '未配置 Base URL'}</div>
-                </div>
-                <span
-                  className={`provider-row-status ${conn.className}`}
-                  title="API 连通性（GET /models 探测）"
-                >
-                  {conn.label}
-                </span>
-                <div className="provider-row-actions">
-                  <button
-                    type="button"
-                    className="provider-icon-btn btn-edit-provider"
-                    title="编辑"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditing(pi);
-                    }}
+                <article key={`${p.name}-${pi}`} className="provider-row" data-provider-index={pi}>
+                  <span className="provider-row-drag" aria-hidden="true" title="排序（暂未实现）">
+                    ⋮⋮
+                  </span>
+                  <div className="provider-row-icon" aria-hidden="true">
+                    {providerInitials(p.name)}
+                  </div>
+                  <div className="provider-row-body">
+                    <div className="provider-row-name">{p.name || '未命名'}</div>
+                    <div className="provider-row-url">{p.base_url || '未配置 Base URL'}</div>
+                  </div>
+                  <span
+                    className={`provider-row-status ${conn.className}`}
+                    title="API 连通性（GET /models 探测）"
                   >
-                    ✎
-                  </button>
-                  <button
-                    type="button"
-                    className="provider-icon-btn btn-copy-provider"
-                    title="复制"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      copyProvider(pi);
-                    }}
-                  >
-                    ⧉
-                  </button>
-                  <button
-                    type="button"
-                    className="provider-icon-btn btn-remove-provider"
-                    title="删除"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      removeProvider(pi);
-                    }}
-                  >
-                    🗑
-                  </button>
-                </div>
-              </article>
+                    {conn.label}
+                  </span>
+                  <div className="provider-row-actions">
+                    <button
+                      type="button"
+                      className="provider-icon-btn btn-edit-provider"
+                      title="编辑"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditing(pi);
+                      }}
+                    >
+                      ✎
+                    </button>
+                    <button
+                      type="button"
+                      className="provider-icon-btn btn-copy-provider"
+                      title="复制"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        copyProvider(pi);
+                      }}
+                    >
+                      ⧉
+                    </button>
+                    <button
+                      type="button"
+                      className="provider-icon-btn btn-remove-provider"
+                      title="删除"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        removeProvider(pi);
+                      }}
+                    >
+                      🗑
+                    </button>
+                  </div>
+                </article>
               );
             })
           )}
@@ -170,6 +220,17 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
               <span className="provider-detail-title" id="provider-detail-title">
                 编辑 · {editing.name || '未命名'}
               </span>
+              {onSaveProvider ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  id="btn-provider-save"
+                  disabled={saving}
+                  onClick={() => void handleSaveProvider()}
+                >
+                  {saving ? '保存中…' : '保存'}
+                </button>
+              ) : null}
             </div>
             <ProviderDetailForm
               provider={editing}
@@ -195,7 +256,10 @@ function ProviderDetailForm({
   isDefault: boolean;
   onChange: (p: LlmProvider, makeDefault: boolean) => void;
 }) {
+  const [showApiKey, setShowApiKey] = useState(false);
   const models = provider.models.length ? provider.models : [''];
+  const apiKeyValue = provider.api_key ?? '';
+  const apiKeyMissing = provider.configured && !apiKeyValue.trim();
 
   const setModels = (next: string[]) => {
     onChange({ ...provider, models: next.map((m) => m.trim()).filter(Boolean) }, isDefault);
@@ -229,30 +293,39 @@ function ProviderDetailForm({
         </div>
       </div>
       <div className="field-row">
-        <label htmlFor="provider-api-envs">API Key 环境变量</label>
+        <label htmlFor="provider-api-key">API Key</label>
         <div className="field-control">
-          <input
-            id="provider-api-envs"
-            type="text"
-            className="config-input wide"
-            placeholder="NVIDIA_API_KEY, OPENAI_API_KEY"
-            value={provider.api_key_envs.join(', ')}
-            onChange={(e) =>
-              onChange(
-                {
-                  ...provider,
-                  api_key_envs: e.target.value
-                    .split(/[,;\s]+/)
-                    .map((s) => s.trim())
-                    .filter(Boolean),
-                },
-                isDefault,
-              )
-            }
-          />
+          <div className="secret-input-wrap">
+            <input
+              id="provider-api-key"
+              type={showApiKey ? 'text' : 'password'}
+              className="config-input wide secret-input"
+              placeholder={provider.configured ? '留空表示不修改已保存的 Key' : '输入 API Key'}
+              autoComplete="off"
+              value={apiKeyValue}
+              onChange={(e) =>
+                onChange({ ...provider, api_key: e.target.value || null }, isDefault)
+              }
+            />
+            <button
+              type="button"
+              className="secret-input-toggle"
+              aria-label={showApiKey ? '隐藏 API Key' : '显示 API Key'}
+              aria-pressed={showApiKey}
+              onClick={() => setShowApiKey((v) => !v)}
+            >
+              {showApiKey ? '🙈' : '👁'}
+            </button>
+          </div>
+          {apiKeyMissing ? (
+            <p className="hint warn-text">
+              已配置 Key 但未能从 API 读取。请完全退出并重新打开桌面端，或手动重启{' '}
+              <code>media2text serve --port 8765</code>。
+            </p>
+          ) : null}
         </div>
       </div>
-      <p className="hint">在 `.env` 或系统环境中配置上述变量名；保存后需重载 Agent。</p>
+      <p className="hint">保存时将写入项目 `.env` 并自动探测连通性；保存后需重载 Agent。</p>
       <div className="toggle-row">
         <span>设为默认 Provider</span>
         <button
