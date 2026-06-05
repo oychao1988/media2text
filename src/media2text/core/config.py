@@ -51,6 +51,7 @@ class MonitorConfig(BaseModel):
     profile_stale_days: int = 7
     executor_max_parallel: int = 1
     stale_running_sec: int = 3600
+    task_max_retries: int = 3
 
 
 class StreamingSttConfig(BaseModel):

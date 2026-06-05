@@ -13,7 +13,11 @@ from media2text.core.archive.health import monitor_lock_pid
 from media2text.core.process_lock import clear_stale_workspace_lock
 from media2text.core.config import AppConfig
 from media2text.core.live.post_process_pool import resolve_post_process_workers
-from media2text.core.storage.repos import LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import (
+    LiveSessionRepo,
+    MonitorTaskRepo,
+    PostProcessJobRepo,
+)
 from media2text.core.workspace import open_db
 
 LOG_NAME = "monitor-watch.log"
@@ -37,9 +41,11 @@ def daemon_status(cfg: AppConfig) -> dict:
     try:
         jobs = PostProcessJobRepo(conn)
         counts = jobs.count_by_status()
+        task_counts = MonitorTaskRepo(conn).count_by_status()
         active = LiveSessionRepo(conn).list_active()
     finally:
         conn.close()
+    failed_tasks = task_counts.get("failed", 0)
     return {
         "running": running,
         "pid": pid if running else None,
@@ -49,6 +55,12 @@ def daemon_status(cfg: AppConfig) -> dict:
             "max_workers": resolve_post_process_workers(cfg),
             "pending": counts.get("pending", 0),
             "running": counts.get("running", 0),
+        },
+        "monitor_tasks": {
+            "pending": task_counts.get("pending", 0),
+            "running": task_counts.get("running", 0),
+            "failed": failed_tasks,
+            "dlq": failed_tasks,
         },
         "active_recordings": len(active),
         "log_path": str(ws / LOG_NAME),

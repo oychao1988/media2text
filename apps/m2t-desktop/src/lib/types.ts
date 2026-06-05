@@ -35,6 +35,12 @@ export type DaemonStatus = {
     pending: number;
     running: number;
   };
+  monitor_tasks?: {
+    pending: number;
+    running: number;
+    failed: number;
+    dlq?: number;
+  };
   active_recordings: number;
   log_path: string;
 };

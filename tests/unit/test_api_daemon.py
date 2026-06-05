@@ -13,6 +13,12 @@ def test_daemon_not_running(api_client, workspace) -> None:
     body = r.json()
     assert body["ok"] is True
     assert body["running"] is False
+    assert body["monitor_tasks"] == {
+        "pending": 0,
+        "running": 0,
+        "failed": 0,
+        "dlq": 0,
+    }
 
 
 def test_daemon_logs_tail(api_client, workspace) -> None:

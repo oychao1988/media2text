@@ -130,6 +130,7 @@ class MonitorTaskRow:
     started_at: str | None
     finished_at: str | None
     error: str | None
+    attempt_count: int = 0
 
 
 @dataclass
