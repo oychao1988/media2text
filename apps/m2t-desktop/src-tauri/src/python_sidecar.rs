@@ -36,8 +36,9 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
     }
 
     // Reuse manual `media2text serve` only when it exposes desktop config secrets.
-    if wait_for_health().is_ok() {
-        let client = blocking_http_client()?;
+    // Single probe — do not use wait_for_health() here (empty port would idle 60s).
+    let client = blocking_http_client()?;
+    if health_ready_now(&client)? {
         if existing_api_compatible(&client) {
             return Ok(());
         }
@@ -111,25 +112,34 @@ fn blocking_http_client() -> Result<reqwest::blocking::Client, String> {
         .map_err(|e| e.to_string())
 }
 
+fn health_ready_now(client: &reqwest::blocking::Client) -> Result<bool, String> {
+    Ok(match client.get(HEALTH_URL).send() {
+        Ok(resp) if resp.status().is_success() => true,
+        _ => false,
+    })
+}
+
+fn config_response_compatible(body: &serde_json::Value) -> bool {
+    match body
+        .get("config")
+        .and_then(|c| c.get("llmProviders"))
+        .and_then(|p| p.as_array())
+    {
+        None => true,
+        Some(arr) if arr.is_empty() => true,
+        Some(arr) => arr
+            .first()
+            .and_then(|prov| prov.get("api_key"))
+            .is_some(),
+    }
+}
+
 fn existing_api_compatible(client: &reqwest::blocking::Client) -> bool {
     match client.get(CONFIG_URL).send() {
-        Ok(resp) if resp.status().is_success() => {
-            let Ok(body) = resp.json::<serde_json::Value>() else {
-                return false;
-            };
-            match body
-                .get("config")
-                .and_then(|c| c.get("llmProviders"))
-                .and_then(|p| p.as_array())
-            {
-                None => true,
-                Some(arr) if arr.is_empty() => true,
-                Some(arr) => arr
-                    .first()
-                    .and_then(|prov| prov.get("api_key"))
-                    .is_some(),
-            }
-        }
+        Ok(resp) if resp.status().is_success() => resp
+            .json::<serde_json::Value>()
+            .ok()
+            .is_some_and(|body| config_response_compatible(&body)),
         _ => false,
     }
 }
@@ -251,6 +261,24 @@ fn resolve_python_executable(project_root: &Path) -> Result<PathBuf, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn config_response_compatible_accepts_missing_or_empty_providers() {
+        assert!(config_response_compatible(&json!({})));
+        assert!(config_response_compatible(&json!({"config": {}})));
+        assert!(config_response_compatible(&json!({"config": {"llmProviders": []}})));
+    }
+
+    #[test]
+    fn config_response_compatible_requires_api_key_field_on_first_provider() {
+        assert!(config_response_compatible(&json!({
+            "config": {"llmProviders": [{"name": "nvidia", "api_key": null}]}
+        })));
+        assert!(!config_response_compatible(&json!({
+            "config": {"llmProviders": [{"name": "nvidia"}]}
+        })));
+    }
 
     #[test]
     fn find_project_root_from_manifest_dir() {
