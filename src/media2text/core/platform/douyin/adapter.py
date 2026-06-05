@@ -12,6 +12,8 @@ from media2text.core.errors import AuthRequired, ParseFailed
 from media2text.core.platform.douyin.http_live import fetch_profile_api, resolve_live_via_http
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
 from media2text.core.platform.douyin.parse import (
+    extract_gallery_image_urls,
+    parse_aweme_detail_media,
     parse_aweme_detail_url,
     parse_aweme_post_list,
     parse_profile_html_user,
@@ -281,24 +283,48 @@ class DouyinAdapterV1:
             raise ParseFailed(f"aweme post page for max_cursor={want} not captured")
         return parse_aweme_post_list(payload)
 
+    def fetch_aweme_detail(self, *, aweme_id: str) -> dict:
+        if self._fixture_root:
+            name = (
+                "aweme_detail_gallery.json"
+                if aweme_id == "7578146088285768692"
+                else "aweme_detail.json"
+            )
+            payload = self._load_fixture(name)
+            detail = payload.get("aweme_detail") or payload
+            if isinstance(detail, dict) and detail.get("aweme_id"):
+                return detail
+            raise ParseFailed("aweme_detail fixture missing")
+
+        session = self._require_session()
+        from media2text.core.platform.douyin.signed_api import fetch_aweme_detail
+
+        detail = fetch_aweme_detail(session, aweme_id)
+        if not detail:
+            raise ParseFailed(f"signed aweme/detail returned no detail for {aweme_id}")
+        return detail
+
     def resolve_download_url(self, *, aweme_id: str) -> str:
+        if self._fixture_root and aweme_id == "7578146088285768692":
+            return parse_aweme_detail_url(self._load_fixture("aweme_detail_gallery.json"))
         if self._fixture_root:
             return parse_aweme_detail_url(self._load_fixture("aweme_detail.json"))
 
-        if not self._client and not self._session_path:
-            raise AuthRequired("no session")
+        detail = self.fetch_aweme_detail(aweme_id=aweme_id)
+        media_type, video_url, gallery_urls = parse_aweme_detail_media(detail)
+        if media_type == "gallery":
+            if not gallery_urls:
+                raise ParseFailed("gallery images empty")
+            return gallery_urls[0]
+        if video_url:
+            return video_url
+        return parse_aweme_detail_url({"aweme_detail": detail})
 
-        params = {"aweme_id": aweme_id}
-        uri = "https://www.douyin.com/aweme/v1/web/aweme/detail/"
-
-        try:
-            if self._client:
-                response = self._client.get(uri, params=params)
-                if response.status_code < 400:
-                    return parse_aweme_detail_url(response.json())
-        except (ParseFailed, AuthRequired, httpx.HTTPError):
-            pass
-
-        session = self._require_session()
-        payload = fetch_json(session, uri, params=params)
-        return parse_aweme_detail_url(payload)
+    def resolve_gallery_urls(self, *, aweme_id: str, cached: list[str] | None = None) -> list[str]:
+        if cached:
+            return cached
+        detail = self.fetch_aweme_detail(aweme_id=aweme_id)
+        urls = extract_gallery_image_urls(detail)
+        if not urls:
+            raise ParseFailed("gallery images empty")
+        return urls

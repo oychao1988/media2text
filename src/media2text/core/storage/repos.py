@@ -180,28 +180,56 @@ class AwemeRepo:
 
     def upsert_listed(self, *, creator_id: str, item: AwemeItem) -> bool:
         now = datetime.now(timezone.utc).isoformat()
+        media_urls_json = json.dumps(item.media_urls) if item.media_urls else None
+        has_urls = bool(item.download_url or item.media_urls)
         existing = self._conn.execute(
-            "SELECT aweme_id FROM awemes WHERE aweme_id = ?",
+            "SELECT aweme_id, sync_status FROM awemes WHERE aweme_id = ?",
             (item.aweme_id,),
         ).fetchone()
         if existing:
+            reset_listed = existing["sync_status"] == "failed" and has_urls
             self._conn.execute(
                 """
                 UPDATE awemes
-                SET title = ?, create_time = ?, updated_at = ?
+                SET title = ?, create_time = ?, media_type = ?,
+                    download_url = COALESCE(?, download_url),
+                    media_urls = COALESCE(?, media_urls),
+                    sync_status = CASE WHEN ? THEN 'listed' ELSE sync_status END,
+                    transcribe_status = CASE WHEN ? THEN NULL ELSE transcribe_status END,
+                    updated_at = ?
                 WHERE aweme_id = ?
                 """,
-                (item.title, item.create_time, now, item.aweme_id),
+                (
+                    item.title,
+                    item.create_time,
+                    item.media_type,
+                    item.download_url,
+                    media_urls_json,
+                    1 if reset_listed else 0,
+                    1 if reset_listed else 0,
+                    now,
+                    item.aweme_id,
+                ),
             )
             self._conn.commit()
             return False
         self._conn.execute(
             """
             INSERT INTO awemes
-              (aweme_id, creator_id, title, create_time, media_type, sync_status, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'listed', ?)
+              (aweme_id, creator_id, title, create_time, media_type, sync_status,
+               download_url, media_urls, updated_at)
+            VALUES (?, ?, ?, ?, ?, 'listed', ?, ?, ?)
             """,
-            (item.aweme_id, creator_id, item.title, item.create_time, item.media_type, now),
+            (
+                item.aweme_id,
+                creator_id,
+                item.title,
+                item.create_time,
+                item.media_type,
+                item.download_url,
+                media_urls_json,
+                now,
+            ),
         )
         self._conn.commit()
         return True

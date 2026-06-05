@@ -175,6 +175,7 @@ def _build_vod_item(
         "started_at": started_at,
         "ended_at": None,
         "status": row.sync_status,
+        "media_type": row.media_type or "video",
         "local_path": workspace_rel(ws, row.local_path),
         "temp_path": None,
         "media_path": workspace_rel(ws, media_path),
@@ -246,6 +247,20 @@ def _has_summary(
     return _resolve_summary_path(workspace, media_path, manifest_entry) is not None
 
 
+_GALLERY_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
+
+
+def _path_has_local_media(target: Path) -> bool:
+    if target.is_file():
+        return True
+    if target.is_dir():
+        return any(
+            child.is_file() and child.suffix.lower() in _GALLERY_SUFFIXES
+            for child in target.iterdir()
+        )
+    return False
+
+
 def _media_available(workspace: Path, media_path: str | None) -> bool:
     if not media_path:
         return False
@@ -254,12 +269,13 @@ def _media_available(workspace: Path, media_path: str | None) -> bool:
     if rel:
         try:
             target = safe_workspace_path(workspace, rel)
-            if target.is_file():
+            if _path_has_local_media(target):
                 return True
         except HTTPException:
             pass
-    # 绝对路径且文件真实存在（不在 workspace 下也能播放）
-    if Path(media_path).is_absolute() and Path(media_path).is_file():
+    # 绝对路径且文件/图集目录真实存在（不在 workspace 下也能播放）
+    abs_target = Path(media_path)
+    if abs_target.is_absolute() and _path_has_local_media(abs_target):
         return True
     return False
 
@@ -322,7 +338,7 @@ def list_creator_sessions(
 
     awemes = AwemeRepo(conn).list_for_creator(creator_id)
     for row in awemes:
-        if row.sync_status not in ("downloaded", "failed"):
+        if row.sync_status not in ("downloaded", "failed", "listed"):
             continue
         m_entry = manifest_vod.get(row.aweme_id)
         item = _build_vod_item(ws=ws, creator_id=creator_id, row=row, m_entry=m_entry)

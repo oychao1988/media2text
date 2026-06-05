@@ -1,9 +1,11 @@
 import flvjs from 'flv.js';
 import { useEffect, useRef, useState } from 'react';
-import { mediaUrl } from '../../lib/api';
+import { listGalleryImages, mediaUrl } from '../../lib/api';
 import type { LiveSessionSummary } from '../../lib/types';
 import { useLayoutStore } from '../layout/useLayoutStore';
 import {
+  sessionIsGallery,
+  sessionIsListedPending,
   sessionMediaMissing,
   sessionMediaPath,
   sessionPlaybackLabel,
@@ -17,6 +19,90 @@ type Props = {
   onTimeUpdate?: (time: number) => void;
 };
 
+function GalleryPlayback({ dirPath, active }: { dirPath: string; active?: boolean }) {
+  const [images, setImages] = useState<string[]>([]);
+  const [urls, setUrls] = useState<string[]>([]);
+  const [index, setIndex] = useState(0);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    if (!active) return undefined;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await listGalleryImages(dirPath);
+        const list = res.images ?? [];
+        if (cancelled) return;
+        setImages(list);
+        setIndex(0);
+        if (!list.length) {
+          setError(true);
+          return;
+        }
+        const resolved = await Promise.all(list.map((p) => mediaUrl(p)));
+        if (!cancelled) setUrls(resolved);
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [dirPath, active]);
+
+  if (error || !urls.length) {
+    return <p className="hint">图集加载失败</p>;
+  }
+
+  const at = Math.min(index, urls.length - 1);
+  return (
+    <div className="gallery-viewer">
+      <img
+        src={urls[at]}
+        alt={`图 ${at + 1} / ${urls.length}`}
+        className="gallery-image"
+      />
+      {urls.length > 1 ? (
+        <div className="gallery-controls">
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={at <= 0}
+            onClick={() => setIndex((i) => Math.max(0, i - 1))}
+          >
+            上一张
+          </button>
+          <span className="gallery-counter">
+            {at + 1} / {urls.length}
+          </span>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={at >= urls.length - 1}
+            onClick={() => setIndex((i) => Math.min(urls.length - 1, i + 1))}
+          >
+            下一张
+          </button>
+        </div>
+      ) : null}
+      {images.length > 1 ? (
+        <div className="gallery-thumbs" role="list">
+          {urls.map((url, i) => (
+            <button
+              key={images[i]}
+              type="button"
+              className={`gallery-thumb${i === at ? ' active' : ''}`}
+              onClick={() => setIndex(i)}
+            >
+              <img src={url} alt="" />
+            </button>
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Props) {
   const { backToHistory } = useLayoutStore();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -26,7 +112,14 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
 
   const mediaPath = session ? sessionMediaPath(session) : null;
   const mediaMissing = session ? sessionMediaMissing(session) : false;
-  const canPlay = Boolean(mediaPath && session?.media_available && !mediaMissing);
+  const isGallery = session ? sessionIsGallery(session) : false;
+  const isListed = session ? sessionIsListedPending(session) : false;
+  const canPlayVideo = Boolean(
+    mediaPath && session?.media_available && !mediaMissing && !isGallery && !isListed,
+  );
+  const canShowGallery = Boolean(
+    mediaPath && session?.media_available && !mediaMissing && isGallery,
+  );
   const isFlv = Boolean(mediaPath?.toLowerCase().endsWith('.flv'));
 
   useEffect(() => {
@@ -39,7 +132,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
   }, [active, backToHistory]);
 
   useEffect(() => {
-    if (!canPlay || !mediaPath) {
+    if (!canPlayVideo || !mediaPath) {
       setSrc(null);
       return undefined;
     }
@@ -50,20 +143,18 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     return () => {
       cancelled = true;
     };
-  }, [mediaPath, canPlay]);
+  }, [mediaPath, canPlayVideo]);
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !src || !active || !canPlay) return undefined;
+    if (!video || !src || !active || !canPlayVideo) return undefined;
 
     setError(false);
     const onVideoError = () => setError(true);
     video.addEventListener('error', onVideoError);
 
-    // timeupdate → 通知外部同步转写滚动
     const handleVideoTimeUpdate = () => {
       if (onTimeUpdate) {
-        console.log('[playback] timeupdate:', video.currentTime);
         onTimeUpdate(video.currentTime);
       }
     };
@@ -94,7 +185,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       video.removeEventListener('error', onVideoError);
       video.removeEventListener('timeupdate', handleVideoTimeUpdate);
     };
-  }, [src, isFlv, active, canPlay, onTimeUpdate]);
+  }, [src, isFlv, active, canPlayVideo, onTimeUpdate]);
 
   const breadcrumb = session ? sessionPlaybackLabel(session) : '—';
   return (
@@ -113,7 +204,24 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       <div className="video-area playback-video-area">
         <div className="video-viewport">
           <div className="video-frame">
-            {!session || !mediaPath ? (
+            {!session ? (
+              <div className="video-placeholder">
+                <div className="play-icon" aria-hidden="true">
+                  ▶
+                </div>
+                <p>历史录播</p>
+                <p className="video-placeholder-hint">选择历史场次以回放</p>
+              </div>
+            ) : isListed ? (
+              <div className="video-placeholder">
+                <p>作品待下载</p>
+                <p className="video-placeholder-hint">
+                  请在「管理」页使用「同步并下载」或「下载作品」，并确保监控已开启
+                </p>
+              </div>
+            ) : canShowGallery && mediaPath ? (
+              <GalleryPlayback dirPath={mediaPath} active={active} />
+            ) : !mediaPath ? (
               <div className="video-placeholder">
                 <div className="play-icon" aria-hidden="true">
                   ▶

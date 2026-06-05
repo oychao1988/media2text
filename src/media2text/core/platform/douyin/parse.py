@@ -3,11 +3,14 @@ from __future__ import annotations
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
-from urllib.parse import unquote
+from urllib.parse import unquote, urlparse
 
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.douyin.models import AwemeItem, LiveRoomInfo, UserProfile
+
+GALLERY_AWEME_TYPES = frozenset({2, 68, 150})
 
 
 def _dig(data: Any, *keys: str) -> Any:
@@ -210,6 +213,204 @@ def _raise_platform_changed_aweme_post(payload: dict) -> None:
     raise PlatformChanged("aweme post response missing aweme_list")
 
 
+def _play_url_score(url: str) -> tuple[int, int]:
+    watermarked = 0 if "watermark=0" in url else 1
+    if "douyinvod.com" in url:
+        cdn = 0
+    elif "douyin.com" in url:
+        cdn = 2
+    else:
+        cdn = 1
+    return watermarked, cdn
+
+
+def _pick_best_play_url(urls: list[str]) -> str | None:
+    cleaned = [str(u) for u in urls if u]
+    if not cleaned:
+        return None
+    return min(cleaned, key=_play_url_score)
+
+
+def extract_aweme_download_url(row: dict) -> str | None:
+    """Pick a direct play URL from aweme/post list item (sync-time cache)."""
+    video = row.get("video")
+    if not isinstance(video, dict):
+        return None
+
+    candidates: list[str] = []
+    bit_rates = video.get("bit_rate")
+    if isinstance(bit_rates, list):
+        ranked: list[tuple[int, int, list[str]]] = []
+        for entry in bit_rates:
+            if not isinstance(entry, dict):
+                continue
+            play_addr = entry.get("play_addr")
+            if not isinstance(play_addr, dict):
+                continue
+            try:
+                bit_rate = int(entry.get("bit_rate") or 0)
+            except (TypeError, ValueError):
+                bit_rate = 0
+            width = play_addr.get("width") or entry.get("width") or 0
+            try:
+                width = int(width)
+            except (TypeError, ValueError):
+                width = 0
+            urls = [str(u) for u in (play_addr.get("url_list") or []) if u]
+            if urls:
+                ranked.append((bit_rate, width, urls))
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        for _, _, urls in ranked:
+            candidates.extend(urls)
+
+    play_addr = video.get("play_addr")
+    if isinstance(play_addr, dict):
+        candidates.extend(str(u) for u in (play_addr.get("url_list") or []) if u)
+
+    return _pick_best_play_url(candidates)
+
+
+def _extract_urls_from_source(source: Any) -> list[str]:
+    if isinstance(source, dict):
+        url_list = source.get("url_list") or source.get("urlList")
+        if isinstance(url_list, list):
+            return [str(u) for u in url_list if u]
+    elif isinstance(source, list):
+        return [str(u) for u in source if u]
+    elif isinstance(source, str) and source:
+        return [source]
+    return []
+
+
+def _media_url_priority(url: str) -> int:
+    normalized = url.lower()
+    path = (urlparse(url).path or "").lower()
+    watermark_hints = (
+        "tplv-dy-water",
+        "dy-water",
+        "owner_watermark",
+        "watermark_image",
+        "watermark=1",
+        "playwm",
+    )
+    score = 100 if any(h in normalized for h in watermark_hints) else 0
+    return score + (1 if ".webp" in path else 0)
+
+
+def _collect_media_urls(*sources: Any) -> list[str]:
+    urls: list[str] = []
+    seen: set[str] = set()
+    for source in sources:
+        for candidate in sorted(_extract_urls_from_source(source), key=_media_url_priority):
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            urls.append(candidate)
+    return urls
+
+
+def _iter_gallery_items(row: dict) -> list[Any]:
+    image_post = row.get("image_post_info")
+    if isinstance(image_post, dict):
+        for key in ("images", "image_list"):
+            candidate = image_post.get(key)
+            if isinstance(candidate, list) and candidate:
+                return candidate
+    images = row.get("images") or row.get("image_list") or []
+    if isinstance(images, list):
+        return images
+    return []
+
+
+def _has_video_source(row: dict) -> bool:
+    video = row.get("video")
+    if not isinstance(video, dict):
+        return False
+    if extract_aweme_download_url(row):
+        return True
+    return bool(
+        video.get("vid")
+        or (
+            isinstance(video.get("download_addr"), dict)
+            and video["download_addr"].get("uri")
+        )
+    )
+
+
+def extract_gallery_image_urls(row: dict) -> list[str]:
+    """Best-effort direct image URLs from aweme/post or aweme/detail item."""
+    image_urls: list[str] = []
+    for item in _iter_gallery_items(row):
+        if not isinstance(item, dict):
+            continue
+        candidates = _collect_media_urls(
+            item.get("watermark_free_download_url_list"),
+            item.get("origin_image"),
+            item.get("display_image"),
+            item.get("download_url"),
+            item.get("download_addr"),
+            item.get("download_url_list"),
+            item.get("owner_watermark_image"),
+        )
+        if candidates:
+            image_urls.append(candidates[0])
+    return image_urls
+
+
+def detect_aweme_media_type(row: dict) -> str:
+    if extract_gallery_image_urls(row):
+        return "gallery"
+    aweme_type = row.get("aweme_type")
+    if isinstance(aweme_type, int) and aweme_type in GALLERY_AWEME_TYPES:
+        if _has_video_source(row):
+            return "video"
+        return "gallery"
+    return "video"
+
+
+def parse_aweme_item(row: dict) -> AwemeItem:
+    aweme_id = str(row.get("aweme_id") or "")
+    media_type = detect_aweme_media_type(row)
+    if media_type == "gallery":
+        media_urls = extract_gallery_image_urls(row)
+        return AwemeItem(
+            aweme_id=aweme_id,
+            title=row.get("desc") or row.get("title"),
+            create_time=row.get("create_time"),
+            media_type="gallery",
+            media_urls=media_urls or None,
+        )
+    return AwemeItem(
+        aweme_id=aweme_id,
+        title=row.get("desc") or row.get("title"),
+        create_time=row.get("create_time"),
+        media_type="video",
+        download_url=extract_aweme_download_url(row),
+    )
+
+
+def infer_image_extension(image_url: str) -> str:
+    allowed = {".jpg", ".jpeg", ".png", ".webp", ".gif"}
+    if not image_url:
+        return ".jpg"
+    image_path = (urlparse(image_url).path or "").lower()
+    raw_suffix = Path(image_path).suffix.lower()
+    if raw_suffix in allowed:
+        return raw_suffix
+    matches = re.findall(r"\.(?:jpe?g|png|webp|gif)(?=[^a-z0-9]|$)", image_path)
+    if matches:
+        return matches[-1].lower()
+    return ".jpg"
+
+
+def parse_aweme_detail_media(detail: dict) -> tuple[str, str | None, list[str] | None]:
+    """Return (media_type, video_url, gallery_urls) from aweme_detail dict."""
+    item = parse_aweme_item(detail)
+    if item.media_type == "gallery":
+        return "gallery", None, item.media_urls
+    return "video", item.download_url, None
+
+
 def parse_aweme_post_list(payload: dict) -> tuple[list[AwemeItem], str | None, bool]:
     if not isinstance(payload, dict):
         raise ParseFailed("aweme post payload must be object")
@@ -223,14 +424,7 @@ def parse_aweme_post_list(payload: dict) -> tuple[list[AwemeItem], str | None, b
         aweme_id = str(row.get("aweme_id") or "")
         if not aweme_id:
             continue
-        items.append(
-            AwemeItem(
-                aweme_id=aweme_id,
-                title=row.get("desc") or row.get("title"),
-                create_time=row.get("create_time"),
-                media_type="video",
-            )
-        )
+        items.append(parse_aweme_item(row))
     max_cursor = payload.get("max_cursor") or _dig(payload, "data", "max_cursor")
     has_more = bool(payload.get("has_more") or _dig(payload, "data", "has_more"))
     return items, str(max_cursor) if max_cursor is not None else None, has_more
@@ -251,10 +445,17 @@ def parse_aweme_detail_url(payload: dict) -> str:
         if payload.get("status_msg") or _dig(payload, "data", "status_msg"):
             raise PlatformChanged("aweme detail missing aweme_detail (status_msg present)")
         raise ParseFailed("aweme_detail missing")
-    url_list = _dig(detail, "video", "play_addr", "url_list") or []
-    if not url_list:
-        raise ParseFailed("play_addr.url_list empty")
-    return str(url_list[0])
+    media_type, video_url, gallery_urls = parse_aweme_detail_media(detail)
+    if media_type == "gallery":
+        if not gallery_urls:
+            raise ParseFailed("gallery images empty")
+        return gallery_urls[0]
+    if not video_url:
+        url_list = _dig(detail, "video", "play_addr", "url_list") or []
+        if not url_list:
+            raise ParseFailed("play_addr.url_list empty")
+        return str(url_list[0])
+    return video_url
 
 
 def map_http_error(status: int, body: str) -> Exception:

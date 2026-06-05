@@ -33,7 +33,10 @@ export function formatSessionTime(start: string | null, end: string | null): str
 }
 
 export function historyKindLabel(session: LiveSessionSummary): string {
-  return session.kind === 'vod' ? '作品' : '直播';
+  if (session.kind === 'vod') {
+    return sessionIsGallery(session) ? '图文' : '作品';
+  }
+  return '直播';
 }
 
 export function historyRowTitle(session: LiveSessionSummary): string {
@@ -88,7 +91,16 @@ export function sessionCloudLabel(session: LiveSessionSummary): { text: string; 
   return { text: '云端 —', className: 'miss' };
 }
 
+export function sessionIsGallery(session: LiveSessionSummary): boolean {
+  return session.kind === 'vod' && session.media_type === 'gallery';
+}
+
+export function sessionIsListedPending(session: LiveSessionSummary): boolean {
+  return session.kind === 'vod' && session.status === 'listed';
+}
+
 export function sessionLocalLabel(session: LiveSessionSummary): { text: string; className: string } {
+  if (sessionIsListedPending(session)) return { text: '本地 —', className: 'miss' };
   if (session.media_available) return { text: '本地 ✓', className: 'ok' };
   if (sessionMediaPath(session)) return { text: '本地缺失', className: 'miss' };
   return { text: '本地 —', className: 'miss' };
@@ -98,6 +110,7 @@ export function sessionLocalLabel(session: LiveSessionSummary): { text: string; 
 export function sessionStatusTag(
   session: LiveSessionSummary,
 ): { text: string; className: string } | null {
+  if (sessionIsListedPending(session)) return { text: '待下载', className: 'miss' };
   if (session.status !== 'failed') return null;
   return { text: '失败', className: 'fail' };
 }

@@ -19,8 +19,12 @@ def test_get_live_room_with_stream_fixture() -> None:
 def test_list_awemes_fixture() -> None:
     adapter = DouyinAdapterV1(None, fixture_root=FIXTURE_ROOT)
     items, cursor, has_more = adapter.list_awemes(sec_uid="x")
-    assert len(items) == 2
+    assert len(items) == 3
     assert items[0].aweme_id == "7123456789012345678"
+    assert items[0].download_url == "https://example.com/video-one.mp4"
+    assert items[1].download_url == "https://douyinvod.com/high.mp4?watermark=0"
+    assert items[2].media_type == "gallery"
+    assert items[2].media_urls == ["https://example.com/gallery-1.jpeg?watermark=0"]
     assert has_more is False
 
 

@@ -1,0 +1,19 @@
+{
+  "aweme_detail": {
+    "aweme_id": "7578146088285768692",
+    "aweme_type": 68,
+    "desc": "gallery note",
+    "images": [
+      {
+        "display_image": {
+          "url_list": ["https://example.com/gallery-detail.jpeg"]
+        }
+      },
+      {
+        "display_image": {
+          "url_list": ["https://example.com/gallery-detail-2.webp"]
+        }
+      }
+    ]
+  }
+}

@@ -42,6 +42,30 @@ def test_sync_catalog(api_client, workspace) -> None:
     assert r.status_code == 200
 
 
+def test_sync_catalog_enqueue_download(api_client, workspace) -> None:
+    cid = _creator(workspace)
+    with patch(
+        "media2text.api.routes.creators.creator_svc.sync_creator_catalog",
+        return_value={"ok": True},
+    ):
+        r = api_client.post(f"/api/creators/{cid}/sync?enqueue_download=true")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["download_queued"] is True
+    assert body.get("download_task_id")
+
+
+def test_enqueue_download(api_client, workspace) -> None:
+    cid = _creator(workspace)
+    r = api_client.post(f"/api/creators/{cid}/download")
+    assert r.status_code == 202
+    body = r.json()
+    assert body["ok"] is True
+    assert body["status"] == "queued"
+    r2 = api_client.post(f"/api/creators/{cid}/download")
+    assert r2.status_code == 409
+
+
 def test_sync_dynamics_bilibili_only(api_client, workspace) -> None:
     douyin_id = _creator(workspace, "douyin")
     r = api_client.post(f"/api/creators/{douyin_id}/sync-dynamics")

@@ -16,6 +16,10 @@ def test_sync_creator_with_fixtures(tmp_path, monkeypatch) -> None:
     )
     result = sync_creator(cfg, cid)
     assert result["ok"] is True
-    assert result["new_count"] == 2
+    assert result["new_count"] == 3
     awemes = AwemeRepo(conn).list_for_creator(cid)
-    assert len(awemes) == 2
+    assert len(awemes) == 3
+    by_id = {row.aweme_id: row for row in awemes}
+    assert by_id["7123456789012345678"].download_url == "https://example.com/video-one.mp4"
+    assert by_id["7123456789012345679"].download_url == "https://douyinvod.com/high.mp4?watermark=0"
+    assert by_id["7578146088285768692"].media_type == "gallery"

@@ -35,3 +35,20 @@ def test_media_rejects_traversal(api_client, workspace) -> None:
 def test_media_missing_file(api_client, workspace) -> None:
     r = api_client.get("/api/media?path=creators/x/missing.mp4")
     assert r.status_code == 404
+
+
+def test_media_gallery_list(api_client, workspace) -> None:
+    rel_dir = "creators/sec1/images/g1"
+    gallery = workspace / rel_dir
+    gallery.mkdir(parents=True)
+    (gallery / "02.png").write_bytes(b"png2")
+    (gallery / "01.jpeg").write_bytes(b"jpeg1")
+
+    r = api_client.get(f"/api/media/gallery?path={rel_dir}")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert body["images"] == [
+        f"{rel_dir}/01.jpeg",
+        f"{rel_dir}/02.png",
+    ]
