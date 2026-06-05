@@ -147,7 +147,7 @@
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
-| 1 | [#168](https://github.com/oychao1988/media2text/issues/168) | （本 PR） | [douyin-gallery-desktop-vod-ux.md](./douyin-gallery-desktop-vod-ux.md) | `issue-168-douyin-gallery-desktop-vod` |
+| 1 | [#168](https://github.com/oychao1988/media2text/issues/168) | [#169](https://github.com/oychao1988/media2text/pull/169) | [douyin-gallery-desktop-vod-ux.md](./douyin-gallery-desktop-vod-ux.md) | `issue-168-douyin-gallery-desktop-vod` |
 
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
