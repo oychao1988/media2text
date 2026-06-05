@@ -41,11 +41,26 @@ export function sessionSizeLabel(session: LiveSessionSummary): string {
 }
 
 export function sessionPlaybackLabel(session: LiveSessionSummary): string {
-  const day = session.started_at?.slice(0, 10) ?? '';
-  const time = session.started_at?.slice(11, 16) ?? '';
-  return day && time ? `${day} ${time}` : session.session_id;
+  if (!session.started_at) return session.session_id;
+  try {
+    const d = new Date(session.started_at);
+    const day = d.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' }).replace(/\//g, '-');
+    const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', hour12: false });
+    return `${day} ${time}`;
+  } catch {
+    return session.session_id;
+  }
+}
+
+export function sessionMediaPath(session: LiveSessionSummary): string | null {
+  return session.media_path ?? session.local_path ?? session.temp_path ?? null;
+}
+
+export function sessionMediaMissing(session: LiveSessionSummary): boolean {
+  return Boolean(sessionMediaPath(session)) && !session.media_available;
 }
 
 export function sessionIsDisabled(session: LiveSessionSummary): boolean {
-  return session.status === 'failed' && !session.media_path && !session.local_path;
+  if (session.status === 'failed' && !sessionMediaPath(session)) return true;
+  return false;
 }

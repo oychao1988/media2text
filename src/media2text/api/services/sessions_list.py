@@ -6,6 +6,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from fastapi import HTTPException
+
+from media2text.api.security import safe_workspace_path, workspace_rel
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.repos import CreatorRepo
 
@@ -47,10 +50,57 @@ def _has_transcript(media_path: str | None, manifest_entry: dict | None) -> bool
     return _transcript_sidecar_path(media_path) is not None
 
 
-def _has_summary(media_path: str | None, manifest_entry: dict | None) -> bool:
+def _resolve_sidecar_rel(
+    workspace: Path,
+    raw: str | None,
+) -> str | None:
+    rel = workspace_rel(workspace, raw)
+    if not rel:
+        return None
+    try:
+        target = safe_workspace_path(workspace, rel)
+    except HTTPException:
+        return None
+    return rel if target.is_file() else None
+
+
+def _resolve_summary_path(
+    workspace: Path,
+    media_path: str | None,
+    manifest_entry: dict | None,
+) -> str | None:
+    raw: str | None = None
     if manifest_entry and manifest_entry.get("summary_path"):
+        raw = str(manifest_entry["summary_path"])
+    else:
+        raw = _summary_sidecar_path(media_path)
+    return _resolve_sidecar_rel(workspace, raw)
+
+
+def _has_summary(
+    workspace: Path,
+    media_path: str | None,
+    manifest_entry: dict | None,
+) -> bool:
+    return _resolve_summary_path(workspace, media_path, manifest_entry) is not None
+
+
+def _media_available(workspace: Path, media_path: str | None) -> bool:
+    if not media_path:
+        return False
+    # 尝试 workspace 相对路径
+    rel = workspace_rel(workspace, media_path)
+    if rel:
+        try:
+            target = safe_workspace_path(workspace, rel)
+            if target.is_file():
+                return True
+        except HTTPException:
+            pass
+    # 绝对路径且文件真实存在（不在 workspace 下也能播放）
+    if Path(media_path).is_absolute() and Path(media_path).is_file():
         return True
-    return _summary_sidecar_path(media_path) is not None
+    return False
 
 
 def list_creator_sessions(
@@ -70,6 +120,7 @@ def list_creator_sessions(
 
     manifest = _load_manifest(workspace, creator.sec_uid)
     manifest_live = _manifest_live_by_id(manifest)
+    ws = workspace
 
     rows = conn.execute(
         """
@@ -90,7 +141,7 @@ def list_creator_sessions(
             media_path = m_entry.get("media_path") or media_path
 
         ht = _has_transcript(media_path, m_entry)
-        hs = _has_summary(media_path, m_entry)
+        hs = _has_summary(ws, media_path, m_entry)
         if has_transcript is True and not ht:
             continue
         if has_transcript is False and ht:
@@ -109,26 +160,37 @@ def list_creator_sessions(
             "started_at": data.get("started_at"),
             "ended_at": data.get("ended_at"),
             "status": st,
-            "local_path": data.get("local_path"),
-            "temp_path": data.get("temp_path"),
-            "media_path": media_path,
+            "local_path": workspace_rel(ws, data.get("local_path")),
+            "temp_path": workspace_rel(ws, data.get("temp_path")),
+            "media_path": workspace_rel(ws, media_path),
+            "media_available": _media_available(ws, media_path),
             "pipeline_mode": data.get("pipeline_mode"),
             "transcribe_status": data.get("transcribe_status"),
             "cloud_upload_status": data.get("cloud_upload_status"),
             "has_transcript": ht,
             "has_summary": hs,
-            "transcript_path": (
-                m_entry.get("transcript_path") if m_entry else _transcript_sidecar_path(media_path)
+            "transcript_path": _resolve_sidecar_rel(
+                ws,
+                m_entry.get("transcript_path") if m_entry else _transcript_sidecar_path(media_path),
             ),
-            "summary_path": (
-                m_entry.get("summary_path") if m_entry else _summary_sidecar_path(media_path)
-            ),
+            "summary_path": _resolve_summary_path(ws, media_path, m_entry),
         }
         sessions.append(item)
 
     total = len(sessions)
     page = sessions[offset : offset + limit]
-    live_groups = (manifest or {}).get("live_groups") or []
+    live_groups_raw = (manifest or {}).get("live_groups") or []
+    live_groups: list[dict[str, Any]] = []
+    for group in live_groups_raw:
+        if not isinstance(group, dict):
+            continue
+        entry = dict(group)
+        rel = _resolve_sidecar_rel(ws, entry.get("summary_path"))
+        if rel:
+            entry["summary_path"] = rel
+        else:
+            entry.pop("summary_path", None)
+        live_groups.append(entry)
 
     return {
         "ok": True,

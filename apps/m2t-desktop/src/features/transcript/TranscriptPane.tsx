@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from 'react';
 import ReactMarkdown from 'react-markdown';
-import { apiGet, buildWsUrl, getApiBaseUrl } from '../../lib/api';
+import { apiGet, buildWsUrl, mediaUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { TranscriptPayload } from '../../lib/types';
 import {
@@ -21,6 +21,7 @@ type Props = {
   sessionId: string | null;
   summaryPath: string | null;
   mode?: 'live' | 'playback';
+  playbackTime?: number;
 };
 
 const LIVE_SCROLL_TAIL_PX = 48;
@@ -52,7 +53,7 @@ function TranscriptContent({
       ) : null}
       {state.segments.length
         ? state.segments.map((seg, i) => (
-            <div className="seg" key={`${seg.start}-${i}`}>
+            <div className="seg" key={`${seg.start}-${i}`} data-seg-idx={i}>
               <div className="ts">{formatTs(seg.start)}</div>
               <div>{seg.text}</div>
             </div>
@@ -69,13 +70,14 @@ function TranscriptContent({
   );
 }
 
-export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props) {
+export function TranscriptPane({ sessionId, summaryPath, mode = 'live', playbackTime = 0 }: Props) {
   const [tab, setTab] = useState<'transcript' | 'summary'>('transcript');
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
   const [summaryMd, setSummaryMd] = useState<string | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
   const followLiveRef = useRef(true);
+  const followPlaybackRef = useRef(true);
 
   const isPlayback = mode === 'playback';
   const showLiveTranscript = !isPlayback && tab === 'transcript';
@@ -104,13 +106,63 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
     state.partial,
   ]);
 
+  // Playback 模式：根据视频时间同步滚动转写
+  useEffect(() => {
+    console.log('[transcript] playback effect:', {
+      isPlayback,
+      tab,
+      followCurrent: followPlaybackRef.current,
+      segmentsLen: state.segments.length,
+      playbackTime,
+    });
+    if (!isPlayback || tab !== 'transcript' || !followPlaybackRef.current) return;
+    if (!state.segments.length) return;
+    const el = bodyRef.current;
+    if (!el) {
+      console.log('[transcript] bodyRef el is null');
+      return;
+    }
+
+    // 找到当前时间对应的 segment（兼容起始时刻无匹配的情况）
+    let segIdx = state.segments.findIndex((s) => s.start <= playbackTime && s.end >= playbackTime);
+    // 起始时刻（playbackTime < 第一个 segment.start）时，找最后一个 start <= playbackTime 的
+    if (segIdx < 0) {
+      segIdx = state.segments.reduce((best, s, i) => (s.start <= playbackTime && s.start > (state.segments[best]?.start ?? -Infinity) ? i : best), -1);
+    }
+    console.log('[transcript] segIdx:', segIdx, 'playbackTime:', playbackTime);
+    if (segIdx < 0) return;
+
+    const segEl = el.querySelector(`[data-seg-idx="${segIdx}"]`);
+    console.log('[transcript] segEl:', segEl);
+    if (!segEl) return;
+
+    const elTop = el.getBoundingClientRect().top;
+    const segTop = segEl.getBoundingClientRect().top;
+    const offset = segTop - elTop + el.scrollTop - el.clientHeight / 4;
+    el.scrollTop = Math.max(0, offset);
+  }, [isPlayback, tab, playbackTime, state.segments]);
+
   const handleBodyScroll = useCallback(() => {
-    if (mode !== 'live' || tab !== 'transcript') return;
+    if (mode !== 'live' && mode !== 'playback' && tab !== 'transcript') return;
     const el = bodyRef.current;
     if (!el) return;
-    const tail = el.scrollHeight - el.scrollTop - el.clientHeight;
-    followLiveRef.current = tail <= LIVE_SCROLL_TAIL_PX;
-  }, [mode, tab]);
+    if (mode === 'live') {
+      const tail = el.scrollHeight - el.scrollTop - el.clientHeight;
+      followLiveRef.current = tail <= LIVE_SCROLL_TAIL_PX;
+    }
+    if (mode === 'playback' && tab === 'transcript' && state.segments.length) {
+      // 用户手动滚动到离当前播放位置较远时停止跟随
+      const segIdx = state.segments.findIndex((s) => s.start <= playbackTime && s.end >= playbackTime);
+      if (segIdx < 0) return;
+      const segEl = el.querySelector(`[data-seg-idx="${segIdx}"]`);
+      if (!segEl) return;
+      const elTop = el.getBoundingClientRect().top;
+      const segTop = segEl.getBoundingClientRect().top;
+      const segCenterOffset = Math.abs(segTop - elTop + el.scrollTop - el.clientHeight / 2);
+      // 滚动后当前 segment 中心偏离视口中心超过 1/3 屏则认为用户主动滚动
+      followPlaybackRef.current = segCenterOffset < el.clientHeight / 3;
+    }
+  }, [mode, tab, playbackTime, state.segments]);
 
   useEffect(() => {
     dispatch({ type: 'reset' });
@@ -196,17 +248,30 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
   }, [sessionId, mode]);
 
   useEffect(() => {
-    if (tab !== 'summary' || !summaryPath) return;
+    if (tab !== 'summary') return;
+    if (!sessionId && !summaryPath) return;
     let cancelled = false;
     setSummaryLoading(true);
+    setSummaryMd(null);
     void (async () => {
       try {
-        const base = await getApiBaseUrl();
-        const q = new URLSearchParams({ path: summaryPath });
-        const res = await fetch(`${base}/api/media?${q.toString()}`);
+        if (mode === 'playback' && sessionId) {
+          const res = await apiGet<{ ok: boolean; text: string }>(
+            `/api/sessions/${sessionId}/summary`,
+            true,
+          );
+          if (!cancelled) setSummaryMd(res.text?.trim() ? res.text : null);
+          return;
+        }
+        if (!summaryPath) {
+          if (!cancelled) setSummaryMd(null);
+          return;
+        }
+        const url = await mediaUrl(summaryPath);
+        const res = await fetch(url);
         if (!res.ok) throw new Error('摘要不可用');
         const text = await res.text();
-        if (!cancelled) setSummaryMd(text);
+        if (!cancelled) setSummaryMd(text.trim() ? text : null);
       } catch {
         if (!cancelled) setSummaryMd(null);
       } finally {
@@ -216,7 +281,7 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
     return () => {
       cancelled = true;
     };
-  }, [tab, summaryPath]);
+  }, [tab, summaryPath, sessionId, mode]);
 
   const copyTranscript = async () => {
     const text = state.text || state.segments.map((s) => s.text).join('\n');
@@ -292,7 +357,11 @@ export function TranscriptPane({ sessionId, summaryPath, mode = 'live' }: Props)
           ) : summaryMd ? (
             <ReactMarkdown>{summaryMd}</ReactMarkdown>
           ) : (
-            <p className="hint">{summaryPath ? '暂无摘要' : '选择有摘要的场次以查看'}</p>
+            <p className="hint">
+              {summaryPath || sessionId
+                ? '暂无摘要'
+                : '选择有摘要的场次以查看'}
+            </p>
           )}
         </div>
       </div>

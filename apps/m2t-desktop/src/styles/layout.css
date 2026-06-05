@@ -1152,15 +1152,17 @@ body.resize-col-active * {
   position: relative;
 }
 
-/* 直播 / 回放：抖音/B 站竖屏流，视窗本身 9:16 */
-#view-live .video-viewport,
+/* 直播：自适应横屏/竖屏 */
+#view-live .video-viewport {
+  width: min(100%, var(--video-max-h));
+  height: var(--video-max-h);
+}
+
+/* 回放：保持竖屏 9:16 */
 #view-playback .video-viewport {
   aspect-ratio: 9 / 16;
   width: min(100%, 480px, calc(var(--video-max-h) * 9 / 16));
   max-height: var(--video-max-h);
-}
-
-#view-playback .video-viewport {
   border-color: rgba(59, 130, 246, 0.3);
 }
 
@@ -1509,7 +1511,14 @@ body.resize-col-active * {
 }
 
 .playback-video-area {
-  padding-top: 12px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px var(--center-edge-pad);
+  gap: 12px;
+  min-height: 0;
 }
 
 .settings-page,

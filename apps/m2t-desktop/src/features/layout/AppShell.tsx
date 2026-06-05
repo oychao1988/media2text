@@ -56,6 +56,7 @@ export function AppShell() {
   } = useCreators();
 
   const [playbackSession, setPlaybackSession] = useState<LiveSessionSummary | null>(null);
+  const [playbackTime, setPlaybackTime] = useState(0);
   const previewLoading = readLoadingPreview();
   const { refresh: refreshLive } = useLiveStatus(
     centerView === 'live' || centerView === 'history' || centerView === 'playback'
@@ -231,6 +232,7 @@ export function AppShell() {
                 active={centerView === 'playback'}
                 creatorName={selected?.display_name ?? ''}
                 session={playbackSession}
+                onTimeUpdate={setPlaybackTime}
               />
             </>
           )}
@@ -262,6 +264,7 @@ export function AppShell() {
             sessionId={transcriptSessionId}
             summaryPath={summaryPath}
             mode={centerView === 'playback' ? 'playback' : 'live'}
+            playbackTime={playbackTime}
           />
           <div
             className="row-resize"
