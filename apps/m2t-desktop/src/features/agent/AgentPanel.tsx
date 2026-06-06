@@ -86,7 +86,6 @@ function AgentChatMessages({
   );
 }
 
-export function AgentPanel
 export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
   const { creators, setSelectedId } = useCreators();
   const { threads, createThread, createGlobalThread, renameThread, deleteThread } =
