@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { readEnvContext } from './context.js';
+import { applyRefreshPayload, createInitialContext } from './context.js';
 import { emitAssistant, emitError, emitReady } from './emit.js';
 import { createM2tAgentSession, readSidecarVersion } from './session.js';
 
@@ -39,17 +39,7 @@ async function main(): Promise<void> {
     try {
       const msg = JSON.parse(line) as { type?: string; payload?: Record<string, unknown> };
       if (msg.type === 'context.refresh') {
-        const env = readEnvContext();
-        if (msg.payload?.creatorId != null) {
-          process.env.M2T_CREATOR_ID = String(msg.payload.creatorId);
-        }
-        if (msg.payload?.sessionId != null) {
-          process.env.M2T_SESSION_ID = String(msg.payload.sessionId);
-        }
-        if (msg.payload?.threadId != null) {
-          process.env.M2T_THREAD_ID = String(msg.payload.threadId);
-        }
-        Object.assign(env, readEnvContext());
+        applyRefreshPayload(createInitialContext(), msg.payload ?? {});
         if (agentSession) await agentSession.reloadContext();
         return;
       }
