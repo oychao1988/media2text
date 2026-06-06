@@ -70,6 +70,7 @@ desktop:
   agent:
     max_tool_output_chars: 16000
     session_search_default_limit: 8
+    llm_timeout_sec: 120        # agent LLM HTTP timeout; avoids infinite「思考中」
 
 # Hermes agent kernel (§14) — memory/compression used from M3+
 memory:

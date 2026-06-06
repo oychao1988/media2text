@@ -275,6 +275,7 @@ class AgentLoopConfig(BaseModel):
 class DesktopAgentConfig(BaseModel):
     max_tool_output_chars: int = 16000
     session_search_default_limit: int = 8
+    llm_timeout_sec: int = 120
 
 
 class DesktopConfig(BaseModel):
