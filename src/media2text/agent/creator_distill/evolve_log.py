@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from media2text.agent.creator_distill.atomic import atomic_write_text
-
 
 def evolve_log_path(profile_dir: Path) -> Path:
     return profile_dir / "evolve-log.jsonl"
