@@ -19,7 +19,6 @@ def summarize_compression(
     try:
         from media2text.core.summarize.openai_backend import (
             primary_model,
-            resolve_api_key_envs,
             resolve_llm_endpoints,
         )
 
@@ -27,20 +26,12 @@ def summarize_compression(
         if not endpoints:
             raise RuntimeError("no summarize endpoints")
         ep = endpoints[0]
-        import os
-
-        key_envs = resolve_api_key_envs(ep)
-        api_key = ""
-        for env_name in key_envs:
-            api_key = os.environ.get(env_name, "")
-            if api_key:
-                break
-        if not api_key:
+        if not ep.api_key:
             raise RuntimeError("no API key for compression")
 
         from openai import OpenAI  # type: ignore[reportMissingImports]
 
-        client = OpenAI(base_url=ep.base_url, api_key=api_key)
+        client = OpenAI(base_url=ep.base_url, api_key=ep.api_key)
         model = primary_model(cfg.summarize.llm)
         prompt = (
             "Summarize the following agent conversation segment for context compression. "
