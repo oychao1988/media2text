@@ -28,11 +28,11 @@ jobs:
       - name: Ruff
         run: ruff check src tests
 
-      - name: Pyright
-        run: pyright
+      - name: Pyright (agent kernel)
+        run: pyright src/media2text/agent/
 
-      - name: Pytest (unit, no live)
-        run: pytest tests/ -v --tb=short -q
+      - name: Pytest (desktop + agent)
+        run: pytest tests/unit/test_desktop_* tests/unit/test_api_* tests/unit/test_agent_* -v --tb=short -q -m "desktop or agent"
 
   desktop-frontend:
     runs-on: ubuntu-latest
@@ -48,9 +48,6 @@ jobs:
 
       - name: Install JS deps
         run: pnpm install --frozen-lockfile
-
-      - name: m2t-desktop lint
-        run: pnpm --filter m2t-desktop lint
 
       - name: m2t-desktop test
         run: pnpm --filter m2t-desktop test

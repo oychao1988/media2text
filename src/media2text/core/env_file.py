@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-from media2text.core.config import _project_root
+from media2text.core.config import _project_root, load_dotenv_file
 
 
 def _quote_env_value(value: str) -> str:
@@ -76,6 +76,9 @@ def upsert_env_var(key: str, value: str, *, path: Path | None = None) -> Path:
 
 def reload_dotenv(*, override: bool = False) -> None:
     """Reload `.env` into os.environ."""
+    if not override:
+        load_dotenv_file()
+        return
     env_path = env_file_path()
     if not env_path.is_file():
         return
