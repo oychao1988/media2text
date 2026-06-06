@@ -57,7 +57,7 @@ export function AgentComposer({
   onSend,
 }: AgentComposerProps) {
   const [text, setText] = useState('');
-  const inputRef = useAutoResizeTextarea(text, 10);
+  const { ref: inputRef, onInput } = useAutoResizeTextarea(text, 10);
 
   const submit = () => {
     const trimmed = text.trim();
@@ -83,7 +83,7 @@ export function AgentComposer({
 
   return (
     <form
-      className="composer agent-composer"
+      className="composer agent-composer agent-composer-wrap"
       id="agent-form"
       onSubmit={(e) => {
         e.preventDefault();
@@ -100,6 +100,7 @@ export function AgentComposer({
         value={text}
         disabled={!ready || blocked}
         onChange={(e) => setText(e.target.value)}
+        onInput={onInput}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
             e.preventDefault();
