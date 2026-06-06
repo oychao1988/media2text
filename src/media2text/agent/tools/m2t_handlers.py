@@ -28,6 +28,8 @@ class ToolContext:
     conn: Any
     creator_id: str | None = None
     supervisor: Any | None = None
+    session_id: str | None = None
+    display_thread_id: str | None = None
 
 
 def _ok(data: Any = None) -> dict[str, Any]:

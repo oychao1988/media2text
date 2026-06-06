@@ -8,6 +8,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Any, Callable
 
 from media2text.agent import pi_emit
+from media2text.agent.context_compressor import maybe_post_turn_compress, maybe_preflight
 from media2text.agent.hermes_state import MessageRow, SessionDB, parse_binding
 from media2text.agent.iteration_budget import IterationBudget
 from media2text.agent.model_tools import handle_function_call
@@ -93,6 +94,7 @@ class AIAgent:
         replay = self._db.get_messages_as_conversation(session_id)
         # replay already includes new user message
         messages: list[dict[str, Any]] = system_msgs + replay
+        messages = maybe_preflight(messages, self._cfg)
 
         tool_names = tool_names_for_set(self._toolset)
         tools_schema = openai_tools(tool_names)
@@ -104,6 +106,8 @@ class AIAgent:
             conn=self._db.conn,
             creator_id=creator_id,
             supervisor=self._supervisor,
+            session_id=session_id,
+            display_thread_id=display_thread_id,
         )
 
         final_text = ""
@@ -215,6 +219,13 @@ class AIAgent:
             self._emit(emit, pi_emit.agent_error(str(exc), code="AGENT_ERROR"))
             raise
         finally:
+            session_id = maybe_post_turn_compress(
+                self._db,
+                display_thread_id=display_thread_id,
+                session_id=session_id,
+                messages=messages,
+                cfg=self._cfg,
+            )
             duration_ms = int((time.time() - started) * 1000)
             self._emit(emit, pi_emit.turn_end(duration_ms))
 

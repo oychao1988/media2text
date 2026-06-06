@@ -538,6 +538,71 @@ def _migrate_awemes_v1(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_hermes_v2(conn: sqlite3.Connection) -> None:
+    """FTS5 indexes for session_search (M3)."""
+    tables = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type IN ('table', 'view')"
+        ).fetchall()
+    }
+    if "messages_fts" in tables:
+        return
+
+    conn.executescript(
+        """
+        CREATE VIRTUAL TABLE messages_fts USING fts5(
+          content,
+          message_id UNINDEXED,
+          session_id UNINDEXED,
+          tokenize='unicode61'
+        );
+
+        CREATE VIRTUAL TABLE messages_fts_trigram USING fts5(
+          content,
+          message_id UNINDEXED,
+          session_id UNINDEXED,
+          tokenize='trigram'
+        );
+
+        CREATE TRIGGER messages_fts_ai AFTER INSERT ON messages BEGIN
+          INSERT INTO messages_fts(message_id, session_id, content)
+          VALUES (new.id, new.session_id, COALESCE(new.content, ''));
+          INSERT INTO messages_fts_trigram(message_id, session_id, content)
+          VALUES (new.id, new.session_id, COALESCE(new.content, ''));
+        END;
+
+        CREATE TRIGGER messages_fts_ad AFTER DELETE ON messages BEGIN
+          DELETE FROM messages_fts WHERE message_id = old.id;
+          DELETE FROM messages_fts_trigram WHERE message_id = old.id;
+        END;
+
+        CREATE TRIGGER messages_fts_au AFTER UPDATE ON messages BEGIN
+          DELETE FROM messages_fts WHERE message_id = old.id;
+          DELETE FROM messages_fts_trigram WHERE message_id = old.id;
+          INSERT INTO messages_fts(message_id, session_id, content)
+          VALUES (new.id, new.session_id, COALESCE(new.content, ''));
+          INSERT INTO messages_fts_trigram(message_id, session_id, content)
+          VALUES (new.id, new.session_id, COALESCE(new.content, ''));
+        END;
+        """
+    )
+
+    conn.execute(
+        """
+        INSERT INTO messages_fts(message_id, session_id, content)
+        SELECT id, session_id, COALESCE(content, '') FROM messages
+        """
+    )
+    conn.execute(
+        """
+        INSERT INTO messages_fts_trigram(message_id, session_id, content)
+        SELECT id, session_id, COALESCE(content, '') FROM messages
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -554,6 +619,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_monitor_v1(conn)
         _migrate_awemes_v1(conn)
         _migrate_hermes_v1(conn)
+        _migrate_hermes_v2(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)
