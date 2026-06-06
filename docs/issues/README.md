@@ -155,10 +155,10 @@
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
-| 1 | [#170](https://github.com/oychao1988/media2text/issues/170) | （待开） | [m2t-desktop-agent-pane-pr1-history-api.md](./m2t-desktop-agent-pane-pr1-history-api.md) | `issue-170-desktop-history-api` |
-| 2 | [#171](https://github.com/oychao1988/media2text/issues/171) | （待开） | [m2t-desktop-agent-pane-pr2-sidecar-context.md](./m2t-desktop-agent-pane-pr2-sidecar-context.md) | `issue-171-agent-sidecar-context` |
-| 3 | [#172](https://github.com/oychao1988/media2text/issues/172) | （待开） | [m2t-desktop-agent-pane-pr3-layout-presets.md](./m2t-desktop-agent-pane-pr3-layout-presets.md) | `issue-172-desktop-layout-presets` |
-| 4 | [#173](https://github.com/oychao1988/media2text/issues/173) | （待开） | [m2t-desktop-agent-pane-pr4-agent-ui.md](./m2t-desktop-agent-pane-pr4-agent-ui.md) | `issue-173-agent-multi-thread-ui` |
+| 1 | [#170](https://github.com/oychao1988/media2text/issues/170) | [#174](https://github.com/oychao1988/media2text/pull/174) | [m2t-desktop-agent-pane-pr1-history-api.md](./m2t-desktop-agent-pane-pr1-history-api.md) | `issue-170-desktop-history-api` |
+| 2 | [#171](https://github.com/oychao1988/media2text/issues/171) | [#175](https://github.com/oychao1988/media2text/pull/175) | [m2t-desktop-agent-pane-pr2-sidecar-context.md](./m2t-desktop-agent-pane-pr2-sidecar-context.md) | `issue-171-agent-sidecar-context` |
+| 3 | [#172](https://github.com/oychao1988/media2text/issues/172) | [#176](https://github.com/oychao1988/media2text/pull/176) | [m2t-desktop-agent-pane-pr3-layout-presets.md](./m2t-desktop-agent-pane-pr3-layout-presets.md) | `issue-172-desktop-layout-presets` |
+| 4 | [#173](https://github.com/oychao1988/media2text/issues/173) | [#177](https://github.com/oychao1988/media2text/pull/177) | [m2t-desktop-agent-pane-pr4-agent-ui.md](./m2t-desktop-agent-pane-pr4-agent-ui.md) | `issue-173-agent-multi-thread-ui` |
 
 **合并顺序**：#170 → #171 / #172（可并行）→ #173。
 
