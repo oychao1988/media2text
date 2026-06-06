@@ -42,7 +42,7 @@ class DesktopEventRow:
 @dataclass
 class DesktopChatThreadRow:
     id: str
-    creator_id: str
+    creator_id: str | None
     session_id: str | None
     title: str | None
     provider_name: str | None

@@ -256,6 +256,22 @@ class DesktopChatConfig(BaseModel):
     max_context_chars: int = 24000
 
 
+class MemoryConfig(BaseModel):
+    max_chars: int = 2200
+    user_max_chars: int = 1375
+
+
+class CompressionConfig(BaseModel):
+    enabled: bool = True
+    preflight_ratio: float = 0.5
+    auto_ratio: float = 0.85
+    protect_last_n: int = 20
+
+
+class AgentLoopConfig(BaseModel):
+    max_turns: int = 25
+
+
 class DesktopConfig(BaseModel):
     api_port: int = 8765
     theme: str = "light"
@@ -296,6 +312,9 @@ class AppConfig(BaseSettings):
     platforms: PlatformsConfig = Field(default_factory=PlatformsConfig)
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
+    memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    compression: CompressionConfig = Field(default_factory=CompressionConfig)
+    agent: AgentLoopConfig = Field(default_factory=AgentLoopConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
     summarize: SummarizeConfig = Field(default_factory=SummarizeConfig)

@@ -67,5 +67,6 @@ def test_chat_thread_crud(api_client, workspace) -> None:
     assert r.status_code == 200
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)
-    assert DesktopChatRepo(conn).get_thread(tid) is None
+    repo = DesktopChatRepo(conn)
+    assert repo.get_thread(tid) is None
     conn.close()

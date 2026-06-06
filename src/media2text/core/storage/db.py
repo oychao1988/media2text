@@ -400,6 +400,136 @@ def _migrate_monitor_v2(conn: sqlite3.Connection) -> None:
 _AWEME_COLUMNS = (("download_url", "TEXT"), ("media_urls", "TEXT"))
 
 
+def _migrate_hermes_v1(conn: sqlite3.Connection) -> None:
+    """Migrate desktop_chat_* to Hermes sessions/messages (M0)."""
+    import json
+
+    tables = {
+        r[0]
+        for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ).fetchall()
+    }
+    if "_legacy_desktop_chat_threads" in tables:
+        return
+
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS sessions (
+          id TEXT PRIMARY KEY,
+          display_thread_id TEXT NOT NULL,
+          parent_session_id TEXT,
+          title TEXT,
+          creator_id TEXT,
+          active_binding_json TEXT,
+          token_estimate INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (parent_session_id) REFERENCES sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_sessions_display_thread
+          ON sessions(display_thread_id);
+        CREATE INDEX IF NOT EXISTS idx_sessions_parent
+          ON sessions(parent_session_id);
+
+        CREATE TABLE IF NOT EXISTS messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          seq INTEGER NOT NULL,
+          role TEXT NOT NULL,
+          content TEXT,
+          tool_call_id TEXT,
+          tool_name TEXT,
+          tool_calls_json TEXT,
+          thinking_text TEXT,
+          input_tokens INTEGER,
+          output_tokens INTEGER,
+          duration_ms INTEGER,
+          message_kind TEXT NOT NULL DEFAULT 'normal',
+          created_at TEXT NOT NULL,
+          FOREIGN KEY (session_id) REFERENCES sessions(id)
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_messages_session_seq
+          ON messages(session_id, seq);
+        """
+    )
+
+    if "desktop_chat_threads" not in tables:
+        conn.commit()
+        return
+
+    session_count = conn.execute("SELECT COUNT(*) FROM sessions").fetchone()[0]
+    if session_count == 0:
+        thread_rows = conn.execute("SELECT * FROM desktop_chat_threads").fetchall()
+        for row in thread_rows:
+            binding = {
+                "provider_name": row["provider_name"],
+                "model": row["model"] or "auto",
+                "context_mode": row["context_mode"] or "both",
+                "session_id": row["session_id"],
+            }
+            conn.execute(
+                """
+                INSERT INTO sessions (
+                  id, display_thread_id, parent_session_id, title, creator_id,
+                  active_binding_json, token_estimate, created_at, updated_at
+                )
+                VALUES (?, ?, NULL, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    row["id"],
+                    row["id"],
+                    row["title"],
+                    row["creator_id"],
+                    json.dumps(binding),
+                    row["created_at"],
+                    row["updated_at"],
+                ),
+            )
+
+        for thread_row in thread_rows:
+            tid = thread_row["id"]
+            seq = 0
+            msg_rows = conn.execute(
+                """
+                SELECT * FROM desktop_chat_messages
+                WHERE thread_id = ?
+                ORDER BY created_at
+                """,
+                (tid,),
+            ).fetchall()
+            for msg in msg_rows:
+                seq += 1
+                conn.execute(
+                    """
+                    INSERT INTO messages (
+                      id, session_id, seq, role, content, tool_call_id, tool_name,
+                      tool_calls_json, thinking_text, input_tokens, output_tokens,
+                      duration_ms, message_kind, created_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, NULL, NULL, NULL, ?, NULL, NULL, ?, 'normal', ?)
+                    """,
+                    (
+                        msg["id"],
+                        tid,
+                        seq,
+                        msg["role"],
+                        msg["content"],
+                        msg["thinking_text"],
+                        msg["duration_ms"],
+                        msg["created_at"],
+                    ),
+                )
+
+    conn.execute(
+        "ALTER TABLE desktop_chat_threads RENAME TO _legacy_desktop_chat_threads"
+    )
+    conn.execute(
+        "ALTER TABLE desktop_chat_messages RENAME TO _legacy_desktop_chat_messages"
+    )
+    conn.commit()
+
+
 def _migrate_awemes_v1(conn: sqlite3.Connection) -> None:
     existing = {row[1] for row in conn.execute("PRAGMA table_info(awemes)").fetchall()}
     for name, col_type in _AWEME_COLUMNS:
@@ -423,6 +553,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_desktop_v2(conn)
         _migrate_monitor_v1(conn)
         _migrate_awemes_v1(conn)
+        _migrate_hermes_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

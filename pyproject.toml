@@ -43,6 +43,7 @@ pythonpath = ["src"]
 markers = [
   "live: needs real Douyin network",
   "desktop: m2t-desktop API unit tests (requires desktop extra)",
+  "agent: Hermes agent kernel unit tests",
 ]
 
 [tool.ruff]
