@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import asdict
 from typing import Any
 
+from media2text.agent.hermes_state import SessionDB
+from media2text.agent.memory_store import MemorySafetyError, MemoryTarget, read_file, write_file
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
 
@@ -45,9 +48,15 @@ def handle_function_call(
     try:
         params = _parse_args(arguments)
         if tool.kind == "hermes" and name == "memory":
-            return _handle_memory(params)
+            return _handle_memory(params, ctx)
+        if tool.kind == "hermes" and name == "session_search":
+            return _handle_session_search(params, ctx)
         result = tool.handler(ctx, **params)
     except AgentToolError as exc:
+        return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}
+    except MemorySafetyError as exc:
+        return {"ok": False, "error": {"code": "CONTENT_BLOCKED", "message": str(exc)}}
+    except ValueError as exc:
         return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}
     except Exception as exc:  # noqa: BLE001
         return {"ok": False, "error": {"code": "TOOL_ERROR", "message": str(exc)}}
@@ -65,22 +74,68 @@ def handle_function_call(
     return {"ok": True, "data": result}
 
 
-# Module-level stub store for M1 memory tool (per-process; M3 replaces)
-_MEMORY_STORE: dict[str, str] = {}
+def _resolve_target(params: dict[str, Any]) -> MemoryTarget:
+    raw = str(params.get("target") or "memory").lower()
+    if raw in ("memory", "user", "soul"):
+        return raw  # type: ignore[return-value]
+    raise AgentToolError("target must be memory, user, or soul")
 
 
-def _handle_memory(params: dict[str, Any]) -> dict[str, Any]:
-    action = params.get("action")
-    key = str(params.get("key") or "default")
+def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    action = str(params.get("action") or "").lower()
+    target = _resolve_target(params)
+
     if action == "read":
-        return {"ok": True, "data": {"key": key, "value": _MEMORY_STORE.get(key, "")}}
-    if action == "write":
-        value = str(params.get("value") or "")
-        _MEMORY_STORE[key] = value
-        return {"ok": True, "data": {"key": key, "value": value, "stored": True}}
-    return {"ok": False, "error": {"code": "INVALID_ACTION", "message": "action must be read or write"}}
+        content = read_file(ctx.cfg, target)
+        return {"ok": True, "data": {"target": target, "content": content}}
+
+    if action in ("write", "append"):
+        content = params.get("content")
+        if content is None:
+            content = params.get("value")
+        if content is None and params.get("key"):
+            key = str(params.get("key"))
+            val = str(params.get("value") or "")
+            content = f"- {key}: {val}\n"
+        text = str(content or "")
+        mode = "append" if action == "append" else "replace"
+        meta = write_file(ctx.cfg, target, text, mode=mode)
+        return {"ok": True, "data": {**meta, "content": read_file(ctx.cfg, target)}}
+
+    raise AgentToolError("action must be read, write, or append")
+
+
+def _handle_session_search(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
+    query = str(params.get("query") or "").strip()
+    if not query:
+        raise AgentToolError("query is required")
+
+    limit_raw = params.get("limit")
+    if limit_raw is None:
+        limit = ctx.cfg.desktop.agent.session_search_default_limit
+    else:
+        limit = int(limit_raw)
+
+    session_id = params.get("session_id") or ctx.session_id
+    creator_id = params.get("creator_id")
+    if creator_id is None and ctx.creator_id:
+        creator_id = ctx.creator_id
+
+    db = SessionDB(ctx.conn)
+    hits = db.search_messages(
+        query,
+        session_id=session_id,
+        creator_id=creator_id,
+        limit=max(1, min(limit, 50)),
+    )
+    return {
+        "ok": True,
+        "data": {
+            "query": query,
+            "results": [asdict(h) for h in hits],
+        },
+    }
 
 
 def reset_memory_store() -> None:
-    """Test helper."""
-    _MEMORY_STORE.clear()
+    """Test helper — no-op for file-backed memory."""

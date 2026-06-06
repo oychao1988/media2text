@@ -27,6 +27,18 @@ class MessageRow:
     message_kind: str = "normal"
 
 
+@dataclass(frozen=True)
+class SearchHit:
+    message_id: str
+    session_id: str
+    display_thread_id: str
+    title: str | None
+    role: str
+    snippet: str
+    seq: int
+    creator_id: str | None = None
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -318,7 +330,7 @@ class SessionDB:
     def get_messages_as_conversation(self, session_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """
-            SELECT role, content, tool_call_id, tool_name, tool_calls_json
+            SELECT role, content, tool_call_id, tool_name, tool_calls_json, message_kind
             FROM messages
             WHERE session_id = ?
             ORDER BY seq
@@ -347,6 +359,13 @@ class SessionDB:
                         "content": row["content"] or "",
                     }
                 )
+            elif row["message_kind"] == "compression_summary":
+                out.append(
+                    {
+                        "role": "assistant",
+                        "content": f"[compression_summary]\n{row['content'] or ''}",
+                    }
+                )
             else:
                 out.append({"role": role, "content": row["content"] or ""})
         return out
@@ -364,6 +383,152 @@ class SessionDB:
         if not row:
             raise KeyError(f"thread not found: {display_thread_id}")
         return str(row["id"])
+
+    def fork_session(self, parent_id: str, *, reason: str) -> str:
+        parent = self.get_session_row(parent_id)
+        if parent is None:
+            raise KeyError(f"parent session not found: {parent_id}")
+
+        child_id = str(uuid.uuid4())
+        now = _utc_now()
+
+        def _insert() -> None:
+            self._conn.execute(
+                """
+                INSERT INTO sessions (
+                  id, display_thread_id, parent_session_id, title, creator_id,
+                  active_binding_json, token_estimate, created_at, updated_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?)
+                """,
+                (
+                    child_id,
+                    parent["display_thread_id"],
+                    parent_id,
+                    parent["title"],
+                    parent["creator_id"],
+                    parent["active_binding_json"],
+                    now,
+                    now,
+                ),
+            )
+
+        _write_with_retry(self._conn, _insert)
+        return child_id
+
+    def update_token_estimate(self, session_id: str, tokens: int) -> None:
+        now = _utc_now()
+
+        def _update() -> None:
+            self._conn.execute(
+                """
+                UPDATE sessions SET token_estimate = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (tokens, now, session_id),
+            )
+
+        _write_with_retry(self._conn, _update)
+
+    def _fts_search_table(
+        self,
+        table: str,
+        query: str,
+        *,
+        session_id: str | None,
+        creator_id: str | None,
+        limit: int,
+    ) -> list[sqlite3.Row]:
+        clauses = [f"{table} MATCH ?"]
+        params: list[Any] = [query]
+        if session_id:
+            clauses.append("m.session_id = ?")
+            params.append(session_id)
+        if creator_id:
+            clauses.append("s.creator_id = ?")
+            params.append(creator_id)
+        params.append(limit)
+        where_sql = " AND ".join(clauses)
+        return list(
+            self._conn.execute(
+                f"""
+                SELECT
+                  m.id AS message_id,
+                  m.session_id,
+                  s.display_thread_id,
+                  s.title,
+                  s.creator_id,
+                  m.role,
+                  m.content,
+                  m.seq,
+                  bm25({table}) AS rank
+                FROM {table}
+                JOIN messages m ON m.id = {table}.message_id
+                JOIN sessions s ON s.id = m.session_id
+                WHERE {where_sql}
+                ORDER BY rank
+                LIMIT ?
+                """,
+                params,
+            ).fetchall()
+        )
+
+    def search_messages(
+        self,
+        query: str,
+        *,
+        session_id: str | None = None,
+        creator_id: str | None = None,
+        limit: int = 8,
+    ) -> list[SearchHit]:
+        q = query.strip()
+        if not q:
+            return []
+
+        # Quote multi-token queries so FTS5 treats them as a phrase where supported.
+        fts_q = q.replace('"', '""')
+        if " " in fts_q or "-" in fts_q:
+            fts_q = f'"{fts_q}"'
+        rows: list[sqlite3.Row] = []
+        for table in ("messages_fts", "messages_fts_trigram"):
+            try:
+                rows.extend(
+                    self._fts_search_table(
+                        table,
+                        fts_q,
+                        session_id=session_id,
+                        creator_id=creator_id,
+                        limit=limit,
+                    )
+                )
+            except sqlite3.OperationalError:
+                continue
+
+        rows.sort(key=lambda r: float(r["rank"]))
+        seen: set[str] = set()
+        hits: list[SearchHit] = []
+        for row in rows:
+            mid = str(row["message_id"])
+            if mid in seen:
+                continue
+            seen.add(mid)
+            content = row["content"] or ""
+            snippet = content[:240] + ("…" if len(content) > 240 else "")
+            hits.append(
+                SearchHit(
+                    message_id=mid,
+                    session_id=str(row["session_id"]),
+                    display_thread_id=str(row["display_thread_id"]),
+                    title=row["title"],
+                    role=str(row["role"]),
+                    snippet=snippet,
+                    seq=int(row["seq"]),
+                    creator_id=row["creator_id"],
+                )
+            )
+            if len(hits) >= limit:
+                break
+        return hits
 
 
 def parse_binding(raw: str | None) -> dict[str, Any]:

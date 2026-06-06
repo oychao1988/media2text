@@ -130,11 +130,13 @@ M2T_TOOLS: list[ToolDef] = [
 HERMES_STUB_TOOLS: list[ToolDef] = [
     ToolDef(
         name="memory",
-        description="Read or write short-term agent memory (M1 stub)",
+        description="Read or write curated MEMORY.md / USER.md in workspace .agent/",
         parameters={
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["read", "write"]},
+                "action": {"type": "string", "enum": ["read", "write", "append"]},
+                "target": {"type": "string", "enum": ["memory", "user", "soul"]},
+                "content": {"type": "string"},
                 "key": {"type": "string"},
                 "value": {"type": "string"},
             },
@@ -145,12 +147,14 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="session_search",
-        description="Search prior session messages (M1 stub)",
+        description="FTS search across prior session messages",
         parameters={
             "type": "object",
             "properties": {
                 "query": {"type": "string"},
                 "limit": {"type": "integer"},
+                "session_id": {"type": "string"},
+                "creator_id": {"type": "string"},
             },
             "required": ["query"],
         },

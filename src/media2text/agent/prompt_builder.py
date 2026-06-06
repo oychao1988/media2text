@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from media2text.agent.memory_store import format_memory_block, load_volatile_snapshot
 from media2text.agent.profile_resolver import resolve_profile
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
@@ -74,12 +75,18 @@ def build_system_prompt(
         f"Context mode: {context_mode}",
         _manifest_summary(cfg, creator_id),
     ]
-    volatile = f"Thread model: {binding.get('model') or thread.get('model') or 'auto'}"
+    snapshot = load_volatile_snapshot(cfg)
+    memory_block = format_memory_block(snapshot)
+    volatile_lines = [
+        f"Thread model: {binding.get('model') or thread.get('model') or 'auto'}",
+    ]
+    if memory_block:
+        volatile_lines.append(memory_block)
 
     return SystemPromptParts(
         stable=stable,
         context="\n".join(context_lines),
-        volatile=volatile,
+        volatile="\n\n".join(volatile_lines),
     )
 
 

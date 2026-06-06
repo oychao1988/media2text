@@ -23,7 +23,7 @@ def test_registry_has_thirteen_m2t_tools() -> None:
     assert len(m2t) == 13
 
 
-def test_memory_tool_stub_write_read(tmp_path) -> None:
+def test_memory_tool_write_read(tmp_path) -> None:
     reset_memory_store()
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     conn = connect(tmp_path / "media2text.db")
@@ -34,9 +34,9 @@ def test_memory_tool_stub_write_read(tmp_path) -> None:
         ctx,
     )
     assert write["ok"] is True
-    read = handle_function_call("memory", {"action": "read", "key": "fact"}, ctx)
+    read = handle_function_call("memory", {"action": "read", "target": "memory"}, ctx)
     assert read["ok"] is True
-    assert read["data"]["value"] == "blue"
+    assert "blue" in read["data"]["content"]
     conn.close()
 
 
