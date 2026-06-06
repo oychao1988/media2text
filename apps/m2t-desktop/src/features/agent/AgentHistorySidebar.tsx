@@ -1,34 +1,25 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   filterThreadsByQuery,
-  groupThreads,
-  THREAD_GROUP_LABELS,
-  type ThreadTimeGroup,
-} from './threadGroups';
-import { isGlobalThread } from './agentThreadSelect';
-import type { HistoryFilter } from './useAgentThreads';
+  groupThreadsByAgent,
+  type AgentThreadGroup,
+} from './agentGroups';
+import { readAgentGroupCollapsed, writeAgentGroupCollapsed } from './agentGroupCollapse';
 import type { ThreadRow } from './types';
-
-const GROUP_ORDER: ThreadTimeGroup[] = ['today', 'yesterday', 'week', 'month'];
 
 type Props = {
   threads: ThreadRow[];
+  creators: Array<{ id: string; display_name: string | null }>;
   activeThreadId: string | null;
-  historyFilter: HistoryFilter;
-  onHistoryFilterChange: (filter: HistoryFilter) => void;
-  onNewGlobalThread: () => void;
+  onNewGlobalDraft: () => void;
   menuOpenThreadId?: string | null;
   editingThreadId?: string | null;
   onSelectThread: (threadId: string) => void;
   onOpenMenu: (threadId: string, anchor: HTMLElement) => void;
   onRenameCommit: (threadId: string, title: string) => void;
   onRenameCancel: () => void;
+  onBatchDeleteRequest: (agentId: string, threadIds: string[]) => void;
 };
-
-function threadMeta(thread: ThreadRow): string | null {
-  if (thread.model && thread.model !== 'auto') return thread.model;
-  return null;
-}
 
 function ThreadTitleEditor({
   initialTitle,
@@ -81,61 +72,173 @@ function ThreadTitleEditor({
   );
 }
 
+function AgentGroupSection({
+  group,
+  collapsed,
+  onToggleCollapse,
+  activeThreadId,
+  menuOpenThreadId,
+  editingThreadId,
+  onSelectThread,
+  onOpenMenu,
+  onRenameCommit,
+  onRenameCancel,
+  onBatchDeleteRequest,
+}: {
+  group: AgentThreadGroup;
+  collapsed: boolean;
+  onToggleCollapse: () => void;
+  activeThreadId: string | null;
+  menuOpenThreadId: string | null;
+  editingThreadId: string | null;
+  onSelectThread: (threadId: string) => void;
+  onOpenMenu: (threadId: string, anchor: HTMLElement) => void;
+  onRenameCommit: (threadId: string, title: string) => void;
+  onRenameCancel: () => void;
+  onBatchDeleteRequest: (agentId: string, threadIds: string[]) => void;
+}) {
+  const { agentId, profile, threads } = group;
+
+  return (
+    <div
+      className={`agent-thread-group${collapsed ? ' collapsed' : ''}`}
+      data-agent-id={agentId}
+    >
+      <div className="agent-thread-group-head">
+        <button
+          type="button"
+          className="agent-thread-group-toggle"
+          aria-expanded={!collapsed}
+          onClick={onToggleCollapse}
+        >
+          <span className="agent-thread-group-chevron" aria-hidden="true">
+            ▾
+          </span>
+          <span
+            className={`agent-thread-group-avatar${profile.isGlobal ? ' global' : ''}`}
+            aria-hidden="true"
+          >
+            {profile.abbr}
+          </span>
+          <span className="agent-thread-group-name">{profile.name}</span>
+        </button>
+        <div className="agent-thread-group-actions">
+          <button
+            type="button"
+            className="agent-thread-group-action"
+            title="删除该 Agent 下全部会话"
+            aria-label={`删除 ${profile.name} 下全部会话`}
+            onClick={() => onBatchDeleteRequest(agentId, threads.map((t) => t.id))}
+          >
+            ⌫
+          </button>
+        </div>
+      </div>
+      {!collapsed ? (
+        <div className="agent-thread-group-sessions">
+          {threads.map((thread) => {
+            const selected = thread.id === activeThreadId;
+            const menuOpen = thread.id === menuOpenThreadId;
+            const editing = thread.id === editingThreadId;
+            return (
+              <div
+                key={thread.id}
+                className={[
+                  'agent-thread-item',
+                  selected ? 'selected' : '',
+                  menuOpen ? 'menu-open' : '',
+                  editing ? 'is-editing' : '',
+                ]
+                  .filter(Boolean)
+                  .join(' ')}
+                role="listitem"
+                data-thread-id={thread.id}
+              >
+                <button
+                  type="button"
+                  className="agent-thread-main"
+                  data-thread-id={thread.id}
+                  onClick={() => !editing && onSelectThread(thread.id)}
+                >
+                  {editing ? (
+                    <ThreadTitleEditor
+                      initialTitle={thread.title ?? 'Agent'}
+                      onCommit={(title) => onRenameCommit(thread.id, title)}
+                      onCancel={onRenameCancel}
+                    />
+                  ) : (
+                    <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
+                  )}
+                </button>
+                {!editing ? (
+                  <button
+                    type="button"
+                    className="agent-thread-menu-btn"
+                    aria-label="更多操作"
+                    title="更多"
+                    data-thread-id={thread.id}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onOpenMenu(thread.id, e.currentTarget);
+                    }}
+                  >
+                    ⋯
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function AgentHistorySidebar({
   threads,
+  creators,
   activeThreadId,
-  historyFilter,
-  onHistoryFilterChange,
-  onNewGlobalThread,
+  onNewGlobalDraft,
   menuOpenThreadId = null,
   editingThreadId = null,
   onSelectThread,
   onOpenMenu,
   onRenameCommit,
   onRenameCancel,
+  onBatchDeleteRequest,
 }: Props) {
   const [search, setSearch] = useState('');
-  const [weekExpanded, setWeekExpanded] = useState(false);
+  const [collapsedMap, setCollapsedMap] = useState(readAgentGroupCollapsed);
 
-  const grouped = useMemo(() => {
-    const filtered = filterThreadsByQuery(groupThreads(threads), search);
-    const byGroup = new Map<ThreadTimeGroup, typeof filtered>();
-    for (const g of GROUP_ORDER) byGroup.set(g, []);
-    for (const t of filtered) {
-      byGroup.get(t.group)?.push(t);
-    }
-    return byGroup;
-  }, [search, threads]);
+  const filtered = useMemo(
+    () => filterThreadsByQuery(threads, search),
+    [search, threads],
+  );
+
+  const groups = useMemo(
+    () => groupThreadsByAgent(filtered, creators),
+    [filtered, creators],
+  );
+
+  const toggleGroup = (agentId: string) => {
+    setCollapsedMap((prev) => {
+      const next = { ...prev, [agentId]: !prev[agentId] };
+      writeAgentGroupCollapsed(next);
+      return next;
+    });
+  };
 
   return (
     <aside className="agent-history" id="agent-history" aria-label="历史会话">
       <div className="agent-history-toolbar" id="agent-history-toolbar">
-        <div className="agent-history-filter" role="group" aria-label="历史筛选">
-          <button
-            type="button"
-            className={`agent-history-filter-btn${historyFilter === 'all' ? ' active' : ''}`}
-            aria-pressed={historyFilter === 'all'}
-            onClick={() => onHistoryFilterChange('all')}
-          >
-            全部
-          </button>
-          <button
-            type="button"
-            className={`agent-history-filter-btn${historyFilter === 'creator' ? ' active' : ''}`}
-            aria-pressed={historyFilter === 'creator'}
-            onClick={() => onHistoryFilterChange('creator')}
-          >
-            当前博主
-          </button>
-        </div>
         <button
           type="button"
           className="agent-history-new-global"
           id="btn-agent-new-global"
-          title="新建全局会话"
-          onClick={onNewGlobalThread}
+          title="新建全局 Agent"
+          onClick={onNewGlobalDraft}
         >
-          新建全局会话
+          新建全局 Agent
         </button>
       </div>
       <input
@@ -146,97 +249,26 @@ export function AgentHistorySidebar({
         onChange={(e) => setSearch(e.target.value)}
       />
       <div className="agent-thread-list" id="agent-thread-list" role="list">
-        {GROUP_ORDER.map((groupKey) => {
-          const items = grouped.get(groupKey) ?? [];
-          let visible = items;
-          let showMore = false;
-          if (groupKey === 'week' && !weekExpanded && items.length > 3) {
-            visible = items.slice(0, 3);
-            showMore = true;
-          }
-          if (!visible.length && !showMore) return null;
-          return (
-            <div key={groupKey} className="agent-thread-group" data-group={groupKey}>
-              <div className="agent-thread-group-title">{THREAD_GROUP_LABELS[groupKey]}</div>
-              {visible.map((thread) => {
-                const meta = threadMeta(thread);
-                const selected = thread.id === activeThreadId;
-                const menuOpen = thread.id === menuOpenThreadId;
-                const editing = thread.id === editingThreadId;
-                return (
-                  <div
-                    key={thread.id}
-                    className={[
-                      'agent-thread-item',
-                      selected ? 'selected' : '',
-                      menuOpen ? 'menu-open' : '',
-                      editing ? 'is-editing' : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' ')}
-                    role="listitem"
-                    data-thread-id={thread.id}
-                  >
-                    <span className="agent-thread-icon" aria-hidden="true">
-                      ✓
-                    </span>
-                    <button
-                      type="button"
-                      className="agent-thread-main"
-                      data-thread-id={thread.id}
-                      onClick={() => !editing && onSelectThread(thread.id)}
-                    >
-                      {editing ? (
-                        <ThreadTitleEditor
-                          initialTitle={thread.title ?? 'Agent'}
-                          onCommit={(title) => onRenameCommit(thread.id, title)}
-                          onCancel={onRenameCancel}
-                        />
-                      ) : (
-                        <>
-                          <span className="agent-thread-title-row">
-                            <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
-                            {isGlobalThread(thread.creator_id) ? (
-                              <span className="agent-thread-badge agent-thread-badge--global">
-                                全局
-                              </span>
-                            ) : null}
-                          </span>
-                          {meta ? <span className="agent-thread-meta">{meta}</span> : null}
-                        </>
-                      )}
-                    </button>
-                    {!editing ? (
-                      <button
-                        type="button"
-                        className="agent-thread-menu-btn"
-                        aria-label="更多操作"
-                        title="更多"
-                        data-thread-id={thread.id}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          onOpenMenu(thread.id, e.currentTarget);
-                        }}
-                      >
-                        ⋯
-                      </button>
-                    ) : null}
-                  </div>
-                );
-              })}
-              {showMore ? (
-                <button
-                  type="button"
-                  className="agent-thread-more"
-                  data-expand-week=""
-                  onClick={() => setWeekExpanded(true)}
-                >
-                  More
-                </button>
-              ) : null}
-            </div>
-          );
-        })}
+        {!groups.length ? (
+          <p className="agent-history-empty muted">暂无会话</p>
+        ) : (
+          groups.map((group) => (
+            <AgentGroupSection
+              key={group.agentId}
+              group={group}
+              collapsed={Boolean(collapsedMap[group.agentId])}
+              onToggleCollapse={() => toggleGroup(group.agentId)}
+              activeThreadId={activeThreadId}
+              menuOpenThreadId={menuOpenThreadId}
+              editingThreadId={editingThreadId}
+              onSelectThread={onSelectThread}
+              onOpenMenu={onOpenMenu}
+              onRenameCommit={onRenameCommit}
+              onRenameCancel={onRenameCancel}
+              onBatchDeleteRequest={onBatchDeleteRequest}
+            />
+          ))
+        )}
       </div>
     </aside>
   );

@@ -4,31 +4,23 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentHistorySidebar } from './AgentHistorySidebar';
 import type { ThreadRow } from './types';
 
-function makeThreads(n: number, prefix: string): ThreadRow[] {
-  const now = Date.now();
-  return Array.from({ length: n }, (_, i) => ({
-    id: `${prefix}-${i}`,
-    creator_id: 'c1',
-    session_id: null,
-    title: `${prefix} ${i}`,
-    provider_name: null,
-    model: 'auto',
-    updated_at: new Date(now - i * 86400000).toISOString(),
-  }));
-}
+const creators = [
+  { id: 'c1', display_name: '博主甲' },
+  { id: 'c2', display_name: '博主乙' },
+];
 
 const defaultProps = {
-  historyFilter: 'all' as const,
-  onHistoryFilterChange: () => {},
-  onNewGlobalThread: () => {},
+  creators,
+  onNewGlobalDraft: () => {},
   onSelectThread: () => {},
   onOpenMenu: () => {},
   onRenameCommit: () => {},
   onRenameCancel: () => {},
+  onBatchDeleteRequest: () => {},
 };
 
 describe('AgentHistorySidebar', () => {
-  it('filters threads by search (A4)', async () => {
+  it('filters threads by search', async () => {
     const user = userEvent.setup();
     render(
       <AgentHistorySidebar
@@ -62,45 +54,50 @@ describe('AgentHistorySidebar', () => {
     expect(screen.queryByText('Other chat')).toBeNull();
   });
 
-  it('shows time group headings (A4)', () => {
+  it('groups threads by agent with global first', () => {
+    const threads: ThreadRow[] = [
+      {
+        id: 'g1',
+        creator_id: null,
+        session_id: null,
+        title: 'Global chat',
+        provider_name: null,
+        model: 'auto',
+        updated_at: new Date().toISOString(),
+      },
+      {
+        id: 'c1t',
+        creator_id: 'c1',
+        session_id: null,
+        title: 'Creator chat',
+        provider_name: null,
+        model: 'auto',
+        updated_at: new Date().toISOString(),
+      },
+    ];
     render(
       <AgentHistorySidebar
-        threads={makeThreads(1, 'Today')}
+        threads={threads}
         activeThreadId={null}
         {...defaultProps}
       />,
     );
-    expect(screen.getByText('TODAY')).toBeTruthy();
+
+    expect(screen.getByText('灵犀')).toBeTruthy();
+    expect(screen.getByText('博主甲')).toBeTruthy();
+    expect(screen.getByText('Global chat')).toBeTruthy();
   });
 
-  it('expands week group via More (A4)', async () => {
-    const user = userEvent.setup();
-    const weekOld = Array.from({ length: 5 }, (_, i) => ({
-      id: `w-${i}`,
-      creator_id: 'c1',
-      session_id: null,
-      title: `Week ${i}`,
-      provider_name: null,
-      model: 'auto',
-      updated_at: new Date(Date.now() - (3 + i) * 86400000).toISOString(),
-    }));
+  it('shows empty state when no threads', () => {
     render(
-      <AgentHistorySidebar
-        threads={weekOld}
-        activeThreadId={null}
-        {...defaultProps}
-      />,
+      <AgentHistorySidebar threads={[]} activeThreadId={null} {...defaultProps} />,
     );
-
-    const more = screen.getByRole('button', { name: 'More' });
-    expect(more).toBeTruthy();
-    await user.click(more);
-    expect(screen.getByText('Week 4')).toBeTruthy();
+    expect(screen.getByText('暂无会话')).toBeTruthy();
   });
 
-  it('calls onOpenMenu from thread menu button (A5)', async () => {
+  it('requests batch delete for agent group', async () => {
     const user = userEvent.setup();
-    const onOpenMenu = vi.fn();
+    const onBatchDeleteRequest = vi.fn();
     render(
       <AgentHistorySidebar
         threads={[
@@ -116,45 +113,10 @@ describe('AgentHistorySidebar', () => {
         ]}
         activeThreadId={null}
         {...defaultProps}
-        onOpenMenu={onOpenMenu}
+        onBatchDeleteRequest={onBatchDeleteRequest}
       />,
     );
-    await user.click(screen.getByLabelText('更多操作'));
-    expect(onOpenMenu).toHaveBeenCalledWith('x', expect.any(HTMLElement));
-  });
-
-  it('shows history filter and global badge (M5a)', async () => {
-    const user = userEvent.setup();
-    const onHistoryFilterChange = vi.fn();
-    const onNewGlobalThread = vi.fn();
-    render(
-      <AgentHistorySidebar
-        threads={[
-          {
-            id: 'g1',
-            creator_id: null,
-            session_id: null,
-            title: 'Workspace chat',
-            provider_name: null,
-            model: 'auto',
-            updated_at: new Date().toISOString(),
-          },
-        ]}
-        activeThreadId={null}
-        historyFilter="all"
-        onHistoryFilterChange={onHistoryFilterChange}
-        onNewGlobalThread={onNewGlobalThread}
-        onSelectThread={() => {}}
-        onOpenMenu={() => {}}
-        onRenameCommit={() => {}}
-        onRenameCancel={() => {}}
-      />,
-    );
-
-    expect(screen.getByText('全局')).toBeTruthy();
-    await user.click(screen.getByRole('button', { name: '当前博主' }));
-    expect(onHistoryFilterChange).toHaveBeenCalledWith('creator');
-    await user.click(screen.getByRole('button', { name: '新建全局会话' }));
-    expect(onNewGlobalThread).toHaveBeenCalledOnce();
+    await user.click(screen.getByLabelText('删除 博主甲 下全部会话'));
+    expect(onBatchDeleteRequest).toHaveBeenCalledWith('c1', ['x']);
   });
 });

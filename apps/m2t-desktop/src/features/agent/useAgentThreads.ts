@@ -2,22 +2,15 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import type { ThreadRow } from './types';
 
-export type HistoryFilter = 'all' | 'creator';
-
-export function useAgentThreads(selectedCreatorId: string | null) {
+export function useAgentThreads(_selectedCreatorId: string | null) {
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [loading, setLoading] = useState(false);
-  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const query =
-        historyFilter === 'creator' && selectedCreatorId
-          ? `?creatorId=${encodeURIComponent(selectedCreatorId)}`
-          : '';
       const res = await apiGet<{ ok: boolean; threads: ThreadRow[] }>(
-        `/api/agent/threads${query}`,
+        '/api/agent/threads',
         true,
       );
       const rows = (res.threads ?? []).slice().sort((a, b) => {
@@ -31,7 +24,7 @@ export function useAgentThreads(selectedCreatorId: string | null) {
     } finally {
       setLoading(false);
     }
-  }, [historyFilter, selectedCreatorId]);
+  }, []);
 
   useEffect(() => {
     void refresh();
@@ -88,8 +81,6 @@ export function useAgentThreads(selectedCreatorId: string | null) {
   return {
     threads,
     loading,
-    historyFilter,
-    setHistoryFilter,
     refresh,
     createThread,
     createGlobalThread,

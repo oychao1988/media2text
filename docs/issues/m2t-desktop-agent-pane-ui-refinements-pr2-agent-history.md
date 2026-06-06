@@ -14,30 +14,30 @@
 
 ### 分组逻辑
 
-- [ ] `groupThreadsByAgent()` 替代时间分组；`agentId = thread.creator_id ?? 'global'`
-- [ ] 灵犀组固定首位；博主组顺序与 `GET /api/creators` / 左栏一致
-- [ ] **仅渲染 ≥1 thread 的组**；全局无分组时显示「暂无会话」（§14.2）
-- [ ] 会话项 `.agent-thread-item` 缩进 24px（`.agent-thread-group-sessions`）
+- [x] `groupThreadsByAgent()` 替代时间分组；`agentId = thread.creator_id ?? 'global'`
+- [x] 灵犀组固定首位；博主组顺序与 `GET /api/creators` / 左栏一致
+- [x] **仅渲染 ≥1 thread 的组**；全局无分组时显示「暂无会话」（§14.2）
+- [x] 会话项 `.agent-thread-item` 缩进 24px（`.agent-thread-group-sessions`）
 
 ### 侧栏 UI
 
-- [ ] `.agent-thread-group-head`：toggle（头像+名称+chevron）+ ⌫ 批量删除
-- [ ] 折叠状态 `agentGroupCollapsed[agentId]` persist（localStorage 或现有 history UI state）
-- [ ] **移除** `HistoryFilter` 及 `useAgentThreads.historyFilter`、侧栏两颗筛选按钮（§14.4）
-- [ ] 保留搜索 filter（title 客户端过滤）
+- [x] `.agent-thread-group-head`：toggle（头像+名称+chevron）+ ⌫ 批量删除
+- [x] 折叠状态 `agentGroupCollapsed[agentId]` persist（localStorage 或现有 history UI state）
+- [x] **移除** `HistoryFilter` 及 `useAgentThreads.historyFilter`、侧栏两颗筛选按钮（§14.4）
+- [x] 保留搜索 filter（title 客户端过滤）
 
 ### 批量删除
 
-- [ ] 共用 `ConfirmDialog`（`role="alertdialog"`；打开聚焦取消钮）
-- [ ] 确认后对组内 thread id **并行** `DELETE /api/agent/threads/{id}`（`Promise.allSettled`）
-- [ ] 成功：移除会话 + 关闭对应页签
-- [ ] 部分失败：toast「已删除 N 条，M 条失败」；失败项保留（§14.2）
-- [ ] 单条删除亦走同一 confirm 组件
+- [x] 共用 `ConfirmDialog`（`role="alertdialog"`；打开聚焦取消钮）
+- [x] 确认后对组内 thread id **并行** `DELETE /api/agent/threads/{id}`（`Promise.allSettled`）
+- [x] 成功：移除会话 + 关闭对应页签
+- [x] 部分失败：toast「已删除 N 条，M 条失败」；失败项保留（§14.2）
+- [x] 单条删除亦走同一 confirm 组件
 
 ### 测试
 
-- [ ] `agentGroups.test.ts`：分组、空组隐藏、global 首位、creator 顺序
-- [ ] 批量删 mock：`allSettled` 部分失败 toast
+- [x] `agentGroups.test.ts`：分组、空组隐藏、global 首位、creator 顺序
+- [x] 批量删 mock：`allSettled` 部分失败 toast
 
 ## 验证命令
 
