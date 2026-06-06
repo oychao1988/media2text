@@ -9,11 +9,11 @@
 
 | 类别 | 结论 |
 |------|------|
-| Issue PR #180–#188 | 待合并 |
-| `python scripts/epic_verify.py agent-hermes` | 待跑 |
+| Issue PR #180–#188 | **已合并**（末单 [#198](https://github.com/oychao1988/media2text/pull/198) → #188） |
+| `python scripts/epic_verify.py agent-hermes` | **PASS**（2026-06-06） |
 | Spec H1–H22 | 见下表 |
 
-**Epic 签署:** _pending_
+**Epic 签署:** 自动化项 PASS；H7 / H19–H22 部分手工见备注
 
 ---
 
@@ -29,10 +29,10 @@
 | H6 | session_search ≤200ms | M3 | | |
 | H7 | 首 token ≤10s | M1 | 手工/N/A | |
 | H8 | 无 Node 时 tauri dev 全功能 | M2 | PASS | `lib.rs` 无 agent_sidecar；live `serve` + WS `sidecar.ready`；结构验证 2026-06-06 |
-| H9 | Agent Pane Vitest 迁移 | M2 | PASS | Vitest **87** passed（含 `useM2tAgent.test.ts` 6 项 mock WS）；`agentContext` + pane 验收集 |
-| H10 | CLI/daemon 不变 | M0+ | | |
-| H11–H13 | 博主 profile 隔离 | M5a | | |
-| H14–H16 | terminal/delegate/approval | M6 | | |
+| H9 | Agent Pane Vitest 迁移 | M2 | PASS | Vitest **95** passed（含 `useM2tAgent` / `piEvent.approval.request`） |
+| H10 | CLI/daemon 不变 | M0+ | PASS | epic desktop-api-pytest 124 passed |
+| H11–H13 | 博主 profile 隔离 | M5a | PASS | `test_agent_profile_resolver.py` + creator mismatch API |
+| H14–H16 | terminal/delegate/approval | M6 | PASS | `test_agent_terminal.py` + `test_agent_delegate.py`；WS confirm + `POST /api/agent/approvals/{id}` |
 | H17–H18 | USER 二选一 / 全局 thread | M5a | | |
 | H19–H22 | 蒸馏/进化 | M5b/M5c | 部分手工 | |
 
@@ -47,5 +47,5 @@ pytest tests/unit/test_api_agent_m2_smoke.py -v -m desktop
 pnpm --filter m2t-desktop test
 ```
 
-**2026-06-06 验证：** `python scripts/agent_m2_verify.py` 全 PASS。  
-**未自动化：** `pnpm tauri dev` GUI 发消息 / tool 卡片视觉确认（H8 运行时等价已由 API+WS smoke 覆盖）。
+**2026-06-06 验证：** `python scripts/epic_verify.py agent-hermes` 全 PASS（doctor / ruff / pyright / desktop pytest 124 / agent pytest 52 / vitest 95）。  
+**未自动化：** `pnpm tauri dev` GUI 发消息 / terminal approval 真实 confirm（H7 首 token、H14 手工路径）。
