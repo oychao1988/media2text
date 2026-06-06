@@ -11,6 +11,16 @@ export type RuntimeContext = {
   summaryPath: string | null;
 };
 
+export type ContextRefreshPayload = {
+  creatorId?: string | null;
+  sessionId?: string | null;
+  threadId?: string | null;
+  sessionKind?: 'live' | 'vod' | null;
+  transcriptPath?: string | null;
+  summaryPath?: string | null;
+  contextMode?: 'transcript' | 'summary' | 'both' | null;
+};
+
 export function readEnvContext(): Pick<
   RuntimeContext,
   'apiBaseUrl' | 'workspace' | 'creatorId' | 'sessionId' | 'threadId'
@@ -60,12 +70,69 @@ export function buildSystemPrompt(ctx: RuntimeContext): string {
 export function createInitialContext(): RuntimeContext {
   return {
     ...readEnvContext(),
+    ...readRefreshPathsFromEnv(),
     creatorName: null,
     creatorPlatform: null,
     sessionStartedAt: null,
-    transcriptPath: null,
-    summaryPath: null,
   };
+}
+
+export function readRefreshPathsFromEnv(): Pick<RuntimeContext, 'transcriptPath' | 'summaryPath'> {
+  const transcriptPath = process.env.M2T_TRANSCRIPT_PATH?.trim() || null;
+  const summaryPath = process.env.M2T_SUMMARY_PATH?.trim() || null;
+  return { transcriptPath, summaryPath };
+}
+
+export function applyRefreshPayload(ctx: RuntimeContext, payload: ContextRefreshPayload): void {
+  if (payload.creatorId != null) {
+    const value = String(payload.creatorId);
+    process.env.M2T_CREATOR_ID = value;
+    ctx.creatorId = value;
+  }
+  if (payload.sessionId != null) {
+    const value = String(payload.sessionId);
+    process.env.M2T_SESSION_ID = value;
+    ctx.sessionId = value;
+  }
+  if (payload.threadId != null) {
+    const value = String(payload.threadId);
+    process.env.M2T_THREAD_ID = value;
+    ctx.threadId = value;
+  }
+  if ('sessionKind' in payload) {
+    if (payload.sessionKind != null) {
+      process.env.M2T_SESSION_KIND = String(payload.sessionKind);
+    } else {
+      delete process.env.M2T_SESSION_KIND;
+    }
+  }
+  if ('contextMode' in payload) {
+    if (payload.contextMode != null) {
+      process.env.M2T_CONTEXT_MODE = String(payload.contextMode);
+    } else {
+      delete process.env.M2T_CONTEXT_MODE;
+    }
+  }
+  if ('transcriptPath' in payload) {
+    if (payload.transcriptPath != null) {
+      const value = String(payload.transcriptPath);
+      process.env.M2T_TRANSCRIPT_PATH = value;
+      ctx.transcriptPath = value;
+    } else {
+      delete process.env.M2T_TRANSCRIPT_PATH;
+      ctx.transcriptPath = null;
+    }
+  }
+  if ('summaryPath' in payload) {
+    if (payload.summaryPath != null) {
+      const value = String(payload.summaryPath);
+      process.env.M2T_SUMMARY_PATH = value;
+      ctx.summaryPath = value;
+    } else {
+      delete process.env.M2T_SUMMARY_PATH;
+      ctx.summaryPath = null;
+    }
+  }
 }
 
 export async function hydrateContextFromApi(ctx: RuntimeContext): Promise<void> {
@@ -84,7 +151,7 @@ export async function hydrateContextFromApi(ctx: RuntimeContext): Promise<void> 
       // API 不可达时不阻断对话
     }
   }
-  if (ctx.sessionId) {
+  if (ctx.sessionId && !ctx.transcriptPath && !ctx.summaryPath) {
     try {
       const res = await fetch(`${base}/api/sessions/${encodeURIComponent(ctx.sessionId)}`);
       if (res.ok) {

@@ -59,7 +59,33 @@ export type AgentContext = {
   sessionId?: string;
   threadId?: string;
   workspace?: string;
+  sessionKind?: 'live' | 'vod' | null;
+  transcriptPath?: string | null;
+  summaryPath?: string | null;
+  contextMode?: 'transcript' | 'summary' | 'both';
 };
+
+export type AgentContextRefreshPayload = {
+  creatorId: string;
+  sessionId: string;
+  threadId: string;
+  sessionKind: 'live' | 'vod' | null;
+  transcriptPath: string | null;
+  summaryPath: string | null;
+  contextMode?: 'transcript' | 'summary' | 'both';
+};
+
+export function buildContextRefreshPayload(ctx: AgentContext): AgentContextRefreshPayload {
+  return {
+    creatorId: ctx.creatorId ?? '',
+    sessionId: ctx.sessionId ?? '',
+    threadId: ctx.threadId ?? '',
+    sessionKind: ctx.sessionKind ?? null,
+    transcriptPath: ctx.transcriptPath ?? null,
+    summaryPath: ctx.summaryPath ?? null,
+    contextMode: ctx.contextMode,
+  };
+}
 
 export async function buildAgentSidecarEnv(ctx: AgentContext = {}): Promise<AgentSidecarEnv> {
   let config: ConfigDto | null = null;
@@ -298,11 +324,7 @@ export async function sendAgentContextRefresh(ctx: AgentContext): Promise<void> 
   getRuntime().lastContext = ctx;
   const { invoke } = await import('@tauri-apps/api/core');
   await invoke('send_agent_context_refresh', {
-    payload: {
-      creatorId: ctx.creatorId ?? '',
-      sessionId: ctx.sessionId ?? '',
-      threadId: ctx.threadId ?? '',
-    },
+    payload: buildContextRefreshPayload(ctx),
   });
 }
 

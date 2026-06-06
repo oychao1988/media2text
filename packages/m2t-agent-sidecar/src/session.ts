@@ -25,6 +25,7 @@ import {
   createInitialContext,
   hydrateContextFromApi,
   readEnvContext,
+  readRefreshPathsFromEnv,
   type RuntimeContext,
 } from './context.js';
 import { applyUserMessageLlm, resolveModelObject } from './llm.js';
@@ -208,7 +209,7 @@ export async function createM2tAgentSession(
   });
 
   async function reloadContext(): Promise<void> {
-    Object.assign(runtimeCtx, readEnvContext());
+    Object.assign(runtimeCtx, readEnvContext(), readRefreshPathsFromEnv());
     await hydrateContextFromApi(runtimeCtx);
     await loader.reload();
   }
