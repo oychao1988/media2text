@@ -8,7 +8,7 @@ import {
   sendAgentUserMessage,
   startAgentSidecar,
 } from './agentSidecar';
-import type { ActiveTurn, ChatMessage, ChatProvider, ThreadRow } from './types';
+import type { ActiveTurn, ChatMessage, ChatProvider } from './types';
 
 const INITIAL_TURN: ActiveTurn = {
   phase: 'preparing',
@@ -23,14 +23,22 @@ function nextId(): string {
 
 export type AgentStatus = 'starting' | 'ready' | 'crashed' | 'error';
 
-export function useM2tAgent(opts: {
-  creatorId: string | null;
+export type SessionContext = {
   sessionId: string | null;
+  sessionKind?: 'live' | 'vod' | null;
+  transcriptPath?: string | null;
+  summaryPath?: string | null;
+  contextMode?: 'transcript' | 'summary' | 'both';
+};
+
+export function useM2tAgent(opts: {
+  threadId: string | null;
+  creatorId: string | null;
+  sessionContext: SessionContext;
 }) {
-  const { creatorId, sessionId } = opts;
+  const { threadId, creatorId, sessionContext } = opts;
   const [status, setStatus] = useState<AgentStatus>('starting');
   const [fatalError, setFatalError] = useState<string | null>(null);
-  const [threadId, setThreadId] = useState<string | null>(null);
   const [threadModel, setThreadModel] = useState<string>('auto');
   const [providers, setProviders] = useState<ChatProvider[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -58,33 +66,6 @@ export function useM2tAgent(opts: {
     },
     [threadId],
   );
-
-  const ensureThread = useCallback(async (): Promise<string | null> => {
-    if (!creatorId) return null;
-    if (threadId) return threadId;
-    const listed = await apiGet<{ threads: ThreadRow[] }>(
-      `/api/chat/threads?creatorId=${encodeURIComponent(creatorId)}${
-        sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ''
-      }`,
-      true,
-    );
-    const existing = listed.threads?.[0];
-    if (existing) {
-      setThreadId(existing.id);
-      setThreadModel(existing.model || 'auto');
-      return existing.id;
-    }
-    const created = await apiPost<{ thread: ThreadRow }>('/api/chat/threads', {
-      creatorId,
-      sessionId: sessionId ?? undefined,
-      title: 'Agent',
-      model: 'auto',
-      contextMode: 'both',
-    });
-    setThreadId(created.thread.id);
-    setThreadModel(created.thread.model || 'auto');
-    return created.thread.id;
-  }, [creatorId, sessionId, threadId]);
 
   const loadHistory = useCallback(async (tid: string) => {
     const res = await apiGet<{
@@ -128,17 +109,21 @@ export function useM2tAgent(opts: {
   }, []);
 
   useEffect(() => {
-    if (!creatorId) {
-      setThreadId(null);
+    if (!threadId) {
       setMessages([]);
+      setThreadModel('auto');
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
-        const tid = await ensureThread();
-        if (!tid || cancelled) return;
-        await loadHistory(tid);
+        const listed = await apiGet<{ threads: Array<{ id: string; model?: string }> }>(
+          '/api/chat/threads',
+          true,
+        );
+        const row = listed.threads?.find((t) => t.id === threadId);
+        if (row?.model && !cancelled) setThreadModel(row.model);
+        await loadHistory(threadId);
       } catch {
         if (!cancelled) setMessages([]);
       }
@@ -146,7 +131,7 @@ export function useM2tAgent(opts: {
     return () => {
       cancelled = true;
     };
-  }, [creatorId, sessionId, ensureThread, loadHistory]);
+  }, [threadId, loadHistory]);
 
   const handleEvent = useCallback(
     (event: PiEvent) => {
@@ -277,7 +262,11 @@ export function useM2tAgent(opts: {
       (ev) => {
         if (!cancelled) handleEventRef.current(ev);
       },
-      { creatorId: creatorId ?? undefined, sessionId: sessionId ?? undefined },
+      {
+        creatorId: creatorId ?? undefined,
+        sessionId: sessionContext.sessionId ?? undefined,
+        threadId: threadId ?? undefined,
+      },
     )
       .then((s) => {
         stop = s;
@@ -292,16 +281,28 @@ export function useM2tAgent(opts: {
       cancelled = true;
       void stop?.();
     };
-  }, [creatorId, sessionId]);
+  }, [creatorId, threadId, sessionContext.sessionId]);
 
   useEffect(() => {
-    if (!creatorId) return;
+    if (!creatorId || !threadId) return;
     void sendAgentContextRefresh({
-      creatorId: creatorId ?? undefined,
-      sessionId: sessionId ?? undefined,
-      threadId: threadId ?? undefined,
+      creatorId,
+      sessionId: sessionContext.sessionId ?? undefined,
+      threadId,
+      sessionKind: sessionContext.sessionKind ?? null,
+      transcriptPath: sessionContext.transcriptPath ?? null,
+      summaryPath: sessionContext.summaryPath ?? null,
+      contextMode: sessionContext.contextMode,
     });
-  }, [creatorId, sessionId, threadId]);
+  }, [creatorId, threadId, sessionContext]);
+
+  useEffect(() => {
+    if (!threadId) return;
+    void apiPatch(`/api/chat/threads/${threadId}`, {
+      sessionId: sessionContext.sessionId ?? undefined,
+      clearSession: sessionContext.sessionId == null,
+    }).catch(() => {});
+  }, [threadId, sessionContext.sessionId]);
 
   useEffect(() => {
     return onAgentSidecarLifecycle((phase) => {
@@ -322,7 +323,7 @@ export function useM2tAgent(opts: {
   const sendMessage = useCallback(
     async (text: string) => {
       const trimmed = text.trim();
-      if (!trimmed || status !== 'ready') return;
+      if (!trimmed || status !== 'ready' || !threadId) return;
       const defaultProvider = providers.find((p) => p.configured) ?? providers[0];
       if (!defaultProvider) {
         setMessages((prev) => [
@@ -348,11 +349,11 @@ export function useM2tAgent(opts: {
       };
       await sendAgentUserMessage(payload);
     },
-    [providers, status, threadModel],
+    [providers, status, threadId, threadModel],
   );
 
   return {
-    ready: status === 'ready',
+    ready: status === 'ready' && Boolean(threadId),
     status,
     fatalError,
     messages,
