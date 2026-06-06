@@ -137,3 +137,32 @@ def test_list_sessions_includes_listed_vod(workspace) -> None:
     assert vod["status"] == "listed"
     assert vod["media_available"] is False
     assert vod["media_path"] is None
+
+
+def test_list_sessions_live_display_label(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_label",
+        profile_url="https://www.douyin.com/user/sec_label",
+        platform="douyin",
+    )
+    live_dir = workspace / "creators" / "sec_label" / "live"
+    live_dir.mkdir(parents=True)
+    flv = live_dir / "20260602T130400Z.flv"
+    flv.write_bytes(b"x")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(flv),
+    )
+    conn.execute(
+        "UPDATE live_sessions SET started_at = ? WHERE id = ?",
+        ("2026-06-02T13:04:00+00:00", sid),
+    )
+    conn.commit()
+    payload = list_creator_sessions(conn, workspace=workspace, creator_id=cid)
+    conn.close()
+    live = next(s for s in payload["sessions"] if s["item_id"] == sid)
+    assert live["display_label"]
+    assert "直播" in live["display_label"]

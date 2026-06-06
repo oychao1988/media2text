@@ -98,6 +98,17 @@ def _vod_started_at(create_time: int | None) -> str | None:
     return datetime.fromtimestamp(create_time, tz=timezone.utc).isoformat()
 
 
+def _format_live_display_label(started_at: str | None) -> str:
+    if not started_at:
+        return "直播"
+    try:
+        dt = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        local = dt.astimezone()
+        return f"{local.strftime('%Y-%m-%d %H:%M')} 直播"
+    except ValueError:
+        return "直播"
+
+
 def _build_live_item(
     *,
     conn,
@@ -139,6 +150,7 @@ def _build_live_item(
             m_entry.get("transcript_path") if m_entry else _transcript_sidecar_path(media_path),
         ),
         "summary_path": _resolve_summary_path(ws, media_path, m_entry),
+        "display_label": _format_live_display_label(data.get("started_at")),
     }
 
 
@@ -193,6 +205,7 @@ def _build_vod_item(
             m_entry.get("transcript_path") if m_entry else row.transcript_path or _transcript_sidecar_path(media_path),
         ),
         "summary_path": _resolve_summary_path(ws, media_path, m_entry),
+        "display_label": row.title or row.aweme_id,
     }
 
 
