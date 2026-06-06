@@ -8,6 +8,7 @@ import structlog
 
 from media2text.agent.creator_distill.bootstrap import run_bootstrap_job
 from media2text.agent.creator_distill.deferred import tick_deferred_bootstrap
+from media2text.agent.creator_distill.evolve import run_evolve_job
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorAgentJobRepo
 from media2text.core.workspace import open_db
@@ -41,6 +42,16 @@ class CreatorAgentJobPool:
 
         self._executor.submit(_run)
 
+    def submit_evolve(self, cfg: AppConfig, *, job_id: str) -> None:
+        def _run() -> None:
+            conn = open_db(cfg)
+            try:
+                run_evolve_job(cfg, conn, job_id=job_id)
+            finally:
+                conn.close()
+
+        self._executor.submit(_run)
+
     def drain_pending(self, cfg: AppConfig, conn, *, limit: int | None = None) -> int:
         jobs = CreatorAgentJobRepo(conn)
         jobs.reset_stale_running(older_than_sec=3600)
@@ -50,6 +61,8 @@ class CreatorAgentJobPool:
         for job in claimed:
             if job.kind == "bootstrap":
                 self.submit_bootstrap(cfg, job_id=job.id)
+            elif job.kind == "evolve":
+                self.submit_evolve(cfg, job_id=job.id)
             else:
                 log.warning("creator_agent_job_unhandled_kind", kind=job.kind, job_id=job.id)
         return len(claimed)
