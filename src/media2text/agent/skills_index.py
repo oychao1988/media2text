@@ -39,11 +39,12 @@ def resolve_skills_roots(
     """M4: global root; M5a merges creator ``.agent/skills/`` (later roots win)."""
     if profile_ctx is None:
         return [default_skills_root()]
-    if hasattr(profile_ctx, "skills_roots"):
-        return list(profile_ctx.skills_roots)  # type: ignore[union-attr]
-    if profile_ctx.get("skills_roots"):
-        return [Path(p).expanduser().resolve() for p in profile_ctx["skills_roots"]]
-    return [default_skills_root()]
+    if isinstance(profile_ctx, dict):
+        raw = profile_ctx.get("skills_roots")
+        if raw:
+            return [Path(p).expanduser().resolve() for p in raw]
+        return [default_skills_root()]
+    return list(profile_ctx.skills_roots)
 
 
 def _parse_frontmatter(text: str) -> tuple[dict[str, Any], str]:

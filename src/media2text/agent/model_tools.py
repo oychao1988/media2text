@@ -13,7 +13,7 @@ from media2text.agent.memory_store import (
     read_file_for_profile,
     write_file_for_profile,
 )
-from media2text.agent.profile_resolver import resolve_profile
+from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.skills_index import handle_skill_view, handle_skills_list
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
@@ -94,8 +94,10 @@ def _resolve_target(params: dict[str, Any]) -> MemoryTarget:
     raise AgentToolError("target must be memory, user, or soul")
 
 
-def _active_profile(ctx: ToolContext):
-    return ctx.profile or resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
+def _active_profile(ctx: ToolContext) -> AgentProfileContext:
+    if isinstance(ctx.profile, AgentProfileContext):
+        return ctx.profile
+    return resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
 
 
 def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
