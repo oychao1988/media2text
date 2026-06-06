@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from media2text.agent.hermes_state import SessionDB
+from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.tools.m2t_handlers import ToolContext, _err, _ok
 
 
@@ -17,10 +18,10 @@ def delegate_task(ctx: ToolContext, **params: Any) -> dict[str, Any]:
 
     db = SessionDB(ctx.conn)
 
-    profile = ctx.profile
-    if profile is None:
-        from media2text.agent.profile_resolver import resolve_profile
-
+    profile: AgentProfileContext
+    if ctx.profile is not None and not isinstance(ctx.profile, dict):
+        profile = ctx.profile
+    else:
         profile = resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
 
     from media2text.agent.ai_agent import AIAgent

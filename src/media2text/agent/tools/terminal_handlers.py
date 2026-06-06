@@ -8,16 +8,15 @@ from typing import Any
 
 from media2text.agent.approval import ApprovalGate, shell_needs_approval
 from media2text.agent.path_guard import resolve_under_cwd, terminal_cwd
+from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.tools.m2t_handlers import ToolContext, _err, _ok
 from media2text.agent.vendor.hermes.local import run_local_command
 
 
-def _profile(ctx: ToolContext):
-    if ctx.profile is None:
-        from media2text.agent.profile_resolver import resolve_profile
-
-        return resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
-    return ctx.profile
+def _profile(ctx: ToolContext) -> AgentProfileContext:
+    if ctx.profile is not None and not isinstance(ctx.profile, dict):
+        return ctx.profile
+    return resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
 
 
 def _gate(ctx: ToolContext) -> ApprovalGate:
