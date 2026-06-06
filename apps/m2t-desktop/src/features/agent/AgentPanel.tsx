@@ -3,17 +3,27 @@ import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { showToast, showToastWithAction } from '../../lib/toast';
 import { useCreators } from '../creators/CreatorsContext';
 import { positionAgentContextMenu } from './contextMenuPosition';
+import { AgentChatEmpty, composerPlaceholderForAgent } from './AgentChatEmpty';
 import { AgentHistorySidebar } from './AgentHistorySidebar';
 import { AgentTabsBar } from './AgentTabsBar';
 import { AgentThreadContextMenu } from './AgentThreadContextMenu';
 import { shouldNotifyCreatorMismatch, isComposerBlocked } from './agentThreadSelect';
+import { resolveAgentProfile } from './agentProfile';
+import { ChatMessageAgent } from './ChatMessageAgent';
+import { ChatMessageUser } from './ChatMessageUser';
 import { AgentComposer } from './AgentComposer';
 import { ToolResultCard } from './ToolResultCard';
-import { ChatMessageUser } from './ChatMessageUser';
-import { ChatMessageAgent } from './ChatMessageAgent';
-import { resolveAgentProfile } from './agentProfile';
 import { useAgentHistoryResize } from './useAgentHistoryResize';
-import { activateAgentTab, closeAgentTab, pushAgentTab } from './useAgentTabs';
+import {
+  activateAgentTabEntry,
+  closeAgentTabEntry,
+  createDraftTab,
+  promoteDraftTab,
+  pushAgentTabEntry,
+  removeThreadFromTabs,
+  tabEntryKey,
+  type AgentTabEntry,
+} from './useAgentTabs';
 import { useAgentThreads } from './useAgentThreads';
 import { useM2tAgent, type SessionContext } from './useM2tAgent';
 
@@ -90,8 +100,8 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   const { creators, setSelectedId } = useCreators();
   const { threads, createThread, createGlobalThread, renameThread, deleteThread } =
     useAgentThreads(creatorId);
-  const [tabIds, setTabIds] = useState<string[]>([]);
-  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [tabEntries, setTabEntries] = useState<AgentTabEntry[]>([]);
+  const [activeTabKey, setActiveTabKey] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(readHistoryCollapsed);
   const [contextMenu, setContextMenu] = useState<{
     threadId: string;
@@ -106,11 +116,25 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   } | null>(null);
   const historyResize = useAgentHistoryResize();
 
+  const activeEntry = useMemo(
+    () => tabEntries.find((e) => tabEntryKey(e) === activeTabKey) ?? null,
+    [activeTabKey, tabEntries],
+  );
+
+  const activeThreadId =
+    activeEntry?.kind === 'thread' ? activeEntry.threadId : null;
+
+  const isDraftActive = activeEntry?.kind === 'draft';
+  const draftAgentId = activeEntry?.kind === 'draft' ? activeEntry.agentId : 'global';
+
   const activeThread = useMemo(
     () => threads.find((t) => t.id === activeThreadId) ?? null,
     [activeThreadId, threads],
   );
-  const composerBlocked = isComposerBlocked(activeThread?.creator_id, creatorId);
+
+  const composerBlocked = isDraftActive
+    ? false
+    : isComposerBlocked(activeThread?.creator_id, creatorId);
 
   const agent = useM2tAgent({
     threadId: activeThreadId,
@@ -126,12 +150,32 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     return [...set];
   }, [agent.providers]);
 
+  const composerReady = agent.ready && !composerBlocked;
+  const composerPlaceholder = isDraftActive
+    ? composerPlaceholderForAgent(draftAgentId, creators)
+    : undefined;
+
+  const updateDraftAgentId = useCallback((agentId: string) => {
+    if (!activeTabKey) return;
+    setTabEntries((prev) =>
+      prev.map((e) =>
+        tabEntryKey(e) === activeTabKey && e.kind === 'draft'
+          ? { ...e, agentId }
+          : e,
+      ),
+    );
+  }, [activeTabKey]);
+
   const activateThread = useCallback(
     (threadId: string, opts?: { silent?: boolean; reorder?: boolean }) => {
       const thread = threads.find((t) => t.id === threadId);
       if (!thread) return;
-      setTabIds((prev) => activateAgentTab(prev, threadId, { reorder: opts?.reorder }));
-      setActiveThreadId(threadId);
+      const entry: AgentTabEntry = { kind: 'thread', threadId };
+      const key = tabEntryKey(entry);
+      setTabEntries((prev) =>
+        activateAgentTabEntry(prev, entry, { reorder: opts?.reorder }),
+      );
+      setActiveTabKey(key);
       if (
         !opts?.silent &&
         shouldNotifyCreatorMismatch(thread.creator_id, creatorId)
@@ -152,44 +196,51 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     [creatorId, setSelectedId, threads],
   );
 
-  const handleNewGlobalThread = useCallback(async () => {
-    try {
-      const thread = await createGlobalThread();
-      if (!thread) return;
-      setTabIds((prev) => pushAgentTab(prev, thread.id));
-      setActiveThreadId(thread.id);
-      showToast('已新建全局 Agent 会话', 'success');
-    } catch {
-      showToast('新建全局会话失败', 'error');
-    }
-  }, [createGlobalThread]);
+  const openDraftTab = useCallback((agentId = 'global') => {
+    const entry = createDraftTab(agentId);
+    const key = tabEntryKey(entry);
+    setTabEntries((prev) => pushAgentTabEntry(prev, entry));
+    setActiveTabKey(key);
+  }, []);
 
-  const handleNewThread = useCallback(async () => {
-    if (!creatorId) {
-      showToast('请先选择博主', 'info');
-      return;
-    }
-    try {
-      const thread = await createThread(creatorId, sessionContext.sessionId);
-      if (!thread) return;
-      setTabIds((prev) => pushAgentTab(prev, thread.id));
-      setActiveThreadId(thread.id);
-      showToast('已新建 Agent 会话', 'success');
-    } catch {
-      showToast('新建会话失败', 'error');
-    }
-  }, [createThread, creatorId, sessionContext.sessionId]);
+  const handleNewDraft = useCallback(() => {
+    openDraftTab('global');
+  }, [openDraftTab]);
 
   const handleCloseTab = useCallback(
-    (threadId: string) => {
-      setTabIds((prev) => {
-        const { tabIds: next, activeId } = closeAgentTab(prev, threadId, activeThreadId);
-        setActiveThreadId(activeId);
-        return next;
+    (key: string) => {
+      setTabEntries((prev) => {
+        const { entries, activeKey } = closeAgentTabEntry(prev, key, activeTabKey);
+        setActiveTabKey(activeKey);
+        return entries;
       });
       showToast('已关闭页签', 'info');
     },
-    [activeThreadId],
+    [activeTabKey],
+  );
+
+  const handleSend = useCallback(
+    async (text: string) => {
+      if (activeEntry?.kind === 'draft') {
+        const agentId = activeEntry.agentId;
+        const draftKey = tabEntryKey(activeEntry);
+        try {
+          const thread =
+            agentId === 'global'
+              ? await createGlobalThread()
+              : await createThread(agentId, sessionContext.sessionId);
+          if (!thread) return;
+          setTabEntries((prev) => promoteDraftTab(prev, draftKey, thread.id));
+          setActiveTabKey(`thread:${thread.id}`);
+          await agent.sendMessage(text, thread.id);
+        } catch {
+          showToast('新建会话失败', 'error');
+        }
+        return;
+      }
+      await agent.sendMessage(text);
+    },
+    [activeEntry, agent, createGlobalThread, createThread, sessionContext.sessionId],
   );
 
   const handleToggleHistory = useCallback(() => {
@@ -236,17 +287,23 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
 
   const removeThreadsFromTabs = useCallback((ids: string[]) => {
     const idSet = new Set(ids);
-    setTabIds((prev) => {
-      const next = prev.filter((tid) => !idSet.has(tid));
-      setActiveThreadId((current) => {
-        if (current && idSet.has(current)) {
-          return next[0] ?? null;
-        }
-        return current;
-      });
+    setTabEntries((prev) => {
+      let next = prev;
+      for (const id of ids) {
+        next = removeThreadFromTabs(next, id);
+      }
       return next;
     });
-  }, []);
+    setActiveTabKey((current) => {
+      if (!current?.startsWith('thread:')) return current;
+      const tid = current.slice('thread:'.length);
+      if (!idSet.has(tid)) return current;
+      const remaining = tabEntries.filter(
+        (e) => e.kind === 'thread' && !idSet.has(e.threadId),
+      );
+      return remaining.length ? tabEntryKey(remaining[0]!) : null;
+    });
+  }, [tabEntries]);
 
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTargetId) return;
@@ -279,12 +336,12 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   const paneClass = [
     'agent-pane',
     historyCollapsed ? 'agent-history-collapsed' : '',
-    agent.fatalError && agent.status === 'error' ? 'agent-pane--error' : '',
+    agent.fatalError && agent.status === 'error' && activeThreadId ? 'agent-pane--error' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
-  if (agent.fatalError && agent.status === 'error') {
+  if (agent.fatalError && agent.status === 'error' && activeThreadId) {
     return (
       <section className={paneClass} aria-label="Agent">
         <div className="chat-scroll" id="chat-scroll" role="alert">
@@ -296,28 +353,64 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     );
   }
 
+  const showChatMessages = Boolean(activeTabKey) && !isDraftActive;
+
   return (
     <section className={paneClass} aria-label="Agent" id="agent-pane">
       <AgentTabsBar
-        tabIds={tabIds}
+        tabEntries={tabEntries}
         threads={threads}
-        activeThreadId={activeThreadId}
+        creators={creators}
+        activeTabKey={activeTabKey}
         historyCollapsed={historyCollapsed}
-        onSelectTab={(id) => activateThread(id, { reorder: false })}
+        onSelectTab={(key) => {
+          setActiveTabKey(key);
+          const entry = tabEntries.find((e) => tabEntryKey(e) === key);
+          if (entry?.kind === 'thread') {
+            activateThread(entry.threadId, { silent: true, reorder: false });
+          }
+        }}
         onCloseTab={handleCloseTab}
-        onNewThread={() => void handleNewThread()}
+        onNewDraft={handleNewDraft}
         onToggleHistory={handleToggleHistory}
       />
       <div className="agent-body">
         <div className="agent-main">
           <div className="chat-scroll" id="chat-scroll" aria-live="polite">
-            <div id="chat-live" style={playbackMode ? { display: 'none' } : undefined}>
-              {!playbackMode ? <AgentChatMessages agent={agent} threadCreatorId={activeThread?.creator_id ?? null} /> : null}
+            {isDraftActive ? (
+              <AgentChatEmpty
+                agentId={draftAgentId}
+                creators={creators}
+                onAgentChange={updateDraftAgentId}
+              />
+            ) : null}
+            <div
+              id="chat-live"
+              style={
+                playbackMode || !showChatMessages ? { display: 'none' } : undefined
+              }
+            >
+              {!playbackMode && showChatMessages ? (
+                <AgentChatMessages
+                  agent={agent}
+                  threadCreatorId={activeThread?.creator_id ?? null}
+                />
+              ) : null}
             </div>
-            <div id="chat-playback" style={playbackMode ? undefined : { display: 'none' }}>
-              {playbackMode ? <AgentChatMessages agent={agent} threadCreatorId={activeThread?.creator_id ?? null} /> : null}
+            <div
+              id="chat-playback"
+              style={
+                playbackMode && showChatMessages ? undefined : { display: 'none' }
+              }
+            >
+              {playbackMode && showChatMessages ? (
+                <AgentChatMessages
+                  agent={agent}
+                  threadCreatorId={activeThread?.creator_id ?? null}
+                />
+              ) : null}
             </div>
-            {!activeThreadId ? (
+            {!activeTabKey ? (
               <p className="hint">点击 + 新建 Agent，或从历史栏选择会话</p>
             ) : null}
             {composerBlocked ? (
@@ -340,12 +433,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             ) : null}
           </div>
           <AgentComposer
-            ready={agent.ready && !composerBlocked}
+            ready={composerReady}
             blocked={composerBlocked}
             model={agent.threadModel}
             providerModels={modelOptions}
+            placeholder={composerPlaceholder}
             onModelChange={(m) => void agent.patchThreadModel(m)}
-            onSend={(t) => void agent.sendMessage(t)}
+            onSend={(t) => void handleSend(t)}
           />
         </div>
         {!historyCollapsed ? (
@@ -365,10 +459,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
               threads={threads}
               creators={creators}
               activeThreadId={activeThreadId}
-              onNewGlobalDraft={() => void handleNewGlobalThread()}
-              onBatchDeleteRequest={(agentId, threadIds) =>
-                setBatchDeleteTarget({ agentId, threadIds })
-              }
+              onNewGlobalDraft={() => openDraftTab('global')}
               menuOpenThreadId={contextMenu?.threadId ?? null}
               editingThreadId={editingThreadId}
               onSelectThread={(id) => activateThread(id)}
@@ -379,6 +470,9 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
               }}
               onRenameCommit={(id, title) => void handleRenameCommit(id, title)}
               onRenameCancel={handleRenameCancel}
+              onBatchDeleteRequest={(agentId, threadIds) =>
+                setBatchDeleteTarget({ agentId, threadIds })
+              }
             />
           </>
         ) : null}
