@@ -1,4 +1,6 @@
 import { useState } from 'react';
+import { M2tSelect } from '../../components/M2tSelect';
+import { useAutoResizeTextarea } from './useAutoResizeTextarea';
 
 type AgentComposerProps = {
   ready: boolean;
@@ -51,6 +53,7 @@ export function AgentComposer({
   onSend,
 }: AgentComposerProps) {
   const [text, setText] = useState('');
+  const inputRef = useAutoResizeTextarea(text, 10);
 
   const submit = () => {
     const trimmed = text.trim();
@@ -58,6 +61,11 @@ export function AgentComposer({
     onSend(trimmed);
     setText('');
   };
+
+  const modelOptions = [
+    { value: 'auto', label: 'Auto' },
+    ...providerModels.map((m) => ({ value: m, label: m })),
+  ];
 
   return (
     <form
@@ -69,6 +77,7 @@ export function AgentComposer({
       }}
     >
       <textarea
+        ref={inputRef}
         className="agent-composer-input"
         rows={1}
         id="agent-input"
@@ -101,23 +110,17 @@ export function AgentComposer({
               ▾
             </span>
           </button>
-          <label className="agent-model-wrap" title="选择模型">
-            <select
-              className="agent-model-select"
+          <span className="agent-model-wrap" title="选择模型">
+            <M2tSelect
               id="agent-model-select"
+              className="agent-model-select m2t-select m2t-select--ghost"
+              ariaLabel="Agent 模型"
               value={model}
               disabled={!ready}
-              aria-label="Agent 模型"
-              onChange={(e) => onModelChange(e.target.value)}
-            >
-              <option value="auto">Auto</option>
-              {providerModels.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </label>
+              options={modelOptions}
+              onChange={onModelChange}
+            />
+          </span>
         </div>
         <div className="agent-composer-actions">
           <button

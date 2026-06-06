@@ -20,7 +20,9 @@ import { RightRail } from './RightRail';
 import { SidePanelHeader } from './SidePanelHeader';
 import { useColumnResize } from './useColumnResize';
 import { useRowResize } from './useRowResize';
+import { layoutPresetAppClass } from './layoutPresetClass';
 import { useLayoutStore } from './useLayoutStore';
+import { DaemonMonitorMenu } from '../daemon/DaemonMonitorMenu';
 import { UserMenu } from './UserMenu';
 import { USER_DISPLAY_NAME, userDisplayInitial } from './userDisplay';
 
@@ -80,6 +82,7 @@ export function AppShell() {
 
   const appClass = [
     'app',
+    layoutPresetAppClass(desktopLayoutPreset),
     leftCollapsed ? 'left-collapsed' : '',
     rightCollapsed ? 'right-collapsed' : '',
     leftCollapsed && rightCollapsed ? 'both-collapsed' : '',
@@ -116,29 +119,29 @@ export function AppShell() {
   }, [centerView, centerTab, historySessionRow, playbackSession, selected]);
 
   const summaryPath = useMemo(() => {
-    if (historySessionRow && transcriptSelection.mode === 'history') {
-      return null;
+    if (transcriptSelection.mode === 'history') {
+      return transcriptSelection.summaryPath ?? null;
     }
     if (centerView === 'playback' && playbackSession) return playbackSession.summary_path;
     return null;
-  }, [centerView, historySessionRow, playbackSession, transcriptSelection.mode]);
+  }, [centerView, playbackSession, transcriptSelection]);
 
   const transcriptPath = useMemo(() => {
-    if (historySessionRow && transcriptSelection.mode === 'history') {
-      return null;
+    if (transcriptSelection.mode === 'history') {
+      return transcriptSelection.transcriptPath ?? null;
     }
     if (centerView === 'playback' && playbackSession) return playbackSession.transcript_path;
     return null;
-  }, [centerView, historySessionRow, playbackSession, transcriptSelection.mode]);
+  }, [centerView, playbackSession, transcriptSelection]);
 
   const playbackItem = useMemo(() => {
-    if (historySessionRow) {
+    if (transcriptSelection.mode === 'history' && selectedId) {
       return {
-        creatorId: historySessionRow.creatorId,
-        kind: historySessionRow.kind,
-        itemId: historySessionRow.itemId,
-        hasTranscript: true,
-        hasSummary: true,
+        creatorId: selectedId,
+        kind: transcriptSelection.kind,
+        itemId: transcriptSelection.itemId,
+        hasTranscript: transcriptSelection.hasTranscript,
+        hasSummary: transcriptSelection.hasSummary,
       };
     }
     if (centerView === 'playback' && playbackSession && selectedId) {
@@ -151,7 +154,7 @@ export function AppShell() {
       };
     }
     return null;
-  }, [centerView, historySessionRow, playbackSession, selectedId]);
+  }, [centerView, playbackSession, selectedId, transcriptSelection]);
 
   const transcriptMode =
     historySessionRow || centerView === 'playback' ? ('playback' as const) : ('live' as const);
@@ -183,13 +186,8 @@ export function AppShell() {
     [centerView, creators, openCenterView, setSelectedId],
   );
 
-  const transcriptPaneKey = historySessionRow
-    ? `history-${historySessionRow.kind}-${historySessionRow.itemId}`
-    : `live-${transcriptSessionId ?? 'none'}`;
-
   const transcriptPane = showTranscriptPane ? (
     <TranscriptPane
-      key={transcriptPaneKey}
       sessionId={transcriptSessionId}
       summaryPath={summaryPath}
       transcriptPath={transcriptPath}
@@ -235,7 +233,9 @@ export function AppShell() {
             )}
           </div>
           <div className="left-daemon-wrap">
-            <DaemonCard onSelectCreator={handleSelectCreator} />
+            {!leftCollapsed ? (
+              <DaemonCard onSelectCreator={handleSelectCreator} />
+            ) : null}
           </div>
           <div className="left-user-wrap">
             <button
@@ -261,6 +261,7 @@ export function AppShell() {
           </div>
         </div>
         <UserMenu />
+        <DaemonMonitorMenu onSelectCreator={handleSelectCreator} />
       </aside>
 
       <div
@@ -353,7 +354,7 @@ export function AppShell() {
             actions={<DesktopLayoutPresets />}
           />
           {!isTranscriptChat && showTranscriptPane ? transcriptPane : null}
-          {!isChatOnly ? (
+          {desktopLayoutPreset === 'full' && showTranscriptPane ? (
             <div
               className="row-resize"
               id="resize-right-split"

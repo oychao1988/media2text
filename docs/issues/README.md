@@ -162,6 +162,12 @@
 
 **合并顺序**：#170 → #171 / #172（可并行）→ #173（**已交付**，Epic 验收：[agent-pane-acceptance](../superpowers/verification/2026-06-06-m2t-desktop-agent-pane-acceptance.md)）。
 
+### m2t-desktop 转写场次 + 监控弹窗 UX（2026-06-06）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#178](https://github.com/oychao1988/media2text/issues/178) | （本 PR） | [m2t-desktop-transcript-session-monitor-ux.md](./m2t-desktop-transcript-session-monitor-ux.md) | `issue-178-m2t-desktop-transcript-session-monitor-ux` |
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)

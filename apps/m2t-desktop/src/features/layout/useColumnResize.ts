@@ -100,7 +100,7 @@ export function useColumnResize() {
         applyLayoutSizesTransient({ rightW: pendingRightW.current });
       }
     },
-    [],
+    [desktopLayoutPreset],
   );
 
   const onPointerUp = useCallback(

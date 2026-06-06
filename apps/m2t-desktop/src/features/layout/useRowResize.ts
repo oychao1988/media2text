@@ -1,8 +1,8 @@
 import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   applyLayoutSizesTransient,
-  clamp,
-  SIZE_LIMITS,
+  clampAgentH,
+  readLayoutSizesFromCss,
 } from './layoutConstants';
 import { commitLayoutSizes } from './useLayoutStore';
 
@@ -19,10 +19,8 @@ export function useRowResize() {
   const onPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>) => {
     dragging.current = true;
     startY.current = e.clientY;
-    startH.current = parseFloat(
-      getComputedStyle(document.documentElement).getPropertyValue('--right-agent-h'),
-    );
-    pendingH.current = startH.current;
+    startH.current = readLayoutSizesFromCss().agentH;
+    pendingH.current = clampAgentH(startH.current);
     e.currentTarget.setPointerCapture(e.pointerId);
     document.body.classList.add('resize-row-active');
     setAppResizing(true);
@@ -46,11 +44,7 @@ export function useRowResize() {
   const onPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     if (!dragging.current) return;
     const dy = e.clientY - startY.current;
-    pendingH.current = clamp(
-      startH.current - dy,
-      SIZE_LIMITS.agent.min,
-      SIZE_LIMITS.agent.max,
-    );
+    pendingH.current = clampAgentH(startH.current - dy);
     applyLayoutSizesTransient({ agentH: pendingH.current });
   }, []);
 

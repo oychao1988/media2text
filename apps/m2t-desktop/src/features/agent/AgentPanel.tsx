@@ -1,6 +1,8 @@
 import { useCallback, useMemo, useState } from 'react';
+import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { showToast, showToastWithAction } from '../../lib/toast';
 import { useCreators } from '../creators/CreatorsContext';
+import { positionAgentContextMenu } from './contextMenuPosition';
 import { AgentHistorySidebar } from './AgentHistorySidebar';
 import { AgentTabsBar } from './AgentTabsBar';
 import { AgentThreadContextMenu } from './AgentThreadContextMenu';
@@ -9,7 +11,7 @@ import { ChatMarkdown } from './ChatMarkdown';
 import { AgentComposer } from './AgentComposer';
 import { ToolResultCard } from './ToolResultCard';
 import { useAgentHistoryResize } from './useAgentHistoryResize';
-import { closeAgentTab, pushAgentTab } from './useAgentTabs';
+import { activateAgentTab, closeAgentTab, pushAgentTab } from './useAgentTabs';
 import { useAgentThreads } from './useAgentThreads';
 import { useM2tAgent, type SessionContext } from './useM2tAgent';
 
@@ -93,6 +95,8 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     x: number;
     y: number;
   } | null>(null);
+  const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const historyResize = useAgentHistoryResize();
 
   const agent = useM2tAgent({
@@ -110,10 +114,10 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   }, [agent.providers]);
 
   const activateThread = useCallback(
-    (threadId: string, opts?: { silent?: boolean }) => {
+    (threadId: string, opts?: { silent?: boolean; reorder?: boolean }) => {
       const thread = threads.find((t) => t.id === threadId);
       if (!thread) return;
-      setTabIds((prev) => pushAgentTab(prev, threadId));
+      setTabIds((prev) => activateAgentTab(prev, threadId, { reorder: opts?.reorder }));
       setActiveThreadId(threadId);
       if (
         !opts?.silent &&
@@ -176,24 +180,39 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     });
   }, []);
 
-  const handleRename = useCallback(async () => {
+  const handleRename = useCallback(() => {
     if (!contextMenu) return;
-    const title = window.prompt('重命名会话', threads.find((t) => t.id === contextMenu.threadId)?.title ?? '');
+    setEditingThreadId(contextMenu.threadId);
     setContextMenu(null);
-    if (!title?.trim()) return;
-    try {
-      await renameThread(contextMenu.threadId, title.trim());
-      showToast('已重命名', 'success');
-    } catch {
-      showToast('重命名失败', 'error');
-    }
-  }, [contextMenu, renameThread, threads]);
+  }, [contextMenu]);
 
-  const handleDelete = useCallback(async () => {
+  const handleRenameCommit = useCallback(
+    async (threadId: string, title: string) => {
+      setEditingThreadId(null);
+      try {
+        await renameThread(threadId, title);
+        showToast('已重命名', 'success');
+      } catch {
+        showToast('重命名失败', 'error');
+      }
+    },
+    [renameThread],
+  );
+
+  const handleRenameCancel = useCallback(() => {
+    setEditingThreadId(null);
+  }, []);
+
+  const handleDelete = useCallback(() => {
     if (!contextMenu) return;
-    const id = contextMenu.threadId;
+    setDeleteTargetId(contextMenu.threadId);
     setContextMenu(null);
-    if (!window.confirm('确定删除该 Agent 会话？此操作不可撤销。')) return;
+  }, [contextMenu]);
+
+  const handleDeleteConfirm = useCallback(async () => {
+    if (!deleteTargetId) return;
+    const id = deleteTargetId;
+    setDeleteTargetId(null);
     try {
       await deleteThread(id);
       setTabIds((prev) => {
@@ -205,7 +224,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     } catch {
       showToast('删除失败', 'error');
     }
-  }, [contextMenu, deleteThread]);
+  }, [deleteTargetId, deleteThread]);
 
   const paneClass = [
     'agent-pane',
@@ -234,7 +253,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
         threads={threads}
         activeThreadId={activeThreadId}
         historyCollapsed={historyCollapsed}
-        onSelectTab={(id) => activateThread(id)}
+        onSelectTab={(id) => activateThread(id, { reorder: false })}
         onCloseTab={handleCloseTab}
         onNewThread={() => void handleNewThread()}
         onToggleHistory={handleToggleHistory}
@@ -277,11 +296,15 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
               threads={threads}
               activeThreadId={activeThreadId}
               menuOpenThreadId={contextMenu?.threadId ?? null}
+              editingThreadId={editingThreadId}
               onSelectThread={(id) => activateThread(id)}
               onOpenMenu={(threadId, anchor) => {
                 const rect = anchor.getBoundingClientRect();
-                setContextMenu({ threadId, x: rect.left, y: rect.bottom + 4 });
+                const { x, y } = positionAgentContextMenu(rect);
+                setContextMenu({ threadId, x, y });
               }}
+              onRenameCommit={(id, title) => void handleRenameCommit(id, title)}
+              onRenameCancel={handleRenameCancel}
             />
           </>
         ) : null}
@@ -291,11 +314,20 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
           threadId={contextMenu.threadId}
           x={contextMenu.x}
           y={contextMenu.y}
-          onRename={() => void handleRename()}
-          onDelete={() => void handleDelete()}
+          onRename={handleRename}
+          onDelete={handleDelete}
           onClose={() => setContextMenu(null)}
         />
       ) : null}
+      <ConfirmDialog
+        open={deleteTargetId != null}
+        title="删除 Agent 会话"
+        message="确定删除该 Agent 会话？此操作不可撤销。"
+        confirmLabel="删除"
+        danger
+        onConfirm={() => void handleDeleteConfirm()}
+        onCancel={() => setDeleteTargetId(null)}
+      />
     </section>
   );
 }

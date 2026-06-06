@@ -191,7 +191,10 @@ export function TranscriptPane({
   useEffect(() => {
     dispatch({ type: 'reset' });
     setSummaryMd(null);
-    if (!sessionId) {
+
+    const canLoadTranscript =
+      Boolean(sessionId) || (mode === 'playback' && playbackItem != null);
+    if (!canLoadTranscript) {
       dispatch({ type: 'waiting', value: true });
       return undefined;
     }
@@ -297,7 +300,11 @@ export function TranscriptPane({
 
   useEffect(() => {
     if (tab !== 'summary') return;
-    if (!sessionId && !activeSummaryPath) return;
+    const canLoadSummary =
+      Boolean(sessionId) ||
+      Boolean(activeSummaryPath) ||
+      (mode === 'playback' && playbackItem != null);
+    if (!canLoadSummary) return;
     let cancelled = false;
     setSummaryLoading(true);
     setSummaryMd(null);

@@ -65,36 +65,36 @@ describe('Agent pane acceptance (A5/A6/A10)', () => {
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
   });
 
-  it('A5: rename via context menu calls PATCH hook after prompt', async () => {
+  it('A5: rename via context menu edits inline and calls PATCH hook', async () => {
     const user = userEvent.setup();
-    const promptSpy = vi.spyOn(window, 'prompt').mockReturnValue('Renamed session');
     render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
 
     const menuButtons = screen.getAllByLabelText('更多操作');
     await user.click(menuButtons[0]);
     await user.click(screen.getByRole('menuitem', { name: '重命名' }));
 
+    const input = await screen.findByLabelText('重命名会话');
+    await user.clear(input);
+    await user.type(input, 'Renamed session');
+    await user.keyboard('{Enter}');
+
     await waitFor(() => {
-      expect(promptSpy).toHaveBeenCalled();
       expect(renameThread).toHaveBeenCalledWith('t-current', 'Renamed session');
     });
-    promptSpy.mockRestore();
   });
 
   it('A5: delete via context menu calls DELETE hook after confirm', async () => {
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
 
     const menus = screen.getAllByLabelText('更多操作');
     await user.click(menus[0]);
     await user.click(screen.getByRole('menuitem', { name: '删除' }));
+    await user.click(screen.getByRole('button', { name: '删除' }));
 
     await waitFor(() => {
-      expect(confirmSpy).toHaveBeenCalled();
       expect(deleteThread).toHaveBeenCalledWith('t-current');
     });
-    confirmSpy.mockRestore();
   });
 
   it('A6: drag end persists agentHistoryW to layout storage', () => {

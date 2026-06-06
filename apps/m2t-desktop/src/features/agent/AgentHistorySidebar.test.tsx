@@ -45,6 +45,8 @@ describe('AgentHistorySidebar', () => {
         activeThreadId={null}
         onSelectThread={() => {}}
         onOpenMenu={() => {}}
+        onRenameCommit={() => {}}
+        onRenameCancel={() => {}}
       />,
     );
 
@@ -60,6 +62,8 @@ describe('AgentHistorySidebar', () => {
         activeThreadId={null}
         onSelectThread={() => {}}
         onOpenMenu={() => {}}
+        onRenameCommit={() => {}}
+        onRenameCancel={() => {}}
       />,
     );
     expect(screen.getByText('TODAY')).toBeTruthy();
@@ -82,6 +86,8 @@ describe('AgentHistorySidebar', () => {
         activeThreadId={null}
         onSelectThread={() => {}}
         onOpenMenu={() => {}}
+        onRenameCommit={() => {}}
+        onRenameCancel={() => {}}
       />,
     );
 
@@ -110,6 +116,8 @@ describe('AgentHistorySidebar', () => {
         activeThreadId={null}
         onSelectThread={() => {}}
         onOpenMenu={onOpenMenu}
+        onRenameCommit={() => {}}
+        onRenameCancel={() => {}}
       />,
     );
     await user.click(screen.getByLabelText('更多操作'));

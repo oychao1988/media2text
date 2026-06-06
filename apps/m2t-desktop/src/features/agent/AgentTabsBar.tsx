@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from 'react';
 import type { ThreadRow } from './types';
 
 type Props = {
@@ -22,10 +23,27 @@ export function AgentTabsBar({
   onToggleHistory,
 }: Props) {
   const threadById = new Map(threads.map((t) => [t.id, t]));
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const scrollLeftRef = useRef(0);
+
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el) el.scrollLeft = scrollLeftRef.current;
+  }, [activeThreadId, tabIds.length]);
+
+  const handleSelectTab = (threadId: string) => {
+    scrollLeftRef.current = scrollRef.current?.scrollLeft ?? 0;
+    onSelectTab(threadId);
+  };
 
   return (
     <div className="agent-tabs-bar" id="agent-tabs-bar">
-      <div className="agent-tabs-scroll" id="agent-tabs-row" role="tablist">
+      <div
+        className="agent-tabs-scroll"
+        id="agent-tabs-row"
+        role="tablist"
+        ref={scrollRef}
+      >
         {tabIds.map((id) => {
           const thread = threadById.get(id);
           if (!thread) return null;
@@ -42,7 +60,7 @@ export function AgentTabsBar({
                 role="tab"
                 aria-selected={active}
                 title={thread.title ?? 'Agent'}
-                onClick={() => onSelectTab(id)}
+                onClick={() => handleSelectTab(id)}
               >
                 {thread.title ?? 'Agent'}
               </button>
