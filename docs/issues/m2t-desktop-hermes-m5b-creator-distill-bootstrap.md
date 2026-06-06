@@ -14,32 +14,32 @@
 
 ### Task 1 — Job 表与 worker
 
-- [ ] 表 `creator_agent_jobs`（§24.4.6 schema）；**DB 为真源**；`distill_state.json` 为 API 缓存
-- [ ] `CreatorAgentJobPool` + `creator_distill/bootstrap.py`
-- [ ] 幂等：同一 `creator_id` bootstrap 仅一条 `pending|running`
-- [ ] 队列优先级：bootstrap priority 5 < evolve 10（evolve 可插队）
+- [x] 表 `creator_agent_jobs`（§24.4.6 schema）；**DB 为真源**；`distill_state.json` 为 API 缓存
+- [x] `CreatorAgentJobPool` + `creator_distill/bootstrap.py`
+- [x] 幂等：同一 `creator_id` bootstrap 仅一条 `pending|running`
+- [x] 队列优先级：bootstrap priority 5 < evolve 10（evolve 可插队）
 
 ### Task 2 — Bootstrap 流程
 
-- [ ] Phase Collect：manifest + summary/transcript 合并，上限 `max_input_chars`
-- [ ] chars < `defer_until_min_chars` → `deferred`；**不**失败 `creator add`
-- [ ] Phase Distill：LLM → 结构化 JSON → `SKILL.md`（agentskills.io frontmatter）
-- [ ] 写 `SOUL.md`、更新 `profile.yaml.default_skills` + `distill.*` 元数据
-- [ ] **原子写盘**：`.tmp` + `os.replace`；creator-level 锁（§24.4.6）
+- [x] Phase Collect：manifest + summary/transcript 合并，上限 `max_input_chars`
+- [x] chars < `defer_until_min_chars` → `deferred`；**不**失败 `creator add`
+- [x] Phase Distill：LLM → 结构化 JSON → `SKILL.md`（agentskills.io frontmatter）
+- [x] 写 `SOUL.md`、更新 `profile.yaml.default_skills` + `distill.*` 元数据
+- [x] **原子写盘**：`.tmp` + `os.replace`；creator-level 锁（§24.4.6）
 
 ### Task 3 — Deferred watcher
 
-- [ ] `creator_distill/deferred.py::maybe_promote_bootstrap`
-- [ ] SlowTick 扫描 + `summarize_completed` 钩子 re-enqueue
+- [x] `creator_distill/deferred.py::maybe_promote_bootstrap`
+- [x] SlowTick 扫描 + `summarize_completed` 钩子 re-enqueue
 
 ### Task 4 — API
 
-- [ ] `POST /api/agent/profiles/creators/{id}/distill` `{ force?: bool }`
-- [ ] `GET .../distill-status` — 读 DB 聚合
+- [x] `POST /api/agent/profiles/creators/{id}/distill` `{ force?: bool }`
+- [x] `GET .../distill-status` — 读 DB 聚合
 
 ### 测试
 
-- [ ] `test_bootstrap_deferred_low_corpus`、`test_bootstrap_writes_skill`、`test_deferred_watcher_promotes`、`test_distill_atomic_write`（§24.4.10）
+- [x] `test_bootstrap_deferred_low_corpus`、`test_bootstrap_writes_skill`、`test_deferred_watcher_promotes`、`test_distill_atomic_write`（§24.4.10）
 
 ## 验证命令
 
