@@ -5,6 +5,7 @@ export type ChatMessage =
       id: string;
       role: 'user';
       text: string;
+      createdAt?: string;
       persisted?: boolean;
     }
   | {
@@ -13,6 +14,7 @@ export type ChatMessage =
       text: string;
       thinkingText?: string;
       durationMs?: number;
+      createdAt?: string;
       persisted?: boolean;
     }
   | {

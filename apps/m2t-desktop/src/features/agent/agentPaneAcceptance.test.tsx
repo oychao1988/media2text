@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AgentPanel } from './AgentPanel';
@@ -10,6 +10,35 @@ import type { ThreadRow } from './types';
 const renameThread = vi.fn();
 const deleteThread = vi.fn();
 const setSelectedId = vi.fn();
+
+const defaultAgentMock = {
+  ready: true,
+  status: 'ready' as const,
+  fatalError: null,
+  messages: [] as Array<
+    | { id: string; role: 'user'; text: string; createdAt?: string }
+    | {
+        id: string;
+        role: 'assistant';
+        text: string;
+        thinkingText?: string;
+        durationMs?: number;
+        createdAt?: string;
+      }
+  >,
+  activeTurn: null as {
+    phase: string;
+    phaseLabel: string;
+    thinkingText: string;
+    assistantText: string;
+  } | null,
+  providers: [{ name: 'nvidia', models: ['z-ai/glm-5.1'] }],
+  threadModel: 'auto',
+  patchThreadModel: vi.fn(),
+  sendMessage: vi.fn(),
+};
+
+let agentMock = { ...defaultAgentMock, messages: [...defaultAgentMock.messages] };
 
 const threads: ThreadRow[] = [
   {
@@ -33,39 +62,95 @@ const threads: ThreadRow[] = [
 ];
 
 vi.mock('../creators/CreatorsContext', () => ({
-  useCreators: () => ({ setSelectedId }),
+  useCreators: () => ({
+    setSelectedId,
+    creators: [{ id: 'creator-a', display_name: '博主A' }],
+  }),
 }));
 
 vi.mock('./useAgentThreads', () => ({
   useAgentThreads: () => ({
     threads,
     createThread: vi.fn(),
+    createGlobalThread: vi.fn(),
     renameThread,
     deleteThread,
   }),
 }));
 
 vi.mock('./useM2tAgent', () => ({
-  useM2tAgent: () => ({
-    ready: true,
-    status: 'ready',
-    fatalError: null,
-    messages: [],
-    activeTurn: null,
-    providers: [{ name: 'nvidia', models: ['z-ai/glm-5.1'] }],
-    threadModel: 'auto',
-    patchThreadModel: vi.fn(),
-    sendMessage: vi.fn(),
-  }),
+  useM2tAgent: () => agentMock,
 }));
 
 describe('Agent pane acceptance (A5/A6/A10)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     localStorage.removeItem(LAYOUT_STORAGE_KEY);
+    agentMock = {
+      ...defaultAgentMock,
+      messages: [],
+      activeTurn: null,
+      patchThreadModel: vi.fn(),
+      sendMessage: vi.fn(),
+    };
   });
 
-  it('A5: rename via context menu edits inline and calls PATCH hook', async () => {
+  it('A5: user messages use right-aligned Accio bubble', async () => {
+    const user = userEvent.setup();
+    agentMock.messages = [
+      { id: 'u1', role: 'user', text: '用户问题', createdAt: '2026-06-07T10:00:00.000Z' },
+    ];
+    render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Current creator chat' }));
+
+    const live = document.getElementById('chat-live');
+    expect(live).toBeTruthy();
+    const bubble = live?.querySelector('.chat-msg-user .chat-msg-bubble');
+    expect(bubble).toBeTruthy();
+    expect(within(live as HTMLElement).getByText('用户问题')).toBeTruthy();
+  });
+
+  it('A6: assistant messages show process row and footer', async () => {
+    const user = userEvent.setup();
+    agentMock.messages = [
+      {
+        id: 'a1',
+        role: 'assistant',
+        text: '助手回复',
+        thinkingText: '推理过程',
+        durationMs: 8000,
+        createdAt: '2026-06-07T10:00:01.000Z',
+      },
+    ];
+    render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Current creator chat' }));
+
+    const live = document.getElementById('chat-live');
+    expect(live?.querySelector('.chat-msg-agent')).toBeTruthy();
+    expect(within(live as HTMLElement).getByText('已处理 8 秒')).toBeTruthy();
+    expect(live?.querySelector('.chat-msg-footer')).toBeTruthy();
+  });
+
+  it('A6: active turn shows phase label without expandable thinking', async () => {
+    const user = userEvent.setup();
+    agentMock.activeTurn = {
+      phase: 'thinking',
+      phaseLabel: '思考中…',
+      thinkingText: 'hidden until complete',
+      assistantText: '',
+    };
+    render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
+
+    await user.click(screen.getByRole('button', { name: 'Current creator chat' }));
+
+    const live = document.getElementById('chat-live');
+    expect(within(live as HTMLElement).getByText('思考中…')).toBeTruthy();
+    expect(within(live as HTMLElement).queryByText('hidden until complete')).toBeNull();
+  });
+
+  it('rename via context menu edits inline and calls PATCH hook', async () => {
     const user = userEvent.setup();
     render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
 
@@ -83,7 +168,7 @@ describe('Agent pane acceptance (A5/A6/A10)', () => {
     });
   });
 
-  it('A5: delete via context menu calls DELETE hook after confirm', async () => {
+  it('delete via context menu calls DELETE hook after confirm', async () => {
     const user = userEvent.setup();
     render(<AgentPanel creatorId="creator-a" sessionContext={{ sessionId: null }} />);
 
