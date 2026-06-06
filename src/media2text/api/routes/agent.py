@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import uuid
 from typing import Any
 
@@ -15,6 +16,8 @@ from media2text.core.config import AppConfig
 from media2text.core.runtime.supervisor import MonitorSupervisor
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/agent", tags=["agent"])
 
@@ -56,6 +59,8 @@ class TurnBody(BaseModel):
 
     text: str
     sidebar_creator_id: str | None = Field(default=None, alias="sidebarCreatorId")
+    retry: bool = False
+    after_message_id: str | None = Field(default=None, alias="afterMessageId")
 
 
 class ActivateBody(BaseModel):
@@ -120,6 +125,8 @@ def _run_turn(
     thread_id: str,
     text: str,
     turn_id: str,
+    *,
+    retry_after_message_id: str | None = None,
 ) -> None:
     handle = turn_registry.get(turn_id)
     supervisor = handle.supervisor if handle else None
@@ -136,9 +143,12 @@ def _run_turn(
             display_thread_id=thread_id,
             user_text=text,
             turn_id=turn_id,
+            retry_after_message_id=retry_after_message_id,
             cancel_event=cancel,
             emit=emit,
         )
+    except Exception:
+        logger.exception("agent turn failed thread=%s turn=%s", thread_id, turn_id)
     finally:
         conn.close()
         turn_registry.unregister(turn_id)
@@ -305,13 +315,22 @@ def start_turn(
     db: SessionDB = Depends(_get_db_session),
     cfg: AppConfig = Depends(get_cfg),
 ) -> dict:
+    if body.retry and not body.after_message_id:
+        raise HTTPException(status_code=400, detail="afterMessageId required for retry")
     turn_id = str(uuid.uuid4())
     turn_registry.register(
         turn_id=turn_id,
         thread_id=thread_id,
         supervisor=_supervisor(request),
     )
-    background_tasks.add_task(_run_turn, cfg, thread_id, body.text, turn_id)
+    background_tasks.add_task(
+        _run_turn,
+        cfg,
+        thread_id,
+        body.text,
+        turn_id,
+        retry_after_message_id=body.after_message_id if body.retry else None,
+    )
     return {"ok": True, "turnId": turn_id}
 
 

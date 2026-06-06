@@ -36,6 +36,7 @@ const defaultAgentMock = {
   threadModel: 'auto',
   patchThreadModel: vi.fn(),
   sendMessage: vi.fn(),
+  retryMessage: vi.fn(),
 };
 
 let agentMock = { ...defaultAgentMock, messages: [...defaultAgentMock.messages] };
@@ -92,6 +93,7 @@ describe('Agent pane acceptance (A5/A6/A10)', () => {
       activeTurn: null,
       patchThreadModel: vi.fn(),
       sendMessage: vi.fn(),
+      retryMessage: vi.fn(),
     };
   });
 

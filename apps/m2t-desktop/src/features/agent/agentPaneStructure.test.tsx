@@ -43,6 +43,7 @@ vi.mock('./useM2tAgent', () => ({
     threadModel: 'auto',
     patchThreadModel: vi.fn(),
     sendMessage: vi.fn(),
+    retryMessage: vi.fn(),
   }),
 }));
 

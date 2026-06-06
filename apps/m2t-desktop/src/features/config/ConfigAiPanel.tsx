@@ -4,10 +4,11 @@ import type { ConfigDto, LlmProvider } from '../../lib/types';
 
 export function llmProvidersForPatch(providers: LlmProvider[]): Record<string, unknown>[] {
   return providers.map((p) => {
-    const { configured, connected, ...rest } = p;
+    const { configured, connected, api_key, ...rest } = p;
     const out: Record<string, unknown> = { ...rest };
-    if (p.api_key?.trim()) {
-      out.api_key = p.api_key.trim();
+    const key = api_key?.trim();
+    if (key && key !== '***') {
+      out.api_key = key;
     }
     return out;
   });
@@ -39,7 +40,7 @@ type Props = {
   draft: ConfigDto;
   onChange: (providers: LlmProvider[], activeProviderId?: string) => void;
   onEditingChange?: (editing: boolean) => void;
-  onSaveProvider?: (index: number) => Promise<void>;
+  onSaveProvider?: (index: number, providers: LlmProvider[]) => Promise<boolean>;
   onRefresh?: () => Promise<void>;
   saving?: boolean;
 };
@@ -126,9 +127,23 @@ export const ConfigAiPanel = forwardRef<ConfigAiPanelHandle, Props>(function Con
   };
 
   const handleSaveProvider = async () => {
-    if (editingIndex == null || !onSaveProvider) return;
-    await onSaveProvider(editingIndex);
-    setEditing(null);
+    if (editingIndex == null || !onSaveProvider || !editing) return;
+    const domKey =
+      (document.getElementById('provider-api-key') as HTMLInputElement | null)?.value.trim() ??
+      '';
+    const mergedProviders = providers.map((x, i) => {
+      if (i !== editingIndex) return x;
+      if (!domKey) return x;
+      return { ...x, api_key: domKey };
+    });
+    if (domKey && domKey !== (editing.api_key ?? '')) {
+      onChange(
+        mergedProviders,
+        draft.activeProviderId === editing.name ? editing.name : undefined,
+      );
+    }
+    const ok = await onSaveProvider(editingIndex, mergedProviders);
+    if (ok) setEditing(null);
   };
 
   const editing = editingIndex != null ? providers[editingIndex] : null;
@@ -305,6 +320,12 @@ function ProviderDetailForm({
               value={apiKeyValue}
               onChange={(e) =>
                 onChange({ ...provider, api_key: e.target.value || null }, isDefault)
+              }
+              onInput={(e) =>
+                onChange(
+                  { ...provider, api_key: (e.target as HTMLInputElement).value || null },
+                  isDefault,
+                )
               }
             />
             <button

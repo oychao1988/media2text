@@ -90,3 +90,63 @@ def test_iteration_budget_stops_after_max_turns(tmp_path) -> None:
     assert "迭代次数" in reply
     assert len(mock.calls) == 3
     conn.close()
+
+
+def test_run_conversation_persists_llm_failure(tmp_path) -> None:
+    conn = connect(tmp_path / "media2text.db")
+    db = SessionDB(conn)
+    thread_id = "t-fail"
+    db.create_session(display_thread_id=thread_id, title="test")
+
+    class FailClient:
+        def complete(self, **_kwargs):
+            raise RuntimeError("Error code: 401 - Unauthorized")
+
+    events: list[dict] = []
+    agent = AIAgent(db, llm=FailClient())
+    reply = agent.run_conversation(
+        display_thread_id=thread_id,
+        user_text="hi",
+        emit=events.append,
+    )
+
+    assert "认证失败" in reply
+    assistant_rows = [r for r in db.get_messages(thread_id) if r["role"] == "assistant"]
+    assert assistant_rows
+    assert "认证失败" in assistant_rows[-1]["content"]
+    assert any(e["type"] == "error" for e in events)
+    assert any(e["type"] == "turn.end" for e in events)
+    conn.close()
+
+
+def test_run_conversation_retry_drops_failed_assistant_and_reuses_user(tmp_path) -> None:
+    conn = connect(tmp_path / "media2text.db")
+    db = SessionDB(conn)
+    thread_id = "t-retry"
+    db.create_session(display_thread_id=thread_id, title="test")
+
+    class FailClient:
+        def complete(self, **_kwargs):
+            raise RuntimeError("Error code: 401 - Unauthorized")
+
+    agent = AIAgent(db, llm=FailClient())
+    agent.run_conversation(display_thread_id=thread_id, user_text="hello")
+
+    user_rows = [r for r in db.get_messages(thread_id) if r["role"] == "user"]
+    assert len(user_rows) == 1
+    user_id = user_rows[0]["id"]
+    assert len([r for r in db.get_messages(thread_id) if r["role"] == "assistant"]) == 1
+
+    mock = MockChatClient([LlmCompletion(content="retried ok")])
+    agent2 = AIAgent(db, llm=mock)
+    reply = agent2.run_conversation(
+        display_thread_id=thread_id,
+        user_text="hello",
+        retry_after_message_id=user_id,
+    )
+
+    assert reply == "retried ok"
+    rows = db.get_messages(thread_id)
+    assert [r["role"] for r in rows] == ["user", "assistant"]
+    assert rows[-1]["content"] == "retried ok"
+    conn.close()
