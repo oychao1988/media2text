@@ -87,8 +87,8 @@ function AgentChatMessages({
 }
 
 export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
-  const { setSelectedId } = useCreators();
-  const { threads, createThread, createGlobalThread, renameThread, deleteThread, historyFilter, setHistoryFilter } =
+  const { creators, setSelectedId } = useCreators();
+  const { threads, createThread, createGlobalThread, renameThread, deleteThread } =
     useAgentThreads(creatorId);
   const [tabIds, setTabIds] = useState<string[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
@@ -100,6 +100,10 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   } | null>(null);
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [batchDeleteTarget, setBatchDeleteTarget] = useState<{
+    agentId: string;
+    threadIds: string[];
+  } | null>(null);
   const historyResize = useAgentHistoryResize();
 
   const activeThread = useMemo(
@@ -230,22 +234,47 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     setContextMenu(null);
   }, [contextMenu]);
 
+  const removeThreadsFromTabs = useCallback((ids: string[]) => {
+    const idSet = new Set(ids);
+    setTabIds((prev) => {
+      const next = prev.filter((tid) => !idSet.has(tid));
+      setActiveThreadId((current) => {
+        if (current && idSet.has(current)) {
+          return next[0] ?? null;
+        }
+        return current;
+      });
+      return next;
+    });
+  }, []);
+
   const handleDeleteConfirm = useCallback(async () => {
     if (!deleteTargetId) return;
     const id = deleteTargetId;
     setDeleteTargetId(null);
     try {
       await deleteThread(id);
-      setTabIds((prev) => {
-        const next = prev.filter((x) => x !== id);
-        setActiveThreadId((active) => (active === id ? (next[0] ?? null) : active));
-        return next;
-      });
+      removeThreadsFromTabs([id]);
       showToast('已删除会话', 'success');
     } catch {
       showToast('删除失败', 'error');
     }
-  }, [deleteTargetId, deleteThread]);
+  }, [deleteTargetId, deleteThread, removeThreadsFromTabs]);
+
+  const handleBatchDeleteConfirm = useCallback(async () => {
+    if (!batchDeleteTarget) return;
+    const { threadIds } = batchDeleteTarget;
+    setBatchDeleteTarget(null);
+    const results = await Promise.allSettled(threadIds.map((id) => deleteThread(id)));
+    const succeeded = threadIds.filter((_, i) => results[i]?.status === 'fulfilled');
+    const failed = threadIds.length - succeeded.length;
+    if (succeeded.length) removeThreadsFromTabs(succeeded);
+    if (failed > 0) {
+      showToast(`已删除 ${succeeded.length} 条，${failed} 条失败`, 'error');
+    } else {
+      showToast(`已删除 ${succeeded.length} 条会话`, 'success');
+    }
+  }, [batchDeleteTarget, deleteThread, removeThreadsFromTabs]);
 
   const paneClass = [
     'agent-pane',
@@ -334,10 +363,12 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             />
             <AgentHistorySidebar
               threads={threads}
+              creators={creators}
               activeThreadId={activeThreadId}
-              historyFilter={historyFilter}
-              onHistoryFilterChange={setHistoryFilter}
-              onNewGlobalThread={() => void handleNewGlobalThread()}
+              onNewGlobalDraft={() => void handleNewGlobalThread()}
+              onBatchDeleteRequest={(agentId, threadIds) =>
+                setBatchDeleteTarget({ agentId, threadIds })
+              }
               menuOpenThreadId={contextMenu?.threadId ?? null}
               editingThreadId={editingThreadId}
               onSelectThread={(id) => activateThread(id)}
@@ -370,6 +401,15 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
         danger
         onConfirm={() => void handleDeleteConfirm()}
         onCancel={() => setDeleteTargetId(null)}
+      />
+      <ConfirmDialog
+        open={batchDeleteTarget != null}
+        title="批量删除会话"
+        message={`确定删除该 Agent 下全部 ${batchDeleteTarget?.threadIds.length ?? 0} 条会话？此操作不可撤销。`}
+        confirmLabel="删除"
+        danger
+        onConfirm={() => void handleBatchDeleteConfirm()}
+        onCancel={() => setBatchDeleteTarget(null)}
       />
     </section>
   );

@@ -6,7 +6,10 @@ import { describe, expect, it, vi } from 'vitest';
 import { AgentPanel } from './AgentPanel';
 
 vi.mock('../creators/CreatorsContext', () => ({
-  useCreators: () => ({ setSelectedId: vi.fn() }),
+  useCreators: () => ({
+    setSelectedId: vi.fn(),
+    creators: [{ id: 'c1', display_name: 'Test Creator' }],
+  }),
 }));
 
 vi.mock('./useAgentThreads', () => ({
@@ -23,6 +26,7 @@ vi.mock('./useAgentThreads', () => ({
       },
     ],
     createThread: vi.fn(),
+    createGlobalThread: vi.fn(),
     renameThread: vi.fn(),
     deleteThread: vi.fn(),
   }),
@@ -74,6 +78,8 @@ describe('AgentPanel structure (A1/A7)', () => {
     expect(layoutCss).toContain('.agent-history');
     expect(layoutCss).toContain('.agent-header-icon-btn');
     expect(layoutCss).toContain('.agent-pane.agent-history-collapsed');
+    expect(layoutCss).toContain('.agent-tab-avatar');
+    expect(layoutCss).toContain('.agent-thread-group-head');
     expect(layoutCss).toContain('.toast-action');
   });
 });
