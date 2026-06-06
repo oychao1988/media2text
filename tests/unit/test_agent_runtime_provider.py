@@ -1,7 +1,7 @@
 import pytest
 
 from media2text.agent.runtime_provider import resolve_agent_provider
-from media2text.core.config import AppConfig, SummarizeLlmConfig, SummarizeLlmProviderConfig
+from media2text.core.config import AppConfig
 
 pytestmark = pytest.mark.agent
 

@@ -10,7 +10,6 @@ from media2text.core.config import AppConfig
 
 if TYPE_CHECKING:
     from media2text.agent.hermes_state import SessionDB
-    from media2text.agent.runtime_provider import ChatClient
 
 _PLACEHOLDER_TITLES = frozenset(
     {
