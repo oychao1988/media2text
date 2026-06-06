@@ -41,11 +41,18 @@ export function useM2tAgent(opts: {
         content: string;
         thinking_text?: string | null;
         duration_ms?: number | null;
+        created_at?: string | null;
       }>;
     }>(`/api/agent/threads/${tid}/messages`, true);
     const rows: ChatMessage[] = (res.messages ?? []).map((m) => {
       if (m.role === 'user') {
-        return { id: m.id, role: 'user' as const, text: m.content, persisted: true };
+        return {
+          id: m.id,
+          role: 'user' as const,
+          text: m.content,
+          createdAt: m.created_at ?? undefined,
+          persisted: true,
+        };
       }
       if (m.role === 'tool') {
         let toolPayload: import('@m2t/shared').ToolResultPayload = {
@@ -69,6 +76,7 @@ export function useM2tAgent(opts: {
         text: m.content,
         thinkingText: m.thinking_text ?? undefined,
         durationMs: m.duration_ms ?? undefined,
+        createdAt: m.created_at ?? undefined,
         persisted: true,
       };
     });
@@ -94,7 +102,8 @@ export function useM2tAgent(opts: {
     if (!threadId) {
       setMessages([]);
       setThreadModel('auto');
-      setStatus('error');
+      setActiveTurn(null);
+      setStatus('ready');
       setFatalError(null);
       return;
     }
@@ -189,6 +198,7 @@ export function useM2tAgent(opts: {
               text,
               durationMs,
               thinkingText,
+              createdAt: new Date().toISOString(),
             },
           ];
         });
@@ -303,9 +313,10 @@ export function useM2tAgent(opts: {
   );
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, overrideThreadId?: string) => {
       const trimmed = text.trim();
-      if (!trimmed || status !== 'ready' || !threadId) return;
+      const tid = overrideThreadId ?? threadId;
+      if (!trimmed || status !== 'ready' || !tid) return;
       const defaultProvider = providers.find((p) => p.configured) ?? providers[0];
       if (!defaultProvider) {
         setMessages((prev) => [
@@ -319,13 +330,18 @@ export function useM2tAgent(opts: {
         return;
       }
 
-      const userMsg: ChatMessage = { id: nextId(), role: 'user', text: trimmed };
+      const userMsg: ChatMessage = {
+        id: nextId(),
+        role: 'user',
+        text: trimmed,
+        createdAt: new Date().toISOString(),
+      };
       setMessages((prev) => [...prev, userMsg]);
       setActiveTurn({ ...INITIAL_TURN });
 
       try {
         await apiPost(
-          `/api/agent/threads/${threadId}/turn`,
+          `/api/agent/threads/${tid}/turn`,
           {
             text: trimmed,
             sidebarCreatorId: creatorId ?? undefined,
@@ -347,7 +363,7 @@ export function useM2tAgent(opts: {
   );
 
   return {
-    ready: status === 'ready' && Boolean(threadId),
+    ready: status === 'ready',
     status,
     fatalError,
     messages,

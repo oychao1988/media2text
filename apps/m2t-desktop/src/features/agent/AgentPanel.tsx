@@ -7,9 +7,11 @@ import { AgentHistorySidebar } from './AgentHistorySidebar';
 import { AgentTabsBar } from './AgentTabsBar';
 import { AgentThreadContextMenu } from './AgentThreadContextMenu';
 import { shouldNotifyCreatorMismatch, isComposerBlocked } from './agentThreadSelect';
-import { ChatMarkdown } from './ChatMarkdown';
 import { AgentComposer } from './AgentComposer';
 import { ToolResultCard } from './ToolResultCard';
+import { ChatMessageUser } from './ChatMessageUser';
+import { ChatMessageAgent } from './ChatMessageAgent';
+import { resolveAgentProfile } from './agentProfile';
 import { useAgentHistoryResize } from './useAgentHistoryResize';
 import { activateAgentTab, closeAgentTab, pushAgentTab } from './useAgentTabs';
 import { useAgentThreads } from './useAgentThreads';
@@ -33,49 +35,49 @@ function readHistoryCollapsed(): boolean {
 
 function AgentChatMessages({
   agent,
+  threadCreatorId,
 }: {
   agent: ReturnType<typeof useM2tAgent>;
+  threadCreatorId: string | null;
 }) {
+  const { creators } = useCreators();
+  const agentProfile = useMemo(
+    () => resolveAgentProfile(threadCreatorId, creators),
+    [threadCreatorId, creators],
+  );
+
   return (
     <>
       {agent.messages.map((msg) => {
         if (msg.role === 'user') {
           return (
-            <div key={msg.id} className="msg msg-user">
-              <ChatMarkdown text={msg.text} />
-            </div>
+            <ChatMessageUser key={msg.id} text={msg.text} createdAt={msg.createdAt} />
           );
         }
         if (msg.role === 'tool') {
           return (
-            <div key={msg.id} className="msg msg-assistant">
+            <div key={msg.id} className="chat-msg-tool">
               <ToolResultCard result={msg.result.payload} />
             </div>
           );
         }
         return (
-          <div key={msg.id} className="msg msg-assistant">
-            {msg.thinkingText ? (
-              <div className="thinking">
-                <ChatMarkdown text={msg.thinkingText} />
-              </div>
-            ) : null}
-            <ChatMarkdown text={msg.text} />
-          </div>
+          <ChatMessageAgent
+            key={msg.id}
+            profile={agentProfile}
+            text={msg.text}
+            createdAt={msg.createdAt}
+            thinkingText={msg.thinkingText}
+            durationMs={msg.durationMs}
+          />
         );
       })}
       {agent.activeTurn ? (
-        <div className="msg msg-assistant">
-          <p className="muted agent-phase">{agent.activeTurn.phaseLabel}</p>
-          {agent.activeTurn.thinkingText ? (
-            <div className="thinking">
-              <ChatMarkdown text={agent.activeTurn.thinkingText} />
-            </div>
-          ) : null}
-          {agent.activeTurn.assistantText ? (
-            <ChatMarkdown text={agent.activeTurn.assistantText} />
-          ) : null}
-        </div>
+        <ChatMessageAgent
+          profile={agentProfile}
+          text={agent.activeTurn.assistantText}
+          activePhaseLabel={agent.activeTurn.phaseLabel}
+        />
       ) : null}
       {agent.status === 'reconnecting' ? (
         <p className="muted agent-status-hint">Agent 流重连中…</p>
@@ -84,6 +86,7 @@ function AgentChatMessages({
   );
 }
 
+export function AgentPanel
 export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
   const { setSelectedId } = useCreators();
   const { threads, createThread, createGlobalThread, renameThread, deleteThread, historyFilter, setHistoryFilter } =
@@ -281,10 +284,10 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
         <div className="agent-main">
           <div className="chat-scroll" id="chat-scroll" aria-live="polite">
             <div id="chat-live" style={playbackMode ? { display: 'none' } : undefined}>
-              {!playbackMode ? <AgentChatMessages agent={agent} /> : null}
+              {!playbackMode ? <AgentChatMessages agent={agent} threadCreatorId={activeThread?.creator_id ?? null} /> : null}
             </div>
             <div id="chat-playback" style={playbackMode ? undefined : { display: 'none' }}>
-              {playbackMode ? <AgentChatMessages agent={agent} /> : null}
+              {playbackMode ? <AgentChatMessages agent={agent} threadCreatorId={activeThread?.creator_id ?? null} /> : null}
             </div>
             {!activeThreadId ? (
               <p className="hint">点击 + 新建 Agent，或从历史栏选择会话</p>

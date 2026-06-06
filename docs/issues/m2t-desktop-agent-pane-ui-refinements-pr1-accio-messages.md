@@ -15,26 +15,26 @@
 
 ### 组件结构
 
-- [ ] 新增 `ChatMessageUser`：`.chat-msg-user`、`.chat-msg-head`（时间·名称·头像右对齐）、`.chat-msg-bubble`、悬停 `.chat-msg-actions`（重试/编辑/复制 → toast）
-- [ ] 新增 `ChatMessageAgent`：`.chat-msg-agent` 全宽、`.chat-msg-body` Markdown 样式、`.chat-msg-footer` 常驻（复制/赞/踩 → v1 noop 或 toast）
-- [ ] 新增 `ChatMessageProcess`（§5.3.1 / §14.3）：
+- [x] 新增 `ChatMessageUser`：`.chat-msg-user`、`.chat-msg-head`（时间·名称·头像右对齐）、`.chat-msg-bubble`、悬停 `.chat-msg-actions`（重试/编辑/复制 → toast）
+- [x] 新增 `ChatMessageAgent`：`.chat-msg-agent` 全宽、`.chat-msg-body` Markdown 样式、`.chat-msg-footer` 常驻（复制/赞/踩 → v1 noop 或 toast）
+- [x] 新增 `ChatMessageProcess`（§5.3.1 / §14.3）：
   - Turn 进行中：显示 WS `turn.phase` → `phaseLabel`；不可展开
   - Turn 完成：「已处理 {duration_s} 秒」；默认折叠
   - 有 `thinking_text` 时可展开 `.chat-msg-process-body`；无则隐藏 `›`
   - `aria-expanded` 绑在 process 按钮上
-- [ ] `#chat-live` / `#chat-playback`：`flex column; gap: 20px; width: 100%`；用户消息 `margin-left: auto`
-- [ ] 保留 `.tool-card` 嵌于助手流
+- [x] `#chat-live` / `#chat-playback`：`flex column; gap: 20px; width: 100%`；用户消息 `margin-left: auto`
+- [x] 保留 `.tool-card` 嵌于助手流
 
 ### 数据映射
 
-- [ ] `duration_ms` / WS `message.assistant.durationMs` → 处理行秒数
-- [ ] `thinking_text` / WS `message.thinking` → 展开正文
-- [ ] 流式过程中 **不** 逐字展开 thinking；完成后一次性可读
+- [x] `duration_ms` / WS `message.assistant.durationMs` → 处理行秒数
+- [x] `thinking_text` / WS `message.thinking` → 展开正文
+- [x] 流式过程中 **不** 逐字展开 thinking；完成后一次性可读
 
 ### 测试
 
-- [ ] `pnpm --filter m2t-desktop test`（消息组件 snapshot / 结构测试）
-- [ ] 扩展 `agentPaneAcceptance.test.tsx` 覆盖 A5、A6（mock 消息 + phase）
+- [x] `pnpm --filter m2t-desktop test`（消息组件 snapshot / 结构测试）
+- [x] 扩展 `agentPaneAcceptance.test.tsx` 覆盖 A5、A6（mock 消息 + phase）
 
 ## 验证命令
 
