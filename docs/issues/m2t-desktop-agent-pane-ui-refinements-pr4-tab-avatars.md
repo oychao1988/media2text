@@ -14,27 +14,28 @@
 
 ### 数据
 
-- [ ] `AGENT_GLOBAL_PROFILE` 常量（灵犀 name/abbr/渐变 class）
-- [ ] 博主 profile 来自 `CreatorsContext` + `threadAgentId(thread)`
+- [x] `AGENT_GLOBAL_PROFILE` 常量（灵犀 name/abbr/渐变 class）
+- [x] 博主 profile 来自 `CreatorsContext` + `threadAgentId(thread)`
 
 ### UI
 
-- [ ] `.agent-tab` 布局：`[.agent-tab-avatar][label]`，`gap: 6px`
-- [ ] `.agent-tab-avatar.global` 与灵犀历史组头像视觉一致
-- [ ] thread 页签：`getAgentProfile(threadAgentId(thread))`
-- [ ] draft 页签：用 `draft.agentId` 解析 profile
+- [x] `.agent-tab` 布局：`[.agent-tab-avatar][label]`，`gap: 6px`
+- [x] `.agent-tab-avatar.global` 与灵犀历史组头像视觉一致
+- [x] thread 页签：`getAgentProfile(threadAgentId(thread))`
+- [x] draft 页签：用 `draft.agentId` 解析 profile
 
 ### 测试
 
-- [ ] 组件测试：global vs creator avatar class / abbr 文案
+- [x] 组件测试：global vs creator avatar class / abbr 文案
 
 ## 验证命令
 
 ```bash
 source .venv/bin/activate
 pnpm --filter m2t-desktop test
-pnpm --filter m2t-desktop tauri dev
-# 手工 A4：多 tab 各显示对应头像；draft 切换 picker 后 avatar 更新
+# 手工 A4（需 Tauri）：
+# pnpm --filter m2t-desktop tauri dev
+# 多 tab 各显示对应头像；draft 切换 picker 后 avatar 更新
 ```
 
 ## 非目标范围
