@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from media2text.agent.hermes_state import SessionDB
-from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.tools.m2t_handlers import ToolContext, _err, _ok
+
+if TYPE_CHECKING:
+    from media2text.agent.profile_resolver import AgentProfileContext
 
 
 def delegate_task(ctx: ToolContext, **params: Any) -> dict[str, Any]:
@@ -17,6 +19,8 @@ def delegate_task(ctx: ToolContext, **params: Any) -> dict[str, Any]:
         return _err("NO_THREAD", "delegate requires active thread context")
 
     db = SessionDB(ctx.conn)
+
+    from media2text.agent.profile_resolver import resolve_profile
 
     profile: AgentProfileContext
     if ctx.profile is not None and not isinstance(ctx.profile, dict):
