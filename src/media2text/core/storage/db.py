@@ -603,6 +603,31 @@ def _migrate_hermes_v2(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_hermes_v3(conn: sqlite3.Connection) -> None:
+    """creator_agent_jobs for distill bootstrap/evolve (M5b/M5c)."""
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS creator_agent_jobs (
+          id TEXT PRIMARY KEY,
+          creator_id TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          status TEXT NOT NULL,
+          trigger TEXT NOT NULL,
+          source_id TEXT,
+          payload_json TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          FOREIGN KEY (creator_id) REFERENCES creators(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_creator_agent_jobs_status
+          ON creator_agent_jobs(status);
+        CREATE INDEX IF NOT EXISTS idx_creator_agent_jobs_creator
+          ON creator_agent_jobs(creator_id);
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -620,6 +645,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_awemes_v1(conn)
         _migrate_hermes_v1(conn)
         _migrate_hermes_v2(conn)
+        _migrate_hermes_v3(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

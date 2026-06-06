@@ -136,6 +136,19 @@ class MonitorTaskRow:
 
 
 @dataclass
+class CreatorAgentJobRow:
+    id: str
+    creator_id: str
+    kind: str
+    status: str
+    trigger: str
+    source_id: str | None
+    payload_json: str | None
+    created_at: str
+    updated_at: str
+
+
+@dataclass
 class PostProcessJobRow:
     id: str
     session_id: str
