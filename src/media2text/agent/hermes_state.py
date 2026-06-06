@@ -191,6 +191,51 @@ class SessionDB:
         _write_with_retry(self._conn, _update)
         return True
 
+    def activate_thread(
+        self,
+        display_thread_id: str,
+        *,
+        creator_id: str | None = None,
+        live_session_id: str | None = None,
+        clear_live_session: bool = False,
+        session_kind: str | None = None,
+        transcript_path: str | None = None,
+        summary_path: str | None = None,
+        context_mode: str | None = None,
+    ) -> bool:
+        session_id = self.get_active_session_for_thread(display_thread_id)
+        row = self.get_session_row(session_id)
+        if not row:
+            return False
+        binding = parse_binding(row["active_binding_json"])
+        if context_mode is not None:
+            binding["context_mode"] = context_mode
+        if clear_live_session:
+            binding["session_id"] = None
+        elif live_session_id is not None:
+            binding["session_id"] = live_session_id
+        if session_kind is not None:
+            binding["session_kind"] = session_kind
+        if transcript_path is not None:
+            binding["transcript_path"] = transcript_path
+        if summary_path is not None:
+            binding["summary_path"] = summary_path
+        now = _utc_now()
+        creator_val = row["creator_id"] if creator_id is None else creator_id
+
+        def _update() -> None:
+            self._conn.execute(
+                """
+                UPDATE sessions
+                SET creator_id = ?, active_binding_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (creator_val, json.dumps(binding), now, session_id),
+            )
+
+        _write_with_retry(self._conn, _update)
+        return True
+
     def delete_thread(self, display_thread_id: str) -> bool:
         session_ids = [
             r[0]

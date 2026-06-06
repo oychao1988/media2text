@@ -1,13 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { PiEvent, PiUserMessagePayload } from '@m2t/shared';
-import { apiGet, apiPatch, apiPost } from '../../lib/api';
-import {
-  flushPendingAgentReload,
-  onAgentSidecarLifecycle,
-  sendAgentContextRefresh,
-  sendAgentUserMessage,
-  startAgentSidecar,
-} from './agentSidecar';
+import { parsePiEventLine, type PiEvent } from '@m2t/shared';
+import { apiGet, apiPatch, apiPost, ApiError, buildWsUrl } from '../../lib/api';
+import { showToast } from '../../lib/toast';
+import { buildActivatePayload, type AgentContext } from './agentContext';
 import type { ActiveTurn, ChatMessage, ChatProvider } from './types';
 
 const INITIAL_TURN: ActiveTurn = {
@@ -21,15 +16,9 @@ function nextId(): string {
   return `m-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-export type AgentStatus = 'starting' | 'ready' | 'crashed' | 'error';
+export type AgentStatus = 'connecting' | 'ready' | 'reconnecting' | 'error';
 
-export type SessionContext = {
-  sessionId: string | null;
-  sessionKind?: 'live' | 'vod' | null;
-  transcriptPath?: string | null;
-  summaryPath?: string | null;
-  contextMode?: 'transcript' | 'summary' | 'both';
-};
+export type SessionContext = AgentContext;
 
 export function useM2tAgent(opts: {
   threadId: string | null;
@@ -37,35 +26,12 @@ export function useM2tAgent(opts: {
   sessionContext: SessionContext;
 }) {
   const { threadId, creatorId, sessionContext } = opts;
-  const [status, setStatus] = useState<AgentStatus>('starting');
+  const [status, setStatus] = useState<AgentStatus>('connecting');
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [threadModel, setThreadModel] = useState<string>('auto');
   const [providers, setProviders] = useState<ChatProvider[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [activeTurn, setActiveTurn] = useState<ActiveTurn | null>(null);
-  const pendingUserRef = useRef<ChatMessage | null>(null);
-  const pendingAssistantRef = useRef<{
-    text: string;
-    thinkingText?: string;
-    durationMs?: number;
-  } | null>(null);
-
-  const persistMessage = useCallback(
-    async (
-      role: 'user' | 'assistant',
-      content: string,
-      extra?: { thinkingText?: string; durationMs?: number },
-    ) => {
-      if (!threadId) return;
-      await apiPost(`/api/chat/threads/${threadId}/messages`, {
-        role,
-        content,
-        thinkingText: extra?.thinkingText,
-        durationMs: extra?.durationMs,
-      });
-    },
-    [threadId],
-  );
 
   const loadHistory = useCallback(async (tid: string) => {
     const res = await apiGet<{
@@ -76,10 +42,26 @@ export function useM2tAgent(opts: {
         thinking_text?: string | null;
         duration_ms?: number | null;
       }>;
-    }>(`/api/chat/threads/${tid}/messages`, true);
+    }>(`/api/agent/threads/${tid}/messages`, true);
     const rows: ChatMessage[] = (res.messages ?? []).map((m) => {
       if (m.role === 'user') {
         return { id: m.id, role: 'user' as const, text: m.content, persisted: true };
+      }
+      if (m.role === 'tool') {
+        let toolPayload: import('@m2t/shared').ToolResultPayload = {
+          ok: false,
+          error: { code: 'parse_error', message: m.content || 'invalid tool payload' },
+        };
+        try {
+          toolPayload = JSON.parse(m.content || '{}') as import('@m2t/shared').ToolResultPayload;
+        } catch {
+          /* keep fallback */
+        }
+        return {
+          id: m.id,
+          role: 'tool' as const,
+          result: { type: 'tool.result' as const, payload: toolPayload },
+        };
       }
       return {
         id: m.id,
@@ -112,13 +94,15 @@ export function useM2tAgent(opts: {
     if (!threadId) {
       setMessages([]);
       setThreadModel('auto');
+      setStatus('error');
+      setFatalError(null);
       return;
     }
     let cancelled = false;
     void (async () => {
       try {
         const listed = await apiGet<{ threads: Array<{ id: string; model?: string }> }>(
-          '/api/chat/threads',
+          '/api/agent/threads',
           true,
         );
         const row = listed.threads?.find((t) => t.id === threadId);
@@ -194,7 +178,6 @@ export function useM2tAgent(opts: {
       if (event.type === 'message.assistant') {
         const { text, durationMs, thinkingText } = event.payload;
         setActiveTurn(null);
-        pendingAssistantRef.current = { text, durationMs, thinkingText };
         setMessages((prev) => {
           const last = prev[prev.length - 1];
           if (last?.role === 'assistant' && last.text === text) return prev;
@@ -213,22 +196,7 @@ export function useM2tAgent(opts: {
       }
       if (event.type === 'turn.end') {
         setActiveTurn(null);
-        void (async () => {
-          const userMsg = pendingUserRef.current;
-          const assistant = pendingAssistantRef.current;
-          pendingUserRef.current = null;
-          pendingAssistantRef.current = null;
-          if (userMsg?.role === 'user' && !userMsg.persisted) {
-            await persistMessage('user', userMsg.text);
-          }
-          if (assistant) {
-            await persistMessage('assistant', assistant.text, {
-              thinkingText: assistant.thinkingText,
-              durationMs: assistant.durationMs,
-            });
-          }
-          await flushPendingAgentReload();
-        })();
+        if (threadId) void loadHistory(threadId);
         return;
       }
       if (event.type === 'tool.result') {
@@ -238,7 +206,7 @@ export function useM2tAgent(opts: {
         ]);
       }
     },
-    [persistMessage],
+    [loadHistory, threadId],
   );
 
   const handleEventRef = useRef(handleEvent);
@@ -247,75 +215,79 @@ export function useM2tAgent(opts: {
   }, [handleEvent]);
 
   useEffect(() => {
-    if (!creatorId) {
-      setStatus('error');
-      setFatalError('请先选择博主');
-      return;
-    }
+    if (!threadId) return;
 
     let cancelled = false;
-    let stop: (() => Promise<void>) | undefined;
-    setStatus('starting');
-    setFatalError(null);
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
 
-    void startAgentSidecar(
-      (ev) => {
-        if (!cancelled) handleEventRef.current(ev);
-      },
-      {
-        creatorId: creatorId ?? undefined,
-        sessionId: sessionContext.sessionId ?? undefined,
-        threadId: threadId ?? undefined,
-      },
-    )
-      .then((s) => {
-        stop = s;
-      })
-      .catch((err) => {
+    const connect = async () => {
+      if (cancelled) return;
+      setStatus((s) => (s === 'ready' ? 'reconnecting' : 'connecting'));
+      try {
+        const url = await buildWsUrl(
+          `/api/agent/stream?threadId=${encodeURIComponent(threadId)}`,
+        );
+        ws = new WebSocket(url);
+        ws.onopen = () => {
+          if (!cancelled) setFatalError(null);
+        };
+        ws.onmessage = (ev) => {
+          const line = String(ev.data);
+          try {
+            const raw = JSON.parse(line) as { type?: string };
+            if (raw.type === 'ping') return;
+          } catch {
+            /* fall through to PiEvent parser */
+          }
+          const parsed = parsePiEventLine(line);
+          if (parsed && !cancelled) handleEventRef.current(parsed);
+        };
+        ws.onclose = () => {
+          if (cancelled) return;
+          setStatus('reconnecting');
+          reconnectTimer = setTimeout(() => void connect(), 1500);
+        };
+        ws.onerror = () => {
+          if (!cancelled) setStatus('reconnecting');
+        };
+      } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
-        setStatus('error');
-        setFatalError(msg || 'Agent sidecar 启动失败');
-      });
+        if (!cancelled) {
+          setStatus('error');
+          setFatalError(msg || 'Agent WebSocket 连接失败');
+        }
+      }
+    };
+
+    void connect();
 
     return () => {
       cancelled = true;
-      void stop?.();
+      if (reconnectTimer) clearTimeout(reconnectTimer);
+      ws?.close();
     };
-  }, [creatorId, threadId, sessionContext.sessionId]);
+  }, [threadId]);
 
   useEffect(() => {
-    if (!creatorId || !threadId) return;
-    void sendAgentContextRefresh({
-      creatorId,
-      sessionId: sessionContext.sessionId ?? undefined,
+    if (!threadId) return;
+    const payload = buildActivatePayload({
+      creatorId: creatorId ?? undefined,
+      sessionId: sessionContext.sessionId ?? null,
       threadId,
       sessionKind: sessionContext.sessionKind ?? null,
       transcriptPath: sessionContext.transcriptPath ?? null,
       summaryPath: sessionContext.summaryPath ?? null,
       contextMode: sessionContext.contextMode,
     });
+    void apiPatch(`/api/agent/threads/${threadId}/activate`, payload, true).catch(() => {});
   }, [creatorId, threadId, sessionContext]);
-
-  useEffect(() => {
-    if (!threadId) return;
-    void apiPatch(`/api/chat/threads/${threadId}`, {
-      sessionId: sessionContext.sessionId ?? undefined,
-      clearSession: sessionContext.sessionId == null,
-    }).catch(() => {});
-  }, [threadId, sessionContext.sessionId]);
-
-  useEffect(() => {
-    return onAgentSidecarLifecycle((phase) => {
-      if (phase === 'crashed') setStatus('crashed');
-      if (phase === 'recovering') setStatus('starting');
-    });
-  }, []);
 
   const patchThreadModel = useCallback(
     async (model: string) => {
       if (!threadId) return;
       setThreadModel(model);
-      await apiPatch(`/api/chat/threads/${threadId}`, { model });
+      await apiPatch(`/api/agent/threads/${threadId}`, { model });
     },
     [threadId],
   );
@@ -338,18 +310,30 @@ export function useM2tAgent(opts: {
       }
 
       const userMsg: ChatMessage = { id: nextId(), role: 'user', text: trimmed };
-      pendingUserRef.current = userMsg;
       setMessages((prev) => [...prev, userMsg]);
       setActiveTurn({ ...INITIAL_TURN });
 
-      const payload: PiUserMessagePayload = {
-        text: trimmed,
-        providerId: defaultProvider.name,
-        model: threadModel,
-      };
-      await sendAgentUserMessage(payload);
+      try {
+        await apiPost(
+          `/api/agent/threads/${threadId}/turn`,
+          {
+            text: trimmed,
+            sidebarCreatorId: creatorId ?? undefined,
+          },
+          true,
+        );
+      } catch (err) {
+        setActiveTurn(null);
+        setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
+        if (err instanceof ApiError && err.status === 409) {
+          showToast('当前对话与侧边栏博主不一致，请切换对话或博主', 'error');
+          return;
+        }
+        const msg = err instanceof Error ? err.message : '发送失败';
+        showToast(msg, 'error');
+      }
     },
-    [providers, status, threadId, threadModel],
+    [creatorId, providers, status, threadId],
   );
 
   return {

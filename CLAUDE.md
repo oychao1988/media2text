@@ -41,7 +41,7 @@ pip install -e ".[desktop,dev]"
 pnpm install
 
 media2text serve --port 8765          # 仅 API sidecar（127.0.0.1）；内嵌 MonitorSupervisor + `GET /api/runtime`
-pnpm --filter m2t-desktop tauri dev   # 完整 Tauri 壳 + 双 sidecar
+pnpm --filter m2t-desktop tauri dev   # Tauri 壳 + Python API sidecar（Agent 经 HTTP turn + WS `/api/agent/stream`，无 Node agent sidecar）
 pnpm --filter m2t-desktop test        # Vitest（layout a11y / responsive）
 pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop
 ```
@@ -249,6 +249,15 @@ pyright
 | [issue-orchestrator](.claude/agents/issue-orchestrator.md) | 按 `docs/issues/README.md` 顺序驱动 A→B→C→Epic 验收 |
 
 **关单规则：** merge 前 `issue-reviewer` PASS + 勾选 `docs/issues/*.md`；系列最后一单后填 `docs/superpowers/verification/` 验收表。
+
+**自动化验证（orchestrator / CI）：**
+
+```bash
+python scripts/issue_verify.py --issue <N>      # 跑 docs/issues/*.md「验证命令」
+python scripts/epic_verify.py agent-hermes      # Epic manifest（docs/issues/epic-manifests/）
+```
+
+PR 推送触发 `.github/workflows/ci.yml` + `issue-verify.yml`（`issue-N-*` 分支或 `Fixes #N`）。
 
 ## Agent 操作约束
 
