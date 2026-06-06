@@ -90,8 +90,15 @@ function PlatformAuthStatus({
   );
 }
 
+function normalizeLlmProviders(providers: LlmProvider[]): LlmProvider[] {
+  return providers.map((p) => ({
+    ...p,
+    api_key: p.api_key === '***' || !p.api_key?.trim() ? null : p.api_key,
+  }));
+}
+
 function normalizeConfigDto(cfg: ConfigDto): ConfigDto {
-  const providers = cfg.llmProviders ?? [];
+  const providers = normalizeLlmProviders(cfg.llmProviders ?? []);
   const providerId =
     cfg.summarizeProviderId?.trim() ||
     cfg.activeProviderId?.trim() ||
@@ -190,8 +197,9 @@ export function ConfigForm() {
     return '未检测';
   };
 
-  const saveLlmProviders = async () => {
-    if (!draft) return;
+  const saveLlmProviders = async (providersOverride?: LlmProvider[]): Promise<boolean> => {
+    if (!draft) return false;
+    const providers = providersOverride ?? draft.llmProviders;
     setSaving(true);
     setFieldErrors(new Set());
     try {
@@ -201,7 +209,7 @@ export function ConfigForm() {
         requires_daemon_restart?: string[];
         requires_agent_reload?: string[];
       }>('/api/config', {
-        llmProviders: llmProvidersForPatch(draft.llmProviders),
+        llmProviders: llmProvidersForPatch(providers),
         activeProviderId: draft.activeProviderId,
         summarizeProviderId: draft.summarizeProviderId,
       });
@@ -210,11 +218,13 @@ export function ConfigForm() {
         .map((p) => `${p.name}: ${providerConnLabel(p.connected)}`)
         .join(' · ');
       showToast(`Provider 已保存（${statuses}）`, 'success', 7000);
+      return true;
     } catch (err) {
       if (err instanceof ApiError && err.status === 400) {
         setFieldErrors(new Set(['llmProviders']));
       }
       showToast('Provider 保存失败', 'error');
+      return false;
     } finally {
       setSaving(false);
     }
@@ -230,6 +240,8 @@ export function ConfigForm() {
     });
     if (body.llmProviders) {
       body.llmProviders = llmProvidersForPatch(body.llmProviders as LlmProvider[]) as ConfigDto['llmProviders'];
+    } else if (segment === 'ai' && draft.llmProviders.length) {
+      body.llmProviders = llmProvidersForPatch(draft.llmProviders) as ConfigDto['llmProviders'];
     }
     try {
       const res = await apiPatch<{
@@ -848,7 +860,7 @@ export function ConfigForm() {
                 saving={saving}
                 onRefresh={load}
                 onEditingChange={setAiProviderEditing}
-                onSaveProvider={async () => saveLlmProviders()}
+                onSaveProvider={async (_index, providers) => saveLlmProviders(providers)}
                 onChange={(providers, activeId) => {
                   patchDraft('llmProviders', providers);
                   if (activeId != null) {

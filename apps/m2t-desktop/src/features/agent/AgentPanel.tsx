@@ -62,7 +62,14 @@ function AgentChatMessages({
       {agent.messages.map((msg) => {
         if (msg.role === 'user') {
           return (
-            <ChatMessageUser key={msg.id} text={msg.text} createdAt={msg.createdAt} />
+            <ChatMessageUser
+              key={msg.id}
+              messageId={msg.id}
+              text={msg.text}
+              createdAt={msg.createdAt}
+              onRetry={(id, text) => void agent.retryMessage(id, text)}
+              retryDisabled={Boolean(agent.activeTurn) || !agent.ready}
+            />
           );
         }
         if (msg.role === 'tool') {

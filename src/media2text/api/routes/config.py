@@ -3,7 +3,12 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import ValidationError
 
-from media2text.api.config_dto import ConfigPatchDto, apply_dto_patch, config_to_dto
+from media2text.api.config_dto import (
+    ConfigPatchDto,
+    _providers_need_probe,
+    apply_dto_patch,
+    config_to_dto,
+)
 from media2text.api.deps import get_cfg
 from media2text.core.config import AppConfig
 from media2text.core.errors import ConfigError
@@ -13,7 +18,10 @@ router = APIRouter(prefix="/config", tags=["config"])
 
 @router.get("")
 def get_config(cfg: AppConfig = Depends(get_cfg)) -> dict:
-    return {"ok": True, "config": config_to_dto(cfg)}
+    dto = config_to_dto(cfg)
+    if _providers_need_probe(dto["llmProviders"]):
+        dto = config_to_dto(cfg, probe_providers=True)
+    return {"ok": True, "config": dto}
 
 
 @router.patch("")

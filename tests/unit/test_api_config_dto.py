@@ -1,3 +1,5 @@
+import json
+
 import pytest
 
 from media2text.api.config_dto import (
@@ -80,6 +82,7 @@ def test_llm_providers_dto_skips_probe_by_default(monkeypatch, tmp_path) -> None
 
     cfg = AppConfig.model_validate(
         {
+            "workspace": str(tmp_path / "data"),
             "summarize": {
                 "llm": {
                     "providers": [
@@ -91,7 +94,7 @@ def test_llm_providers_dto_skips_probe_by_default(monkeypatch, tmp_path) -> None
                         }
                     ]
                 }
-            }
+            },
         }
     )
     probe_called = {"n": 0}
@@ -106,12 +109,29 @@ def test_llm_providers_dto_skips_probe_by_default(monkeypatch, tmp_path) -> None
     assert probe_called["n"] == 0
 
 
-def test_llm_providers_dto_includes_connected(monkeypatch, tmp_path) -> None:
+def test_llm_providers_dto_restores_cached_connected(tmp_path, monkeypatch) -> None:
+    workspace = tmp_path / "data"
+    sessions = workspace / "sessions"
+    sessions.mkdir(parents=True)
+    cache_path = sessions / "llm_provider_probe.json"
+    cache_path.write_text(
+        json.dumps(
+            {
+                "nvidia": {
+                    "connected": True,
+                    "fingerprint": "https://example.com/v1|NVIDIA_API_KEY",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
     env_path = tmp_path / ".env"
     env_path.write_text("NVIDIA_API_KEY=test-key\n", encoding="utf-8")
     monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+
     cfg = AppConfig.model_validate(
         {
+            "workspace": str(workspace),
             "summarize": {
                 "llm": {
                     "providers": [
@@ -123,7 +143,32 @@ def test_llm_providers_dto_includes_connected(monkeypatch, tmp_path) -> None:
                         }
                     ]
                 }
-            }
+            },
+        }
+    )
+    dto = config_to_dto(cfg)
+    assert dto["llmProviders"][0]["connected"] is True
+
+
+def test_llm_providers_dto_includes_connected(monkeypatch, tmp_path) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("NVIDIA_API_KEY=test-key\n", encoding="utf-8")
+    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    cfg = AppConfig.model_validate(
+        {
+            "workspace": str(tmp_path / "data"),
+            "summarize": {
+                "llm": {
+                    "providers": [
+                        {
+                            "name": "nvidia",
+                            "base_url": "https://example.com/v1",
+                            "api_key_envs": ["NVIDIA_API_KEY"],
+                            "models": ["m1"],
+                        }
+                    ]
+                }
+            },
         }
     )
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
@@ -134,7 +179,18 @@ def test_llm_providers_dto_includes_connected(monkeypatch, tmp_path) -> None:
     dto = config_to_dto(cfg, probe_providers=True)
     assert dto["llmProviders"][0]["connected"] is True
     assert dto["llmProviders"][0]["configured"] is True
-    assert dto["llmProviders"][0]["api_key"] == "test-key"
+    assert dto["llmProviders"][0]["api_key"] == "***"
+
+    dto_reload = config_to_dto(cfg)
+    assert dto_reload["llmProviders"][0]["connected"] is True
+
+
+def test_providers_need_probe_when_configured_but_not_cached() -> None:
+    from media2text.api.config_dto import _providers_need_probe
+
+    assert _providers_need_probe([{"configured": True, "connected": None}]) is True
+    assert _providers_need_probe([{"configured": True, "connected": True}]) is False
+    assert _providers_need_probe([{"configured": False, "connected": None}]) is False
 
 
 def test_patch_llm_provider_writes_api_key(tmp_path, monkeypatch) -> None:
@@ -219,7 +275,7 @@ def test_provider_api_key_prefers_env_file_over_stale_environ(
         }
     )
     dto = config_to_dto(cfg)
-    assert dto["llmProviders"][0]["api_key"] == "from-file"
+    assert dto["llmProviders"][0]["api_key"] == "***"
     assert dto["llmProviders"][0]["configured"] is True
 
 
