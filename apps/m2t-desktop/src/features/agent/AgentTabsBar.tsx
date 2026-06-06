@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { isGlobalThread } from './agentThreadSelect';
 import type { ThreadRow } from './types';
 
 type Props = {
@@ -62,7 +63,12 @@ export function AgentTabsBar({
                 title={thread.title ?? 'Agent'}
                 onClick={() => handleSelectTab(id)}
               >
-                {thread.title ?? 'Agent'}
+                <span className="agent-tab-label">
+                  {thread.title ?? 'Agent'}
+                  {isGlobalThread(thread.creator_id) ? (
+                    <span className="agent-thread-badge agent-thread-badge--global">全局</span>
+                  ) : null}
+                </span>
               </button>
               <button
                 type="button"

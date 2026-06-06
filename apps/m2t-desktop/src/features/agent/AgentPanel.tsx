@@ -6,7 +6,7 @@ import { positionAgentContextMenu } from './contextMenuPosition';
 import { AgentHistorySidebar } from './AgentHistorySidebar';
 import { AgentTabsBar } from './AgentTabsBar';
 import { AgentThreadContextMenu } from './AgentThreadContextMenu';
-import { shouldNotifyCreatorMismatch } from './agentThreadSelect';
+import { shouldNotifyCreatorMismatch, isComposerBlocked } from './agentThreadSelect';
 import { ChatMarkdown } from './ChatMarkdown';
 import { AgentComposer } from './AgentComposer';
 import { ToolResultCard } from './ToolResultCard';
@@ -86,7 +86,8 @@ function AgentChatMessages({
 
 export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
   const { setSelectedId } = useCreators();
-  const { threads, createThread, renameThread, deleteThread } = useAgentThreads();
+  const { threads, createThread, createGlobalThread, renameThread, deleteThread, historyFilter, setHistoryFilter } =
+    useAgentThreads(creatorId);
   const [tabIds, setTabIds] = useState<string[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [historyCollapsed, setHistoryCollapsed] = useState(readHistoryCollapsed);
@@ -98,6 +99,12 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   const [editingThreadId, setEditingThreadId] = useState<string | null>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const historyResize = useAgentHistoryResize();
+
+  const activeThread = useMemo(
+    () => threads.find((t) => t.id === activeThreadId) ?? null,
+    [activeThreadId, threads],
+  );
+  const composerBlocked = isComposerBlocked(activeThread?.creator_id, creatorId);
 
   const agent = useM2tAgent({
     threadId: activeThreadId,
@@ -138,6 +145,18 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     },
     [creatorId, setSelectedId, threads],
   );
+
+  const handleNewGlobalThread = useCallback(async () => {
+    try {
+      const thread = await createGlobalThread();
+      if (!thread) return;
+      setTabIds((prev) => pushAgentTab(prev, thread.id));
+      setActiveThreadId(thread.id);
+      showToast('已新建全局 Agent 会话', 'success');
+    } catch {
+      showToast('新建全局会话失败', 'error');
+    }
+  }, [createGlobalThread]);
 
   const handleNewThread = useCallback(async () => {
     if (!creatorId) {
@@ -270,9 +289,28 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             {!activeThreadId ? (
               <p className="hint">点击 + 新建 Agent，或从历史栏选择会话</p>
             ) : null}
+            {composerBlocked ? (
+              <div
+                className="agent-mismatch-banner"
+                id="agent-mismatch-banner"
+                role="alert"
+              >
+                <span>该会话属于其他博主，请先切换到对应博主后再发送。</span>
+                {activeThread?.creator_id ? (
+                  <button
+                    type="button"
+                    className="agent-mismatch-cta"
+                    onClick={() => setSelectedId(activeThread.creator_id)}
+                  >
+                    切换到该博主
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
           </div>
           <AgentComposer
-            ready={agent.ready}
+            ready={agent.ready && !composerBlocked}
+            blocked={composerBlocked}
             model={agent.threadModel}
             providerModels={modelOptions}
             onModelChange={(m) => void agent.patchThreadModel(m)}
@@ -295,6 +333,9 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             <AgentHistorySidebar
               threads={threads}
               activeThreadId={activeThreadId}
+              historyFilter={historyFilter}
+              onHistoryFilterChange={setHistoryFilter}
+              onNewGlobalThread={() => void handleNewGlobalThread()}
               menuOpenThreadId={contextMenu?.threadId ?? null}
               editingThreadId={editingThreadId}
               onSelectThread={(id) => activateThread(id)}

@@ -17,6 +17,16 @@ function makeThreads(n: number, prefix: string): ThreadRow[] {
   }));
 }
 
+const defaultProps = {
+  historyFilter: 'all' as const,
+  onHistoryFilterChange: () => {},
+  onNewGlobalThread: () => {},
+  onSelectThread: () => {},
+  onOpenMenu: () => {},
+  onRenameCommit: () => {},
+  onRenameCancel: () => {},
+};
+
 describe('AgentHistorySidebar', () => {
   it('filters threads by search (A4)', async () => {
     const user = userEvent.setup();
@@ -43,10 +53,7 @@ describe('AgentHistorySidebar', () => {
           },
         ]}
         activeThreadId={null}
-        onSelectThread={() => {}}
-        onOpenMenu={() => {}}
-        onRenameCommit={() => {}}
-        onRenameCancel={() => {}}
+        {...defaultProps}
       />,
     );
 
@@ -60,10 +67,7 @@ describe('AgentHistorySidebar', () => {
       <AgentHistorySidebar
         threads={makeThreads(1, 'Today')}
         activeThreadId={null}
-        onSelectThread={() => {}}
-        onOpenMenu={() => {}}
-        onRenameCommit={() => {}}
-        onRenameCancel={() => {}}
+        {...defaultProps}
       />,
     );
     expect(screen.getByText('TODAY')).toBeTruthy();
@@ -84,10 +88,7 @@ describe('AgentHistorySidebar', () => {
       <AgentHistorySidebar
         threads={weekOld}
         activeThreadId={null}
-        onSelectThread={() => {}}
-        onOpenMenu={() => {}}
-        onRenameCommit={() => {}}
-        onRenameCancel={() => {}}
+        {...defaultProps}
       />,
     );
 
@@ -114,13 +115,46 @@ describe('AgentHistorySidebar', () => {
           },
         ]}
         activeThreadId={null}
-        onSelectThread={() => {}}
+        {...defaultProps}
         onOpenMenu={onOpenMenu}
-        onRenameCommit={() => {}}
-        onRenameCancel={() => {}}
       />,
     );
     await user.click(screen.getByLabelText('更多操作'));
     expect(onOpenMenu).toHaveBeenCalledWith('x', expect.any(HTMLElement));
+  });
+
+  it('shows history filter and global badge (M5a)', async () => {
+    const user = userEvent.setup();
+    const onHistoryFilterChange = vi.fn();
+    const onNewGlobalThread = vi.fn();
+    render(
+      <AgentHistorySidebar
+        threads={[
+          {
+            id: 'g1',
+            creator_id: null,
+            session_id: null,
+            title: 'Workspace chat',
+            provider_name: null,
+            model: 'auto',
+            updated_at: new Date().toISOString(),
+          },
+        ]}
+        activeThreadId={null}
+        historyFilter="all"
+        onHistoryFilterChange={onHistoryFilterChange}
+        onNewGlobalThread={onNewGlobalThread}
+        onSelectThread={() => {}}
+        onOpenMenu={() => {}}
+        onRenameCommit={() => {}}
+        onRenameCancel={() => {}}
+      />,
+    );
+
+    expect(screen.getByText('全局')).toBeTruthy();
+    await user.click(screen.getByRole('button', { name: '当前博主' }));
+    expect(onHistoryFilterChange).toHaveBeenCalledWith('creator');
+    await user.click(screen.getByRole('button', { name: '新建全局会话' }));
+    expect(onNewGlobalThread).toHaveBeenCalledOnce();
   });
 });

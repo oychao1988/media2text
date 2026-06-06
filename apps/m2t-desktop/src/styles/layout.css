@@ -3976,6 +3976,123 @@ body.resize-row-active * {
   border-color: transparent;
 }
 
+.agent-history-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 8px 0;
+  flex-shrink: 0;
+}
+
+.agent-history-filter {
+  display: flex;
+  gap: 4px;
+}
+
+.agent-history-filter-btn {
+  flex: 1;
+  padding: 4px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-app);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.agent-history-filter-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.08);
+}
+
+.agent-history-new-global {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.agent-history-new-global:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.06);
+}
+
+.agent-thread-title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.agent-thread-title-row .agent-thread-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-thread-badge {
+  flex-shrink: 0;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+}
+
+.agent-thread-badge--global {
+  color: var(--accent);
+  background: rgba(37, 99, 235, 0.12);
+}
+
+.agent-tab-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.agent-tab-label .agent-thread-badge {
+  font-size: 8px;
+}
+
+.agent-mismatch-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 8px 12px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid rgba(245, 158, 11, 0.45);
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--text);
+  font-size: 12px;
+}
+
+.agent-mismatch-cta {
+  padding: 4px 10px;
+  border: none;
+  border-radius: 6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-family: var(--font);
+  cursor: pointer;
+}
+
+.agent-mismatch-cta:hover {
+  filter: brightness(1.05);
+}
+
 .agent-thread-list {
   flex: 1;
   overflow-y: auto;
