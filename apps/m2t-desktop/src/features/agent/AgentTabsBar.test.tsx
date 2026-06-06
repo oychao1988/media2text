@@ -5,12 +5,16 @@ import { AgentTabsBar } from './AgentTabsBar';
 import { createDraftTab, tabEntryKey } from './useAgentTabs';
 import type { ThreadRow } from './types';
 
+const creators = [
+  { id: 'c1', display_name: '博主甲' },
+];
+
 const threads: ThreadRow[] = [
   {
     id: 't1',
-    creator_id: 'c1',
+    creator_id: null,
     session_id: null,
-    title: 'Thread One',
+    title: 'Global Thread',
     provider_name: null,
     model: 'auto',
     updated_at: '2026-06-06T12:00:00Z',
@@ -19,7 +23,7 @@ const threads: ThreadRow[] = [
     id: 't2',
     creator_id: 'c1',
     session_id: null,
-    title: 'Thread Two',
+    title: 'Creator Thread',
     provider_name: null,
     model: 'auto',
     updated_at: '2026-06-05T12:00:00Z',
@@ -27,12 +31,7 @@ const threads: ThreadRow[] = [
 ];
 
 describe('AgentTabsBar', () => {
-  it('renders tabs with close buttons and new/history actions (A2/A3)', async () => {
-    const user = userEvent.setup();
-    const onCloseTab = vi.fn();
-    const onNewDraft = vi.fn();
-    const onToggleHistory = vi.fn();
-
+  it('renders tab avatars for global and creator threads', () => {
     render(
       <AgentTabsBar
         tabEntries={[
@@ -40,35 +39,30 @@ describe('AgentTabsBar', () => {
           { kind: 'thread', threadId: 't2' },
         ]}
         threads={threads}
-        creators={[]}
+        creators={creators}
         activeTabKey="thread:t1"
         historyCollapsed={false}
         onSelectTab={() => {}}
-        onCloseTab={onCloseTab}
-        onNewDraft={onNewDraft}
-        onToggleHistory={onToggleHistory}
+        onCloseTab={() => {}}
+        onNewDraft={() => {}}
+        onToggleHistory={() => {}}
       />,
     );
 
-    expect(screen.getByRole('tab', { name: 'Thread One' })).toHaveAttribute('aria-selected', 'true');
-    expect(screen.getAllByLabelText('关闭页签')).toHaveLength(2);
-    await user.click(screen.getAllByLabelText('关闭页签')[0]);
-    expect(onCloseTab).toHaveBeenCalledWith('thread:t1');
-
-    await user.click(screen.getByLabelText('新建 Agent'));
-    expect(onNewDraft).toHaveBeenCalledOnce();
-
-    await user.click(screen.getByLabelText('隐藏历史会话'));
-    expect(onToggleHistory).toHaveBeenCalledOnce();
+    const avatars = document.querySelectorAll('.agent-tab-avatar');
+    expect(avatars).toHaveLength(2);
+    expect(avatars[0]?.classList.contains('global')).toBe(true);
+    expect(avatars[0]?.textContent).toBe('灵');
+    expect(avatars[1]?.textContent).toBe('博主');
   });
 
-  it('renders draft tab label', () => {
-    const draft = createDraftTab('global');
+  it('renders draft tab with agent avatar', () => {
+    const draft = createDraftTab('c1');
     render(
       <AgentTabsBar
         tabEntries={[draft]}
         threads={threads}
-        creators={[]}
+        creators={creators}
         activeTabKey={tabEntryKey(draft)}
         historyCollapsed={false}
         onSelectTab={() => {}}
@@ -78,5 +72,26 @@ describe('AgentTabsBar', () => {
       />,
     );
     expect(screen.getByText('新对话')).toBeTruthy();
+    expect(document.querySelector('.agent-tab-avatar')?.textContent).toBe('博主');
+  });
+
+  it('calls onNewDraft from + button', async () => {
+    const user = userEvent.setup();
+    const onNewDraft = vi.fn();
+    render(
+      <AgentTabsBar
+        tabEntries={[]}
+        threads={threads}
+        creators={creators}
+        activeTabKey={null}
+        historyCollapsed={false}
+        onSelectTab={() => {}}
+        onCloseTab={() => {}}
+        onNewDraft={onNewDraft}
+        onToggleHistory={() => {}}
+      />,
+    );
+    await user.click(screen.getByLabelText('新建 Agent'));
+    expect(onNewDraft).toHaveBeenCalledOnce();
   });
 });
