@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ToastHost } from './components/ToastHost';
 import { AppBootstrap } from './features/layout/AppBootstrap';
+import { DaemonAppEffects } from './features/daemon/DaemonAppEffects';
 import { AppShell } from './features/layout/AppShell';
 import { initLayoutStore, useLayoutStore } from './features/layout/useLayoutStore';
 import { EventsProvider } from './features/events/EventsProvider';
@@ -22,6 +23,7 @@ function AppRoot() {
   return (
     <EventsProvider>
       <RuntimeProvider>
+        <DaemonAppEffects />
         <CreatorsProvider forceEmpty={showEmptyCreators}>
           <ToastHost />
           <AppShell />

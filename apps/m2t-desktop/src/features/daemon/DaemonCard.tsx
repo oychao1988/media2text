@@ -90,10 +90,6 @@ export function DaemonCard({ onSelectCreator }: Props) {
     return `daemon-card${extra}`;
   }, [health]);
 
-  useEffect(() => {
-    document.getElementById('app')?.classList.toggle('daemon-stopped', health === 'stopped' && !loading);
-  }, [health, loading]);
-
   const onTakeover = async () => {
     if (busy || !runtime) return;
     setBusy(true);

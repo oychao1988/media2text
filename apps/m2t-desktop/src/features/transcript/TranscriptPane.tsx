@@ -10,6 +10,7 @@ import ReactMarkdown from 'react-markdown';
 import { apiGet, apiPost, buildWsUrl, mediaUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { TranscriptPayload } from '../../lib/types';
+import { TranscriptSessionSelect } from './TranscriptSessionSelect';
 import {
   formatTs,
   initialTranscriptState,
@@ -190,7 +191,10 @@ export function TranscriptPane({
   useEffect(() => {
     dispatch({ type: 'reset' });
     setSummaryMd(null);
-    if (!sessionId) {
+
+    const canLoadTranscript =
+      Boolean(sessionId) || (mode === 'playback' && playbackItem != null);
+    if (!canLoadTranscript) {
       dispatch({ type: 'waiting', value: true });
       return undefined;
     }
@@ -296,7 +300,11 @@ export function TranscriptPane({
 
   useEffect(() => {
     if (tab !== 'summary') return;
-    if (!sessionId && !activeSummaryPath) return;
+    const canLoadSummary =
+      Boolean(sessionId) ||
+      Boolean(activeSummaryPath) ||
+      (mode === 'playback' && playbackItem != null);
+    if (!canLoadSummary) return;
     let cancelled = false;
     setSummaryLoading(true);
     setSummaryMd(null);
@@ -437,26 +445,29 @@ export function TranscriptPane({
         >
           摘要
         </button>
-        <button
-          className="btn"
-          type="button"
-          id="btn-copy-transcript"
-          style={{ marginLeft: 'auto', padding: '4px 8px', fontSize: 11 }}
-          onClick={() => void copyTranscript()}
-        >
-          复制
-        </button>
-        {canSummarize ? (
+        <div className="transcript-tab-actions">
+          <TranscriptSessionSelect />
           <button
             className="btn"
             type="button"
+            id="btn-copy-transcript"
             style={{ padding: '4px 8px', fontSize: 11 }}
-            disabled={summaryBusy}
-            onClick={() => void runSummarize(Boolean(playbackItem?.hasSummary || summaryMd))}
+            onClick={() => void copyTranscript()}
           >
-            {summaryBusy ? '生成中…' : playbackItem?.hasSummary || summaryMd ? '重新摘要' : '生成摘要'}
+            复制
           </button>
-        ) : null}
+          {canSummarize ? (
+            <button
+              className="btn"
+              type="button"
+              style={{ padding: '4px 8px', fontSize: 11 }}
+              disabled={summaryBusy}
+              onClick={() => void runSummarize(Boolean(playbackItem?.hasSummary || summaryMd))}
+            >
+              {summaryBusy ? '生成中…' : playbackItem?.hasSummary || summaryMd ? '重新摘要' : '生成摘要'}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       {state.disconnected && showLiveTranscript ? (

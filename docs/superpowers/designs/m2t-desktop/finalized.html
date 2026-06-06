@@ -46,7 +46,8 @@
       --right-collapsed-w: 48px;
       --grip-w: 6px;
       --center-min-w: 100px;
-      --right-agent-h: 320px;
+      --right-agent-h: 380px;
+      --agent-history-w: 200px;
       --center-max-w: 1120px;
       --center-edge-pad: 32px;
       --radius: 8px;
@@ -94,6 +95,7 @@
 
     .creator-list,
     .history-list,
+    .agent-thread-list,
     .manage-list-scroll,
     .settings-scroll,
     .transcript-body,
@@ -104,6 +106,7 @@
     }
     .creator-list::-webkit-scrollbar,
     .history-list::-webkit-scrollbar,
+    .agent-thread-list::-webkit-scrollbar,
     .manage-list-scroll::-webkit-scrollbar,
     .settings-scroll::-webkit-scrollbar,
     .transcript-body::-webkit-scrollbar,
@@ -114,6 +117,7 @@
     }
     .creator-list::-webkit-scrollbar-track,
     .history-list::-webkit-scrollbar-track,
+    .agent-thread-list::-webkit-scrollbar-track,
     .manage-list-scroll::-webkit-scrollbar-track,
     .settings-scroll::-webkit-scrollbar-track,
     .transcript-body::-webkit-scrollbar-track,
@@ -123,6 +127,7 @@
     }
     .creator-list::-webkit-scrollbar-thumb,
     .history-list::-webkit-scrollbar-thumb,
+    .agent-thread-list::-webkit-scrollbar-thumb,
     .manage-list-scroll::-webkit-scrollbar-thumb,
     .settings-scroll::-webkit-scrollbar-thumb,
     .transcript-body::-webkit-scrollbar-thumb,
@@ -135,6 +140,7 @@
     }
     .creator-list::-webkit-scrollbar-thumb:hover,
     .history-list::-webkit-scrollbar-thumb:hover,
+    .agent-thread-list::-webkit-scrollbar-thumb:hover,
     .manage-list-scroll::-webkit-scrollbar-thumb:hover,
     .settings-scroll::-webkit-scrollbar-thumb:hover,
     .transcript-body::-webkit-scrollbar-thumb:hover,
@@ -241,6 +247,172 @@
       max-width: none;
       margin: 0;
       box-sizing: border-box;
+    }
+
+    /* Desktop layout presets: 博主+转写+对话 | 四区 | 博主+对话 */
+    .app.desktop-layout-transcript:not(.right-collapsed) {
+      grid-template-columns:
+        var(--sidebar-w) var(--grip-w) minmax(280px, 1fr) var(--grip-w) minmax(280px, 1fr);
+    }
+    .app.desktop-layout-transcript.left-collapsed:not(.right-collapsed) {
+      grid-template-columns:
+        var(--sidebar-collapsed-w) 0px minmax(280px, 1fr) var(--grip-w) minmax(280px, 1fr);
+    }
+    .app.desktop-layout-chat:not(.right-collapsed) {
+      grid-template-columns:
+        var(--sidebar-w) var(--grip-w) 0px 0px minmax(280px, 1fr);
+    }
+    .app.desktop-layout-chat.left-collapsed:not(.right-collapsed) {
+      grid-template-columns:
+        var(--sidebar-collapsed-w) 0px 0px 0px minmax(280px, 1fr);
+    }
+    .app.desktop-layout-transcript .center {
+      display: flex !important;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+      overflow: hidden;
+    }
+    .app.desktop-layout-transcript .center-toolbar,
+    .app.desktop-layout-transcript .center-body {
+      display: none !important;
+    }
+    .app.desktop-layout-transcript .col-resize-right {
+      display: block !important;
+      width: var(--grip-w) !important;
+      min-width: var(--grip-w) !important;
+      pointer-events: auto !important;
+    }
+    .app.desktop-layout-transcript .transcript-center-slot {
+      display: flex;
+    }
+    .app.desktop-layout-transcript .transcript-pane {
+      flex: 1;
+      min-height: 0;
+      border-right: none;
+    }
+    .app.desktop-layout-transcript .right-split > .transcript-pane,
+    .app.desktop-layout-transcript #resize-right-split {
+      display: none !important;
+    }
+    .app.desktop-layout-transcript .agent-pane {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+    .app.desktop-layout-chat .center,
+    .app.desktop-layout-chat .col-resize-right {
+      display: none !important;
+      width: 0 !important;
+      min-width: 0 !important;
+      overflow: hidden;
+      pointer-events: none;
+    }
+    .app.desktop-layout-chat .transcript-pane,
+    .app.desktop-layout-chat #resize-right-split {
+      display: none !important;
+    }
+    .app.desktop-layout-chat .agent-pane {
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
+    }
+    .app.desktop-layout-chat #collapse-right {
+      display: none;
+    }
+
+    .side-panel-header-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+    }
+    .layout-preset-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+      padding: 2px;
+      border-radius: 6px;
+      background: var(--bg-app);
+      border: 1px solid var(--border-subtle);
+    }
+    .layout-preset-btn {
+      width: 38px;
+      height: 26px;
+      padding: 3px;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      background: transparent;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .layout-preset-btn:hover {
+      background: var(--bg-hover);
+      border-color: var(--border-subtle);
+    }
+    .layout-preset-btn.active {
+      border-color: var(--accent);
+      background: rgba(37, 99, 235, 0.1);
+      box-shadow: inset 0 0 0 1px rgba(37, 99, 235, 0.2);
+    }
+    [data-theme="dark"] .layout-preset-btn.active {
+      background: rgba(96, 165, 250, 0.14);
+      box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.28);
+    }
+    .layout-preset-btn:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 1px;
+    }
+    .layout-preset-icon {
+      display: flex;
+      gap: 1px;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+    }
+    .lp-col {
+      border-radius: 1px;
+      min-width: 0;
+    }
+    .lp-col-sidebar {
+      flex: 0 0 30%;
+      background: var(--text-dim);
+      opacity: 0.85;
+    }
+    .lp-col-center {
+      flex: 0 0 24%;
+      background: var(--text-muted);
+      opacity: 0.75;
+    }
+    .lp-col-stack {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 1px;
+      min-width: 0;
+    }
+    .lp-stack-top {
+      flex: 1;
+      background: var(--text-muted);
+      opacity: 0.7;
+      border-radius: 1px;
+    }
+    .lp-stack-bottom {
+      flex: 1;
+      background: var(--accent);
+      opacity: 0.55;
+      border-radius: 1px;
+    }
+    .layout-preset-btn.active .lp-stack-bottom {
+      opacity: 0.85;
+    }
+    .lp-col-chat {
+      flex: 1;
+      background: var(--accent);
+      opacity: 0.55;
+    }
+    .layout-preset-btn.active .lp-col-chat {
+      opacity: 0.85;
     }
     .app.both-collapsed .video-area {
       width: 100%;
@@ -884,6 +1056,54 @@
       min-height: 100px;
       display: flex;
       flex-direction: column;
+      background: var(--bg-app);
+    }
+    .transcript-center-slot {
+      display: none;
+      flex: 1;
+      flex-direction: column;
+      min-height: 0;
+      overflow: hidden;
+      background: var(--bg-app);
+    }
+    .transcript-pane .tab-row {
+      flex-wrap: nowrap;
+      gap: 4px;
+    }
+    .transcript-tab-actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      min-width: 0;
+    }
+    .transcript-session-wrap {
+      display: flex;
+      align-items: center;
+      min-width: 0;
+    }
+    .transcript-session-select {
+      max-width: 200px;
+      min-width: 120px;
+      padding: 4px 8px;
+      font-size: 11px;
+      font-family: var(--font);
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      background: var(--bg-app);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .transcript-session-select:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 0;
+      border-color: transparent;
+    }
+    .lp-col-transcript {
+      flex: 1;
+      background: var(--text-muted);
+      opacity: 0.7;
     }
     .row-resize {
       flex: 0 0 var(--grip-w);
@@ -956,24 +1176,360 @@
       border-top: 1px dashed var(--border-subtle);
     }
 
-    /* Agent chat */
+    /* Agent chat — Cursor-style tabs + global history column (right) */
     .agent-pane {
       flex: 0 0 var(--right-agent-h);
-      min-height: 160px;
+      min-height: 200px;
       max-height: calc(100% - 120px);
       display: flex;
       flex-direction: column;
       background: var(--bg-app);
       min-width: 0;
+      position: relative;
     }
-    .agent-header {
-      padding: 8px 12px;
+    .agent-tabs-bar {
+      display: flex;
+      align-items: stretch;
       border-bottom: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      flex-shrink: 0;
+      min-height: 34px;
+    }
+    .agent-tabs-scroll {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: stretch;
+      overflow-x: auto;
+      scrollbar-width: none;
+    }
+    .agent-tabs-scroll::-webkit-scrollbar { display: none; }
+    .agent-tabs-actions {
       display: flex;
       align-items: center;
-      justify-content: space-between;
+      gap: 2px;
+      padding: 0 4px 0 2px;
+      border-left: 1px solid var(--border-subtle);
+      flex-shrink: 0;
     }
-    .agent-header span { font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    .agent-tab-wrap {
+      display: flex;
+      align-items: stretch;
+      flex-shrink: 0;
+      max-width: 168px;
+      border-bottom: 2px solid transparent;
+    }
+    .agent-tab-wrap.active {
+      border-bottom-color: var(--accent);
+    }
+    .agent-tab-wrap:hover { background: var(--bg-hover); }
+    .agent-tab {
+      flex: 1;
+      min-width: 0;
+      max-width: 148px;
+      padding: 7px 4px 7px 10px;
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      font-family: var(--font);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: left;
+    }
+    .agent-tab-wrap.active .agent-tab {
+      color: var(--text);
+      font-weight: 500;
+    }
+    .agent-tab-close {
+      flex-shrink: 0;
+      width: 22px;
+      border: none;
+      background: transparent;
+      color: var(--text-dim);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      padding: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font);
+    }
+    .agent-tab-wrap:hover .agent-tab-close,
+    .agent-tab-wrap.active .agent-tab-close {
+      opacity: 1;
+    }
+    .agent-tab-close:hover {
+      color: var(--text);
+      background: rgba(0, 0, 0, 0.06);
+    }
+    [data-theme="dark"] .agent-tab-close:hover {
+      background: rgba(255, 255, 255, 0.08);
+    }
+    .agent-body {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: row;
+    }
+    .agent-history {
+      flex: 0 0 var(--agent-history-w);
+      display: flex;
+      flex-direction: column;
+      border-left: 1px solid var(--border-subtle);
+      background: var(--bg-panel);
+      min-width: 0;
+      overflow: hidden;
+      order: 3;
+    }
+    .agent-col-resize {
+      flex: 0 0 var(--grip-w);
+      width: var(--grip-w);
+      cursor: col-resize;
+      touch-action: none;
+      position: relative;
+      background: transparent;
+      order: 2;
+    }
+    .agent-col-resize::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: -5px;
+      right: -5px;
+    }
+    .agent-col-resize::after {
+      content: '';
+      position: absolute;
+      top: 12px;
+      bottom: 12px;
+      left: 50%;
+      width: 1px;
+      transform: translateX(-50%);
+      background: var(--border-subtle);
+      pointer-events: none;
+      transition: background 0.15s ease, width 0.15s ease;
+    }
+    .agent-col-resize:hover::after,
+    .agent-col-resize.is-dragging::after {
+      width: 2px;
+      background: rgba(59, 130, 246, 0.55);
+    }
+    .agent-col-resize:hover,
+    .agent-col-resize.is-dragging {
+      background: rgba(59, 130, 246, 0.06);
+    }
+    .agent-pane.agent-history-collapsed .agent-history,
+    .agent-pane.agent-history-collapsed .agent-col-resize { display: none; }
+    .agent-history-search {
+      margin: 8px 8px 6px;
+      padding: 6px 10px;
+      border: 1px solid var(--border-subtle);
+      border-radius: 6px;
+      background: var(--bg-app);
+      font-size: 12px;
+      font-family: var(--font);
+      color: var(--text);
+      width: calc(100% - 16px);
+    }
+    .agent-history-search::placeholder { color: var(--text-dim); }
+    .agent-history-search:focus {
+      outline: 2px solid var(--accent);
+      outline-offset: 0;
+      border-color: transparent;
+    }
+    .agent-thread-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 0 6px 8px;
+      min-height: 0;
+    }
+    .agent-thread-group { margin-bottom: 4px; }
+    .agent-thread-group-title {
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      padding: 6px 8px 4px;
+    }
+    .agent-thread-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      width: 100%;
+      padding: 7px 6px 7px 8px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      text-align: left;
+      cursor: pointer;
+      font-family: var(--font);
+      color: var(--text);
+      position: relative;
+    }
+    .agent-thread-item:hover { background: var(--bg-hover); }
+    .agent-thread-item.selected { background: var(--bg-elevated); }
+    .agent-thread-item.hidden { display: none; }
+    .agent-thread-icon {
+      flex-shrink: 0;
+      width: 16px;
+      height: 16px;
+      margin-top: 1px;
+      border-radius: 50%;
+      border: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 8px;
+      color: var(--text-dim);
+      line-height: 1;
+    }
+    .agent-thread-item.selected .agent-thread-icon {
+      border-color: var(--accent);
+      color: var(--accent);
+      background: rgba(37, 99, 235, 0.08);
+    }
+    .agent-thread-main {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      background: transparent;
+      padding: 0;
+      text-align: left;
+      cursor: pointer;
+      font-family: var(--font);
+      color: inherit;
+    }
+    .agent-thread-title {
+      font-size: 12px;
+      line-height: 1.35;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .agent-thread-meta {
+      font-size: 10px;
+      color: var(--text-dim);
+      margin-top: 2px;
+      font-family: var(--mono);
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .agent-thread-menu-btn {
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      margin-top: -1px;
+      border: none;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1;
+      cursor: pointer;
+      opacity: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font);
+    }
+    .agent-thread-item:hover .agent-thread-menu-btn,
+    .agent-thread-item.menu-open .agent-thread-menu-btn {
+      opacity: 1;
+    }
+    .agent-thread-menu-btn:hover {
+      background: var(--bg-elevated);
+      color: var(--text);
+    }
+    .agent-thread-more {
+      display: block;
+      width: calc(100% - 8px);
+      margin: 2px 4px 0;
+      padding: 6px 8px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 11px;
+      cursor: pointer;
+      text-align: left;
+      font-family: var(--font);
+    }
+    .agent-thread-more:hover { color: var(--text); background: var(--bg-hover); }
+    .agent-context-menu-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 120;
+      display: none;
+    }
+    .agent-context-menu-backdrop.open { display: block; }
+    .agent-context-menu {
+      position: fixed;
+      z-index: 130;
+      min-width: 140px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+      padding: 4px;
+      display: none;
+    }
+    [data-theme="dark"] .agent-context-menu {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    }
+    .agent-context-menu.open { display: block; }
+    .agent-context-menu-item {
+      width: 100%;
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font-size: 12px;
+      font-family: var(--font);
+      cursor: pointer;
+      text-align: left;
+    }
+    .agent-context-menu-item:hover { background: var(--bg-hover); }
+    .agent-context-menu-item.danger { color: var(--red); }
+    .agent-context-menu-item.danger:hover { background: rgba(220, 38, 38, 0.08); }
+    .agent-main {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--bg-app);
+      order: 1;
+    }
+    .agent-header-icon-btn {
+      width: 28px;
+      height: 28px;
+      border: none;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 14px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: var(--font);
+    }
+    .agent-header-icon-btn:hover {
+      background: var(--bg-hover);
+      color: var(--text);
+    }
+    .agent-header-icon-btn[aria-pressed="true"] {
+      background: var(--bg-elevated);
+      color: var(--accent);
+    }
     .model-pill {
       font-family: var(--mono);
       font-size: 10px;
@@ -981,6 +1537,7 @@
       background: var(--bg-elevated);
       border-radius: 4px;
       color: var(--text-dim);
+      flex-shrink: 0;
     }
 
     .chat-scroll {
@@ -2603,6 +3160,7 @@
 
     <!-- CENTER -->
     <main class="center" aria-label="主展示区">
+      <div class="transcript-center-slot" id="transcript-center-slot" aria-label="转写与摘要"></div>
       <div class="center-toolbar" id="center-toolbar">
         <div class="center-toolbar-left">
           <span class="center-context-label" id="center-context-label"></span>
@@ -3201,13 +3759,68 @@
       <div class="right-content right-split">
         <header class="panel-header side-panel-header">
           <h2 class="side-panel-title">内容</h2>
-          <button class="icon-btn panel-collapse-btn" type="button" id="collapse-right" title="折叠右栏" aria-label="折叠右栏">›</button>
+          <div class="side-panel-header-actions">
+            <div class="layout-preset-group" role="group" aria-label="桌面分区布局">
+              <button
+                type="button"
+                class="layout-preset-btn"
+                data-layout="transcript-chat"
+                title="博主 · 转写 · 对话"
+                aria-label="博主 · 转写 · 对话"
+                aria-pressed="false"
+              >
+                <span class="layout-preset-icon" aria-hidden="true">
+                  <span class="lp-col lp-col-sidebar"></span>
+                  <span class="lp-col lp-col-transcript"></span>
+                  <span class="lp-col lp-col-chat"></span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="layout-preset-btn active"
+                data-layout="full"
+                title="博主 · 播放 · 转写 · 对话"
+                aria-label="博主 · 播放 · 转写 · 对话"
+                aria-pressed="true"
+              >
+                <span class="layout-preset-icon" aria-hidden="true">
+                  <span class="lp-col lp-col-sidebar"></span>
+                  <span class="lp-col lp-col-center"></span>
+                  <span class="lp-col lp-col-stack">
+                    <span class="lp-stack-top"></span>
+                    <span class="lp-stack-bottom"></span>
+                  </span>
+                </span>
+              </button>
+              <button
+                type="button"
+                class="layout-preset-btn"
+                data-layout="chat-only"
+                title="博主 · 对话"
+                aria-label="博主 · 对话"
+                aria-pressed="false"
+              >
+                <span class="layout-preset-icon" aria-hidden="true">
+                  <span class="lp-col lp-col-sidebar"></span>
+                  <span class="lp-col lp-col-chat"></span>
+                </span>
+              </button>
+            </div>
+            <button class="icon-btn panel-collapse-btn" type="button" id="collapse-right" title="折叠右栏" aria-label="折叠右栏">›</button>
+          </div>
         </header>
-        <section class="transcript-pane" aria-label="转写">
+        <section class="transcript-pane" id="transcript-pane" aria-label="转写">
           <div class="tab-row" role="tablist">
             <button class="tab active" role="tab" aria-selected="true" type="button" data-right-tab="transcript">转写</button>
             <button class="tab" role="tab" type="button" data-right-tab="summary">摘要</button>
-            <button class="btn" type="button" id="btn-copy-transcript" style="margin-left:auto;padding:4px 8px;font-size:11px;">复制</button>
+            <div class="transcript-tab-actions">
+              <label class="transcript-session-wrap" title="历史场次">
+                <select class="transcript-session-select" id="transcript-session-select" aria-label="选择历史场次">
+                  <option value="live">当前 · 等待录制</option>
+                </select>
+              </label>
+              <button class="btn" type="button" id="btn-copy-transcript" style="padding:4px 8px;font-size:11px;">复制</button>
+            </div>
           </div>
           <div class="transcript-body" id="transcript-body">
             <!-- live state -->
@@ -3253,73 +3866,116 @@
           aria-label="调整转写与 Agent 区域高度"
           tabindex="0"
         ></div>
-        <section class="agent-pane" aria-label="AI Agent">
-          <div class="agent-header">
-            <span>Agent</span>
-            <span class="model-pill">nvidia · auto</span>
-          </div>
-          <div class="chat-scroll" id="chat-scroll">
-            <div id="chat-live">
-              <div class="msg msg-user" data-pretext>这场直播大概讲了什么？帮我看看有没有提到新产品。</div>
-              <div class="msg msg-assistant">
-                <div class="thinking" data-pretext>需要先读取当前 session 的转写…</div>
-                <div data-pretext>老番茄尚未开始录制，我没有可用的转写文件。你可以点击中栏的「开始录制」，或切到「历史」查看往期场次。</div>
-                <div class="tool-card">
-                  <div class="tool-card-header">⚙ m2t_get_live_status</div>
-                  <div class="tool-card-body" data-pretext>{ "creators": [{ "display_name": "老番茄", "light": "red", "is_live": true, "recording": false }] }</div>
-                </div>
-              </div>
-            </div>
-            <div id="chat-playback" style="display:none;">
-              <div class="msg msg-user" data-pretext>6 月 2 日那场有没有提到联机模式的时间？</div>
-              <div class="msg msg-assistant">
-                <div data-pretext>有。在 00:13:02 左右提到联机还在调整，预计下个月可以看 demo。</div>
-                <div class="tool-card">
-                  <div class="tool-card-header">⚙ m2t_read_transcript</div>
-                  <div class="tool-card-body" data-pretext>session s-20260602-2104 · segments matched: 1</div>
-                </div>
-              </div>
+        <section class="agent-pane" id="agent-pane" aria-label="AI Agent">
+          <div class="agent-tabs-bar">
+            <div class="agent-tabs-scroll" id="agent-tabs-row" role="tablist" aria-label="近期 Agent 会话"></div>
+            <div class="agent-tabs-actions">
+              <button
+                type="button"
+                class="agent-header-icon-btn"
+                id="btn-agent-new"
+                title="新建 Agent"
+                aria-label="新建 Agent"
+              >+</button>
+              <button
+                type="button"
+                class="agent-header-icon-btn"
+                id="btn-agent-history-toggle"
+                title="隐藏历史会话"
+                aria-label="隐藏或显示历史会话栏"
+                aria-pressed="true"
+              >☰</button>
             </div>
           </div>
-          <form class="composer agent-composer" id="agent-form">
-            <textarea
-              class="agent-composer-input"
-              rows="1"
-              id="agent-input"
-              placeholder="继续提问…"
-              aria-label="Agent 输入"
-            ></textarea>
-            <div class="agent-composer-toolbar">
-              <div class="agent-composer-left">
-                <button type="button" class="agent-mode-pill" id="agent-mode-pill" title="Agent 模式">
-                  <span class="agent-mode-icon" aria-hidden="true">∞</span>
-                  <span>Agent</span>
-                  <span class="agent-mode-chevron" aria-hidden="true">▾</span>
-                </button>
-                <label class="agent-model-wrap" title="选择模型">
-                  <select class="agent-model-select" id="agent-model-select" aria-label="Agent 模型">
-                    <option value="auto">Auto</option>
-                  </select>
-                </label>
+          <div class="agent-body">
+            <div class="agent-main">
+              <div class="chat-scroll" id="chat-scroll">
+                <div id="chat-live">
+                  <div class="msg msg-user" data-pretext>这场直播大概讲了什么？帮我看看有没有提到新产品。</div>
+                  <div class="msg msg-assistant">
+                    <div class="thinking" data-pretext>需要先读取当前 session 的转写…</div>
+                    <div data-pretext>老番茄尚未开始录制，我没有可用的转写文件。你可以点击中栏的「开始录制」，或切到「历史」查看往期场次。</div>
+                    <div class="tool-card">
+                      <div class="tool-card-header">⚙ m2t_get_live_status</div>
+                      <div class="tool-card-body" data-pretext>{ "creators": [{ "display_name": "老番茄", "light": "red", "is_live": true, "recording": false }] }</div>
+                    </div>
+                  </div>
+                </div>
+                <div id="chat-playback" style="display:none;">
+                  <div class="msg msg-user" data-pretext>6 月 2 日那场有没有提到联机模式的时间？</div>
+                  <div class="msg msg-assistant">
+                    <div data-pretext>有。在 00:13:02 左右提到联机还在调整，预计下个月可以看 demo。</div>
+                    <div class="tool-card">
+                      <div class="tool-card-header">⚙ m2t_read_transcript</div>
+                      <div class="tool-card-body" data-pretext>session s-20260602-2104 · segments matched: 1</div>
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div class="agent-composer-actions">
-                <button type="button" class="agent-icon-btn" id="agent-ctx-btn" title="上下文" aria-label="上下文">◎</button>
-                <button type="button" class="agent-icon-btn" id="agent-attach-btn" title="附件" aria-label="附件">
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
-                    <rect x="3" y="5" width="18" height="14" rx="2"></rect>
-                    <circle cx="8.5" cy="10.5" r="1.5"></circle>
-                    <path d="M21 16l-5.5-5.5a2 2 0 0 0-3 0L3 20"></path>
-                  </svg>
-                </button>
-                <button class="agent-send-btn" type="submit" id="btn-agent-send" title="发送" aria-label="发送">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                    <path d="M12 19V5"></path>
-                    <path d="M6 11l6-6 6 6"></path>
-                  </svg>
-                </button>
-              </div>
+              <form class="composer agent-composer" id="agent-form">
+                <textarea
+                  class="agent-composer-input"
+                  rows="1"
+                  id="agent-input"
+                  placeholder="继续提问…"
+                  aria-label="Agent 输入"
+                ></textarea>
+                <div class="agent-composer-toolbar">
+                  <div class="agent-composer-left">
+                    <button type="button" class="agent-mode-pill" id="agent-mode-pill" title="Agent 模式">
+                      <span class="agent-mode-icon" aria-hidden="true">∞</span>
+                      <span>Agent</span>
+                      <span class="agent-mode-chevron" aria-hidden="true">▾</span>
+                    </button>
+                    <label class="agent-model-wrap" title="选择模型">
+                      <select class="agent-model-select" id="agent-model-select" aria-label="Agent 模型">
+                        <option value="auto">Auto</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="agent-composer-actions">
+                    <button type="button" class="agent-icon-btn" id="agent-ctx-btn" title="上下文" aria-label="上下文">◎</button>
+                    <button type="button" class="agent-icon-btn" id="agent-attach-btn" title="附件" aria-label="附件">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" aria-hidden="true">
+                        <rect x="3" y="5" width="18" height="14" rx="2"></rect>
+                        <circle cx="8.5" cy="10.5" r="1.5"></circle>
+                        <path d="M21 16l-5.5-5.5a2 2 0 0 0-3 0L3 20"></path>
+                      </svg>
+                    </button>
+                    <button class="agent-send-btn" type="submit" id="btn-agent-send" title="发送" aria-label="发送">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <path d="M12 19V5"></path>
+                        <path d="M6 11l6-6 6 6"></path>
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </form>
             </div>
-          </form>
+            <div
+              class="col-resize agent-col-resize"
+              id="resize-agent-history"
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整历史会话栏宽度"
+              tabindex="0"
+            ></div>
+            <aside class="agent-history" id="agent-history" aria-label="历史会话">
+              <input
+                class="agent-history-search"
+                type="search"
+                id="agent-history-search"
+                placeholder="搜索 Agent…"
+                aria-label="搜索 Agent 会话"
+              />
+              <div class="agent-thread-list" id="agent-thread-list" role="list"></div>
+            </aside>
+          </div>
+          <div class="agent-context-menu-backdrop" id="agent-context-backdrop" aria-hidden="true"></div>
+          <div class="agent-context-menu" id="agent-context-menu" role="menu" aria-label="会话操作" hidden>
+            <button type="button" class="agent-context-menu-item" role="menuitem" data-action="rename">重命名</button>
+            <button type="button" class="agent-context-menu-item danger" role="menuitem" data-action="delete">删除</button>
+          </div>
         </section>
       </div>
     </aside>
@@ -3338,12 +3994,43 @@
   }
   const LS_KEY = 'm2t-desktop-layout';
   const THEME_KEY = 'm2t-desktop-theme';
-  const SIZE_DEFAULTS = { sidebarW: 240, rightW: 360, agentH: 320 };
+  const SIZE_DEFAULTS = { sidebarW: 240, rightW: 360, agentH: 380, agentHistoryW: 200 };
+  const AGENT_HISTORY_KEY = 'm2t-agent-history-collapsed';
+  const DESKTOP_LAYOUT_LABELS = {
+    'transcript-chat': '博主 · 转写 · 对话',
+    full: '博主 · 播放 · 转写 · 对话',
+    'chat-only': '博主 · 对话',
+  };
+  let desktopLayoutPreset = 'full';
+  const CREATOR_TRANSCRIPT_SESSIONS = {
+    hexue: [
+      { id: 'live', label: '当前 · 录制中', kind: 'live' },
+      { id: 's-hexue-20260603', label: '2026-06-03 20:15 直播', kind: 'live', hasTranscript: true, hasSummary: true },
+      { id: 'aweme-h-001', label: '2026-05-28 作品 · 新品开箱', kind: 'aweme', hasTranscript: true, hasSummary: false },
+    ],
+    laofanqie: [
+      { id: 'live', label: '当前 · 等待录制', kind: 'live' },
+      { id: 's-20260602-2104', label: '2026-06-02 21:04 直播', kind: 'live', hasTranscript: true, hasSummary: true },
+      { id: 's-20260602-1910', label: '2026-06-02 19:10 直播', kind: 'live', hasTranscript: true, hasSummary: false },
+      { id: 'aweme-l-042', label: '2026-05-20 作品 · 联机预告', kind: 'aweme', hasTranscript: true, hasSummary: true },
+    ],
+    yingshi: [
+      { id: 'live', label: '当前 · 收尾中', kind: 'live' },
+      { id: 's-yingshi-20260601', label: '2026-06-01 18:00 直播', kind: 'live', hasTranscript: true, hasSummary: true },
+    ],
+    liyongle: [
+      { id: 'live', label: '当前 · 离线', kind: 'live' },
+      { id: 's-liyongle-20260530', label: '2026-05-30 16:00 直播', kind: 'live', hasTranscript: true, hasSummary: false },
+      { id: 'aweme-ly-003', label: '2026-05-15 作品 · 物理小实验', kind: 'aweme', hasTranscript: true, hasSummary: true },
+    ],
+  };
+  let transcriptSessionId = 'live';
   const SIZE_LIMITS = {
     sidebar: { min: 180, max: 420 },
     right: { min: 280, max: 9999 },
     center: { min: 100 },
     agent: { min: 160, max: 720 },
+    agentHistory: { min: 140, max: 340 },
     transcriptMin: 100,
   };
   let toastTimer = null;
@@ -3351,6 +4038,263 @@
   let historyFilter = 'all';
   let daemonRunning = true;
   let recording = false;
+
+  const AGENT_THREAD_GROUPS = {
+    today: 'Today',
+    yesterday: 'Yesterday',
+    week: 'Last 7 Days',
+    month: 'Last 30 Days',
+  };
+  let agentThreads = [
+    { id: 't-1', title: 'Agent design logic review', group: 'today', meta: '+393 -19 · 10 Files' },
+    { id: 't-2', title: 'Media2text CLI synchronization test', group: 'today', meta: '3m' },
+    { id: 't-3', title: 'Desktop application issues', group: 'yesterday', meta: '22m' },
+    { id: 't-4', title: 'pnpm dev:desktop startup issues', group: 'yesterday', meta: '12m' },
+    { id: 't-5', title: 'History tab feature enhancement', group: 'week', meta: '1h' },
+    { id: 't-6', title: 'Live monitoring interface tweaks', group: 'week', meta: '45m' },
+    { id: 't-7', title: 'Right rail transcript polish', group: 'week', meta: '18m' },
+    { id: 't-8', title: 'Streaming STT gap review', group: 'month', meta: '2d' },
+    { id: 't-9', title: 'Bilibili archive sync debug', group: 'month', meta: '3d' },
+  ];
+  let activeAgentThreadId = 't-1';
+  let agentTabIds = ['t-1', 't-2', 't-3'];
+  let agentWeekExpanded = false;
+  let agentContextThreadId = null;
+
+  function applyAgentHistoryCollapsed() {
+    const pane = document.getElementById('agent-pane');
+    const btn = document.getElementById('btn-agent-history-toggle');
+    if (!pane || !btn) return;
+    let collapsed = false;
+    try {
+      collapsed = localStorage.getItem(AGENT_HISTORY_KEY) === '1';
+    } catch (_) {}
+    pane.classList.toggle('agent-history-collapsed', collapsed);
+    btn.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+    btn.title = collapsed ? '显示历史会话' : '隐藏历史会话';
+  }
+
+  function ensureAgentTab(id) {
+    if (agentTabIds.indexOf(id) >= 0) return;
+    if (agentTabIds.length >= 5) agentTabIds.shift();
+    agentTabIds.push(id);
+  }
+
+  function closeAgentContextMenu() {
+    const menu = document.getElementById('agent-context-menu');
+    const backdrop = document.getElementById('agent-context-backdrop');
+    document.querySelectorAll('.agent-thread-item.menu-open').forEach(function (el) {
+      el.classList.remove('menu-open');
+    });
+    if (menu) {
+      menu.classList.remove('open');
+      menu.hidden = true;
+    }
+    if (backdrop) {
+      backdrop.classList.remove('open');
+      backdrop.setAttribute('aria-hidden', 'true');
+    }
+    agentContextThreadId = null;
+  }
+
+  function openAgentContextMenu(threadId, anchorEl) {
+    const menu = document.getElementById('agent-context-menu');
+    const backdrop = document.getElementById('agent-context-backdrop');
+    if (!menu || !anchorEl) return;
+    closeAgentContextMenu();
+    agentContextThreadId = threadId;
+    anchorEl.closest('.agent-thread-item')?.classList.add('menu-open');
+    const rect = anchorEl.getBoundingClientRect();
+    menu.hidden = false;
+    menu.classList.add('open');
+    menu.style.left = Math.max(8, rect.right - 148) + 'px';
+    menu.style.top = rect.bottom + 4 + 'px';
+    if (backdrop) {
+      backdrop.classList.add('open');
+      backdrop.setAttribute('aria-hidden', 'false');
+    }
+  }
+
+  function renameAgentThread(id) {
+    const thread = agentThreads.find(function (t) {
+      return t.id === id;
+    });
+    if (!thread) return;
+    const next = window.prompt('重命名 Agent 会话', thread.title);
+    if (next === null) return;
+    const title = next.trim();
+    if (!title) {
+      showToast('标题不能为空');
+      return;
+    }
+    thread.title = title;
+    if (activeAgentThreadId === id) {
+      const titleEl = document.getElementById('agent-main-title');
+      if (titleEl) titleEl.textContent = title;
+    }
+    renderAgentTabs();
+    renderAgentThreadList(document.getElementById('agent-history-search')?.value || '');
+    showToast('已重命名');
+  }
+
+  function deleteAgentThread(id) {
+    const idx = agentThreads.findIndex(function (t) {
+      return t.id === id;
+    });
+    if (idx < 0) return;
+    agentThreads.splice(idx, 1);
+    agentTabIds = agentTabIds.filter(function (x) {
+      return x !== id;
+    });
+    if (activeAgentThreadId === id) {
+      const nextId = agentTabIds[0] || agentThreads[0]?.id || null;
+      if (nextId) selectAgentThread(nextId, { silentToast: true });
+      else {
+        activeAgentThreadId = null;
+        renderAgentTabs();
+        renderAgentThreadList(document.getElementById('agent-history-search')?.value || '');
+      }
+    } else {
+      renderAgentTabs();
+      renderAgentThreadList(document.getElementById('agent-history-search')?.value || '');
+    }
+    showToast('已删除会话');
+  }
+
+  function closeAgentTab(id) {
+    const idx = agentTabIds.indexOf(id);
+    if (idx < 0) return;
+    agentTabIds.splice(idx, 1);
+    if (activeAgentThreadId === id) {
+      const nextId =
+        agentTabIds[idx] || agentTabIds[idx - 1] || agentThreads[0]?.id || null;
+      if (nextId) selectAgentThread(nextId, { silentToast: true });
+      else {
+        activeAgentThreadId = null;
+        renderAgentTabs();
+      }
+    } else {
+      renderAgentTabs();
+    }
+    showToast('已关闭页签');
+  }
+
+  function selectAgentThread(id, opts) {
+    opts = opts || {};
+    const thread = agentThreads.find(function (t) {
+      return t.id === id;
+    });
+    if (!thread) return;
+    ensureAgentTab(id);
+    activeAgentThreadId = id;
+    const titleEl = document.getElementById('agent-main-title');
+    if (titleEl) titleEl.textContent = thread.title;
+    renderAgentTabs();
+    renderAgentThreadList(document.getElementById('agent-history-search')?.value || '');
+    if (!opts.silentToast) showToast('已切换：' + thread.title);
+  }
+
+  function renderAgentTabs() {
+    const row = document.getElementById('agent-tabs-row');
+    if (!row) return;
+    row.innerHTML = '';
+    agentTabIds.forEach(function (id) {
+      const thread = agentThreads.find(function (t) {
+        return t.id === id;
+      });
+      if (!thread) return;
+      const wrap = document.createElement('div');
+      wrap.className = 'agent-tab-wrap' + (id === activeAgentThreadId ? ' active' : '');
+      wrap.dataset.threadId = id;
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'agent-tab';
+      btn.setAttribute('role', 'tab');
+      btn.setAttribute('aria-selected', id === activeAgentThreadId ? 'true' : 'false');
+      btn.dataset.threadId = id;
+      btn.title = thread.title;
+      btn.textContent = thread.title;
+      const closeBtn = document.createElement('button');
+      closeBtn.type = 'button';
+      closeBtn.className = 'agent-tab-close';
+      closeBtn.dataset.threadId = id;
+      closeBtn.setAttribute('aria-label', '关闭页签');
+      closeBtn.textContent = '×';
+      wrap.appendChild(btn);
+      wrap.appendChild(closeBtn);
+      row.appendChild(wrap);
+    });
+  }
+
+  function renderAgentThreadList(query) {
+    const list = document.getElementById('agent-thread-list');
+    if (!list) return;
+    const q = (query || '').trim().toLowerCase();
+    list.innerHTML = '';
+    Object.keys(AGENT_THREAD_GROUPS).forEach(function (groupKey) {
+      const items = agentThreads.filter(function (t) {
+        if (t.group !== groupKey) return false;
+        if (q && t.title.toLowerCase().indexOf(q) < 0) return false;
+        return true;
+      });
+      let visibleItems = items;
+      let showMore = false;
+      if (groupKey === 'week' && !agentWeekExpanded && items.length > 3) {
+        visibleItems = items.slice(0, 3);
+        showMore = true;
+      }
+      if (!visibleItems.length && !showMore) return;
+      const grp = document.createElement('div');
+      grp.className = 'agent-thread-group';
+      grp.dataset.group = groupKey;
+      const title = document.createElement('div');
+      title.className = 'agent-thread-group-title';
+      title.textContent = AGENT_THREAD_GROUPS[groupKey];
+      grp.appendChild(title);
+      visibleItems.forEach(function (thread) {
+        const row = document.createElement('div');
+        row.className =
+          'agent-thread-item' + (thread.id === activeAgentThreadId ? ' selected' : '');
+        row.dataset.threadId = thread.id;
+        row.setAttribute('role', 'listitem');
+        row.innerHTML =
+          '<span class="agent-thread-icon" aria-hidden="true">✓</span>' +
+          '<button type="button" class="agent-thread-main" data-thread-id="' +
+          thread.id +
+          '">' +
+          '<span class="agent-thread-title"></span>' +
+          (thread.meta ? '<span class="agent-thread-meta"></span>' : '') +
+          '</button>' +
+          '<button type="button" class="agent-thread-menu-btn" data-thread-id="' +
+          thread.id +
+          '" aria-label="更多操作" title="更多">⋯</button>';
+        row.querySelector('.agent-thread-title').textContent = thread.title;
+        if (thread.meta) row.querySelector('.agent-thread-meta').textContent = thread.meta;
+        grp.appendChild(row);
+      });
+      if (showMore) {
+        const more = document.createElement('button');
+        more.type = 'button';
+        more.className = 'agent-thread-more';
+        more.dataset.expandWeek = '1';
+        more.textContent = 'More';
+        grp.appendChild(more);
+      }
+      list.appendChild(grp);
+    });
+  }
+
+  function createAgentThread() {
+    const id = 't-' + Date.now();
+    const title =
+      'New Agent ' +
+      new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+    agentThreads.unshift({ id: id, title: title, group: 'today', meta: '刚刚' });
+    if (agentTabIds.length >= 5) agentTabIds.shift();
+    agentTabIds.push(id);
+    selectAgentThread(id);
+    showToast('已新建 Agent');
+  }
 
   const views = {
     config: document.getElementById('view-config'),
@@ -3863,7 +4807,7 @@
   function syncAgentModelSelect() {
     const models = collectLlmModelsByKind('llm');
     const sel = document.getElementById('agent-model-select');
-    const pill = document.querySelector('.agent-header .model-pill');
+    const pill = document.getElementById('agent-model-pill');
     if (!sel) return;
     const prev = sel.value;
     let html = '<option value="auto">Auto</option>';
@@ -4176,6 +5120,101 @@
     applyPaneSizes(sizes);
   }
 
+  function mountTranscriptPane(preset) {
+    const pane = document.getElementById('transcript-pane');
+    const centerSlot = document.getElementById('transcript-center-slot');
+    const rightSplit = document.querySelector('.right-split');
+    const resizeSplit = document.getElementById('resize-right-split');
+    if (!pane || !rightSplit || !resizeSplit) return;
+    if (preset === 'transcript-chat' && centerSlot) {
+      if (pane.parentElement !== centerSlot) centerSlot.appendChild(pane);
+    } else if (pane.parentElement !== rightSplit) {
+      rightSplit.insertBefore(pane, resizeSplit);
+    }
+  }
+
+  function getSelectedCreatorId() {
+    const item = document.querySelector('.creator-item.selected[data-creator]');
+    return item ? item.dataset.creator : 'laofanqie';
+  }
+
+  function syncTranscriptSessionSelect(creatorId, opts) {
+    opts = opts || {};
+    const sel = document.getElementById('transcript-session-select');
+    if (!sel) return;
+    const sessions = CREATOR_TRANSCRIPT_SESSIONS[creatorId] || CREATOR_TRANSCRIPT_SESSIONS.laofanqie;
+    const prev = opts.keepSelection ? sel.value : transcriptSessionId;
+    sel.innerHTML = '';
+    sessions.forEach(function (s) {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      let text = s.label;
+      if (s.kind === 'aweme') text += ' · 作品';
+      else if (s.id !== 'live') text += ' · 直播';
+      if (s.hasTranscript === false) text += '（无转写）';
+      opt.textContent = text;
+      if (s.hasSummary === false && s.id !== 'live') opt.textContent += ' · 无摘要';
+      sel.appendChild(opt);
+    });
+    const hasPrev = Array.prototype.some.call(sel.options, function (o) {
+      return o.value === prev;
+    });
+    sel.value = hasPrev ? prev : 'live';
+    transcriptSessionId = sel.value;
+  }
+
+  function applyTranscriptSessionSelection(sessionId) {
+    transcriptSessionId = sessionId;
+    const sel = document.getElementById('transcript-session-select');
+    const sessions = CREATOR_TRANSCRIPT_SESSIONS[getSelectedCreatorId()] || [];
+    const session = sessions.find(function (s) {
+      return s.id === sessionId;
+    });
+    const label = session ? session.label : sessionId;
+    if (!session || session.id === 'live') {
+      setLiveContext();
+      showToast('转写：' + label);
+      return;
+    }
+    if (session && session.hasTranscript === false) {
+      showToast('该场次暂无转写');
+      return;
+    }
+    setPlaybackContext();
+    if (session && session.hasSummary === false) syncRightTabs('transcript');
+    showToast('已加载：' + label);
+  }
+
+  function applyDesktopLayoutPreset(preset, opts) {
+    opts = opts || {};
+    if (!DESKTOP_LAYOUT_LABELS[preset]) preset = 'full';
+    desktopLayoutPreset = preset;
+    app.classList.remove('desktop-layout-transcript', 'desktop-layout-chat');
+    if (preset === 'transcript-chat') app.classList.add('desktop-layout-transcript');
+    else if (preset === 'chat-only') {
+      app.classList.add('desktop-layout-chat');
+      if (app.classList.contains('right-collapsed')) {
+        app.classList.remove('right-collapsed');
+      }
+    }
+    mountTranscriptPane(preset);
+    const rightTitle = document.querySelector('.panel-right .side-panel-title');
+    if (rightTitle) rightTitle.textContent = preset === 'transcript-chat' ? 'Agent' : '内容';
+    document.querySelectorAll('.layout-preset-btn[data-layout]').forEach(function (btn) {
+      const on = btn.dataset.layout === preset;
+      btn.classList.toggle('active', on);
+      btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+    syncLayoutClasses();
+    if (!opts.silent) {
+      showToast('布局：' + (DESKTOP_LAYOUT_LABELS[preset] || preset));
+    }
+  }
+
+  function getDesktopLayoutPreset() {
+    return desktopLayoutPreset;
+  }
+
   function syncRailDots() {
     document.querySelectorAll('.rail-dot[data-creator]').forEach(function (dot) {
       const item = document.querySelector(
@@ -4267,6 +5306,14 @@
       '--right-agent-h',
       clampSize(sizes.agentH, SIZE_LIMITS.agent.min, SIZE_LIMITS.agent.max) + 'px'
     );
+    root.style.setProperty(
+      '--agent-history-w',
+      clampSize(
+        sizes.agentHistoryW,
+        SIZE_LIMITS.agentHistory.min,
+        SIZE_LIMITS.agentHistory.max
+      ) + 'px'
+    );
   }
 
   function getPaneSizes() {
@@ -4274,6 +5321,7 @@
       sidebarW: readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW),
       rightW: readCssPx('--right-w', SIZE_DEFAULTS.rightW),
       agentH: readCssPx('--right-agent-h', SIZE_DEFAULTS.agentH),
+      agentHistoryW: readCssPx('--agent-history-w', SIZE_DEFAULTS.agentHistoryW),
     };
   }
 
@@ -4303,12 +5351,11 @@
         const dx = ev.clientX - startX;
         const rightLimits = getRightWidthLimits();
         if (side === 'left') {
-          applyPaneSizes({ sidebarW: start.sidebarW + dx, rightW: start.rightW, agentH: start.agentH });
+          applyPaneSizes({ ...start, sidebarW: start.sidebarW + dx });
         } else {
           applyPaneSizes({
-            sidebarW: start.sidebarW,
+            ...start,
             rightW: clampSize(start.rightW - dx, rightLimits.min, rightLimits.max),
-            agentH: start.agentH,
           });
         }
       }
@@ -4343,8 +5390,7 @@
         const dy = ev.clientY - startY;
         const maxAgent = maxAgentHeight(splitRoot);
         applyPaneSizes({
-          sidebarW: start.sidebarW,
-          rightW: start.rightW,
+          ...start,
           agentH: clampSize(start.agentH - dy, SIZE_LIMITS.agent.min, maxAgent),
         });
       }
@@ -4353,6 +5399,46 @@
         handle.classList.remove('is-dragging');
         app.classList.remove('is-resizing');
         document.body.classList.remove('resize-row-active');
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        saveLayout();
+      }
+
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+    });
+  }
+
+  function bindAgentHistoryResize(handle) {
+    if (!handle) return;
+    handle.addEventListener('mousedown', function (e) {
+      if (e.button !== 0) return;
+      const pane = document.getElementById('agent-pane');
+      if (!pane || pane.classList.contains('agent-history-collapsed')) return;
+      if (app.classList.contains('right-collapsed')) return;
+      e.preventDefault();
+      const startX = e.clientX;
+      const start = getPaneSizes();
+      handle.classList.add('is-dragging');
+      app.classList.add('is-resizing');
+      document.body.classList.add('resize-col-active');
+
+      function onMove(ev) {
+        const dx = ev.clientX - startX;
+        applyPaneSizes({
+          ...start,
+          agentHistoryW: clampSize(
+            start.agentHistoryW - dx,
+            SIZE_LIMITS.agentHistory.min,
+            SIZE_LIMITS.agentHistory.max
+          ),
+        });
+      }
+
+      function onUp() {
+        handle.classList.remove('is-dragging');
+        app.classList.remove('is-resizing');
+        document.body.classList.remove('resize-col-active');
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         saveLayout();
@@ -4375,6 +5461,8 @@
           sidebarW: sizes.sidebarW,
           rightW: sizes.rightW,
           agentH: sizes.agentH,
+          agentHistoryW: sizes.agentHistoryW,
+          desktopLayoutPreset: getDesktopLayoutPreset(),
         })
       );
     } catch (_) {}
@@ -4389,15 +5477,32 @@
       sidebarW: typeof s.sidebarW === 'number' ? s.sidebarW : SIZE_DEFAULTS.sidebarW,
       rightW: typeof s.rightW === 'number' ? s.rightW : SIZE_DEFAULTS.rightW,
       agentH: typeof s.agentH === 'number' ? s.agentH : SIZE_DEFAULTS.agentH,
+      agentHistoryW:
+        typeof s.agentHistoryW === 'number' ? s.agentHistoryW : SIZE_DEFAULTS.agentHistoryW,
     });
       if (s.leftCollapsed) app.classList.add('left-collapsed');
       if (s.rightCollapsed) app.classList.add('right-collapsed');
+    applyDesktopLayoutPreset(
+      typeof s.desktopLayoutPreset === 'string' ? s.desktopLayoutPreset : 'full',
+      { silent: true }
+    );
     syncLayoutClasses();
   }
   loadLayout();
+  syncTranscriptSessionSelect(getSelectedCreatorId(), { keepSelection: true });
+  document.getElementById('transcript-session-select')?.addEventListener('change', function (e) {
+    applyTranscriptSessionSelection(e.target.value);
+  });
+  document.querySelectorAll('.layout-preset-btn[data-layout]').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      applyDesktopLayoutPreset(btn.dataset.layout);
+      saveLayout();
+    });
+  });
   bindColumnResize(document.getElementById('resize-left'), 'left');
   bindColumnResize(document.getElementById('resize-right'), 'right');
   bindRightSplitResize(document.getElementById('resize-right-split'));
+  bindAgentHistoryResize(document.getElementById('resize-agent-history'));
   window.addEventListener('resize', function () {
     applyPaneSizes(getPaneSizes());
   });
@@ -4839,6 +5944,13 @@
 
     playbackMode = false;
     showView(defaultView);
+    syncTranscriptSessionSelect(item.dataset.creator, { keepSelection: false });
+    if (transcriptSessionId !== 'live') {
+      transcriptSessionId = 'live';
+      const sel = document.getElementById('transcript-session-select');
+      if (sel) sel.value = 'live';
+      setLiveContext();
+    }
     showToast('已切换：' + name);
   }
 
@@ -5137,13 +6249,83 @@
   });
   document.getElementById('agent-model-select')?.addEventListener('change', function (e) {
     const val = e.target.value;
-    const pill = document.querySelector('.agent-header .model-pill');
+    const pill = document.getElementById('agent-model-pill');
     if (pill) {
       const label = val === 'auto' ? 'auto' : val.split('/').pop() || val;
       pill.textContent = (configDraft.activeProviderId || 'nvidia') + ' · ' + label;
     }
     showToast('模型：' + (val === 'auto' ? 'Auto' : val));
   });
+
+  applyAgentHistoryCollapsed();
+  renderAgentTabs();
+  renderAgentThreadList('');
+
+  document.getElementById('agent-tabs-row')?.addEventListener('click', function (e) {
+    const closeBtn = e.target.closest('.agent-tab-close[data-thread-id]');
+    if (closeBtn) {
+      e.stopPropagation();
+      closeAgentTab(closeBtn.dataset.threadId);
+      return;
+    }
+    const tab = e.target.closest('.agent-tab[data-thread-id]');
+    if (!tab) return;
+    selectAgentThread(tab.dataset.threadId);
+  });
+
+  document.getElementById('agent-thread-list')?.addEventListener('click', function (e) {
+    const menuBtn = e.target.closest('.agent-thread-menu-btn[data-thread-id]');
+    if (menuBtn) {
+      e.stopPropagation();
+      openAgentContextMenu(menuBtn.dataset.threadId, menuBtn);
+      return;
+    }
+    const more = e.target.closest('.agent-thread-more[data-expand-week]');
+    if (more) {
+      agentWeekExpanded = true;
+      renderAgentThreadList(document.getElementById('agent-history-search')?.value || '');
+      return;
+    }
+    const mainBtn = e.target.closest('.agent-thread-main[data-thread-id]');
+    if (mainBtn) {
+      selectAgentThread(mainBtn.dataset.threadId);
+    }
+  });
+
+  document.getElementById('agent-context-menu')?.addEventListener('click', function (e) {
+    const item = e.target.closest('.agent-context-menu-item[data-action]');
+    if (!item || !agentContextThreadId) return;
+    const action = item.dataset.action;
+    const id = agentContextThreadId;
+    closeAgentContextMenu();
+    if (action === 'rename') renameAgentThread(id);
+    else if (action === 'delete') deleteAgentThread(id);
+  });
+
+  document.getElementById('agent-context-backdrop')?.addEventListener('click', closeAgentContextMenu);
+
+  document.getElementById('agent-history-search')?.addEventListener('input', function (e) {
+    renderAgentThreadList(e.target.value);
+  });
+
+  function toggleAgentHistoryColumn() {
+    const pane = document.getElementById('agent-pane');
+    if (!pane) return;
+    const collapsed = !pane.classList.contains('agent-history-collapsed');
+    pane.classList.toggle('agent-history-collapsed', collapsed);
+    const btn = document.getElementById('btn-agent-history-toggle');
+    if (btn) {
+      btn.setAttribute('aria-pressed', collapsed ? 'false' : 'true');
+      btn.title = collapsed ? '显示历史会话' : '隐藏历史会话';
+    }
+    try {
+      localStorage.setItem(AGENT_HISTORY_KEY, collapsed ? '1' : '0');
+    } catch (_) {}
+    showToast(collapsed ? '已隐藏历史会话栏' : '已显示历史会话栏');
+  }
+
+  document.getElementById('btn-agent-history-toggle')?.addEventListener('click', toggleAgentHistoryColumn);
+  document.getElementById('btn-agent-new')?.addEventListener('click', createAgentThread);
   document.getElementById('agent-ctx-btn')?.addEventListener('click', function () {
     showToast('上下文窗口（实现期）');
   });

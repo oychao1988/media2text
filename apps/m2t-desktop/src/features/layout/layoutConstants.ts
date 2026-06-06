@@ -3,7 +3,7 @@ export const LAYOUT_STORAGE_KEY = 'm2t-desktop-layout';
 export const SIZE_DEFAULTS = {
   sidebarW: 240,
   rightW: 360,
-  agentH: 320,
+  agentH: 380,
   agentHistoryW: 200,
 } as const;
 
@@ -155,15 +155,41 @@ export function maxRightWForViewport(sidebarW?: number): number {
   return Math.max(SIZE_LIMITS.right.min, Math.min(halfMax, SIZE_LIMITS.right.max, available));
 }
 
-/** Split remaining width between center transcript and right agent columns. */
+const TRANSCRIPT_CHAT_CENTER_MIN = 280;
+const TRANSCRIPT_CHAT_VIEWPORT_RATIO = 0.5;
+
+/** Max agent column width in transcript-chat: half viewport, respecting center min width. */
 export function maxCenterRightWForTranscriptLayout(sidebarW?: number): number {
+  return transcriptChatRightW(sidebarW);
+}
+
+/** Default / target right column width when entering transcript-chat layout. */
+export function transcriptChatRightW(sidebarW?: number): number {
   const sw = sidebarW ?? readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW);
   const grips = readGripPx() * 2;
   const remaining = window.innerWidth - sw - grips;
-  const minCenter = Math.max(SIZE_LIMITS.center.min, 280);
-  const minRight = SIZE_LIMITS.right.min;
-  const half = Math.floor(remaining / 2);
-  return Math.max(minRight, Math.min(half, remaining - minCenter));
+  const minCenter = Math.max(SIZE_LIMITS.center.min, TRANSCRIPT_CHAT_CENTER_MIN);
+  const halfViewport = Math.floor(window.innerWidth * TRANSCRIPT_CHAT_VIEWPORT_RATIO);
+  const maxByCenter = remaining - minCenter;
+  const max = Math.min(halfViewport, maxByCenter, SIZE_LIMITS.right.max);
+  return Math.max(SIZE_LIMITS.right.min, max);
+}
+
+/** Max agent min-height so transcript keeps transcriptMin and composer stays in view. */
+export function maxAgentHeightForRightSplit(): number {
+  if (typeof document === 'undefined') return SIZE_LIMITS.agent.max;
+  const splitEl = document.querySelector('.right-split');
+  if (!splitEl) return SIZE_LIMITS.agent.max;
+  const header = splitEl.querySelector('.side-panel-header');
+  const headerH = header ? (header as HTMLElement).offsetHeight : 44;
+  const grip = readGripPx();
+  const available =
+    splitEl.clientHeight - headerH - grip - SIZE_LIMITS.transcriptMin;
+  return clamp(available, SIZE_LIMITS.agent.min, SIZE_LIMITS.agent.max);
+}
+
+export function clampAgentH(agentH: number): number {
+  return clamp(agentH, SIZE_LIMITS.agent.min, maxAgentHeightForRightSplit());
 }
 
 /** Update pane CSS vars during drag without localStorage or React re-renders. */

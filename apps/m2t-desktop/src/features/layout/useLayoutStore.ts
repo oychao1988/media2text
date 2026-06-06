@@ -4,11 +4,13 @@ import {
   type CenterTab,
   type CenterView,
   DEFAULT_LAYOUT,
+  clampAgentH,
   loadLayout,
   saveLayout,
   syncDesktopLayoutPresetClasses,
   type DesktopLayoutPreset,
   type LayoutPersist,
+  transcriptChatRightW,
 } from './layoutConstants';
 import {
   LIVE_TRANSCRIPT_SELECTION,
@@ -20,15 +22,16 @@ type LayoutStoreState = LayoutPersist & {
   centerView: CenterView;
   centerTab: CenterTab;
   userMenuOpen: boolean;
+  daemonMenuOpen: boolean;
   creatorsLoading: boolean;
   showEmptyCreators: boolean;
   transcriptSelection: TranscriptSelection;
 };
 
 const DESKTOP_LAYOUT_LABELS: Record<DesktopLayoutPreset, string> = {
-  full: '三栏',
-  'transcript-chat': '四区',
-  'chat-only': '对话',
+  full: '博主 · 播放 · 转写 · 对话',
+  'transcript-chat': '博主 · 转写 · 对话',
+  'chat-only': '博主 · 对话',
 };
 
 let state: LayoutStoreState = {
@@ -36,10 +39,13 @@ let state: LayoutStoreState = {
   centerView: 'live',
   centerTab: 'live',
   userMenuOpen: false,
+  daemonMenuOpen: false,
   creatorsLoading: false,
   showEmptyCreators: readEmptyListPreview(),
   transcriptSelection: LIVE_TRANSCRIPT_SELECTION,
 };
+
+applyLayoutCssVars(state);
 
 const listeners = new Set<() => void>();
 
@@ -103,6 +109,10 @@ function patch(partial: Partial<LayoutStoreState>) {
 }
 
 export function initLayoutStore(): void {
+  const agentH = clampAgentH(state.agentH);
+  if (agentH !== state.agentH) {
+    state = { ...state, agentH };
+  }
   applyLayoutCssVars(state);
   syncDesktopLayoutPresetClasses(state.desktopLayoutPreset);
   if (state.desktopLayoutPreset === 'chat-only' && state.rightCollapsed) {
@@ -112,9 +122,13 @@ export function initLayoutStore(): void {
 
 /** Persist pane sizes after drag (skipped during pointermove for smoothness). */
 export function commitLayoutSizes(
-  sizes: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH'>>,
+  sizes: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH' | 'agentHistoryW'>>,
 ): void {
-  patch(sizes);
+  const next = { ...sizes };
+  if (next.agentH != null) {
+    next.agentH = clampAgentH(next.agentH);
+  }
+  patch(next);
 }
 
 export function useLayoutStore() {
@@ -161,7 +175,11 @@ export function useLayoutStore() {
   }, []);
 
   const setUserMenuOpen = useCallback((userMenuOpen: boolean) => {
-    patch({ userMenuOpen });
+    patch({ userMenuOpen, daemonMenuOpen: userMenuOpen ? false : state.daemonMenuOpen });
+  }, []);
+
+  const setDaemonMenuOpen = useCallback((daemonMenuOpen: boolean) => {
+    patch({ daemonMenuOpen, userMenuOpen: daemonMenuOpen ? false : state.userMenuOpen });
   }, []);
 
   const setCreatorsLoading = useCallback((creatorsLoading: boolean) => {
@@ -172,6 +190,9 @@ export function useLayoutStore() {
     const partial: Partial<LayoutStoreState> = { desktopLayoutPreset };
     if (desktopLayoutPreset === 'chat-only' && state.rightCollapsed) {
       partial.rightCollapsed = false;
+    }
+    if (desktopLayoutPreset === 'transcript-chat') {
+      partial.rightW = transcriptChatRightW(state.sidebarW);
     }
     patch(partial);
     showToast(`布局：${DESKTOP_LAYOUT_LABELS[desktopLayoutPreset]}`, 'info');
@@ -197,6 +218,7 @@ export function useLayoutStore() {
     openCenterView,
     backToHistory,
     setUserMenuOpen,
+    setDaemonMenuOpen,
     setCreatorsLoading,
     setDesktopLayoutPreset,
     setTranscriptSelection,

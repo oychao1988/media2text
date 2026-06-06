@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   filterThreadsByQuery,
   groupThreads,
@@ -12,11 +12,80 @@ const GROUP_ORDER: ThreadTimeGroup[] = ['today', 'yesterday', 'week', 'month'];
 type Props = {
   threads: ThreadRow[];
   activeThreadId: string | null;
+  menuOpenThreadId?: string | null;
+  editingThreadId?: string | null;
   onSelectThread: (threadId: string) => void;
   onOpenMenu: (threadId: string, anchor: HTMLElement) => void;
+  onRenameCommit: (threadId: string, title: string) => void;
+  onRenameCancel: () => void;
 };
 
-export function AgentHistorySidebar({ threads, activeThreadId, onSelectThread, onOpenMenu }: Props) {
+function threadMeta(thread: ThreadRow): string | null {
+  if (thread.model && thread.model !== 'auto') return thread.model;
+  return null;
+}
+
+function ThreadTitleEditor({
+  initialTitle,
+  onCommit,
+  onCancel,
+}: {
+  initialTitle: string;
+  onCommit: (title: string) => void;
+  onCancel: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [draft, setDraft] = useState(initialTitle);
+  const committedRef = useRef(false);
+
+  useEffect(() => {
+    setDraft(initialTitle);
+    committedRef.current = false;
+    inputRef.current?.focus();
+    inputRef.current?.select();
+  }, [initialTitle]);
+
+  const commit = () => {
+    if (committedRef.current) return;
+    committedRef.current = true;
+    const trimmed = draft.trim();
+    if (trimmed) onCommit(trimmed);
+    else onCancel();
+  };
+
+  return (
+    <input
+      ref={inputRef}
+      type="text"
+      className="agent-thread-title-input"
+      value={draft}
+      aria-label="重命名会话"
+      onChange={(e) => setDraft(e.target.value)}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          commit();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          onCancel();
+        }
+      }}
+      onBlur={commit}
+    />
+  );
+}
+
+export function AgentHistorySidebar({
+  threads,
+  activeThreadId,
+  menuOpenThreadId = null,
+  editingThreadId = null,
+  onSelectThread,
+  onOpenMenu,
+  onRenameCommit,
+  onRenameCancel,
+}: Props) {
   const [search, setSearch] = useState('');
   const [weekExpanded, setWeekExpanded] = useState(false);
 
@@ -52,38 +121,65 @@ export function AgentHistorySidebar({ threads, activeThreadId, onSelectThread, o
           return (
             <div key={groupKey} className="agent-thread-group" data-group={groupKey}>
               <div className="agent-thread-group-title">{THREAD_GROUP_LABELS[groupKey]}</div>
-              {visible.map((thread) => (
-                <div
-                  key={thread.id}
-                  className={`agent-thread-item${thread.id === activeThreadId ? ' selected' : ''}`}
-                  role="listitem"
-                  data-thread-id={thread.id}
-                >
-                  <button
-                    type="button"
-                    className="agent-thread-main"
+              {visible.map((thread) => {
+                const meta = threadMeta(thread);
+                const selected = thread.id === activeThreadId;
+                const menuOpen = thread.id === menuOpenThreadId;
+                const editing = thread.id === editingThreadId;
+                return (
+                  <div
+                    key={thread.id}
+                    className={[
+                      'agent-thread-item',
+                      selected ? 'selected' : '',
+                      menuOpen ? 'menu-open' : '',
+                      editing ? 'is-editing' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    role="listitem"
                     data-thread-id={thread.id}
-                    onClick={() => onSelectThread(thread.id)}
                   >
                     <span className="agent-thread-icon" aria-hidden="true">
-                      ◆
+                      ✓
                     </span>
-                    <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="agent-thread-menu-btn"
-                    aria-label="会话菜单"
-                    data-thread-id={thread.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenMenu(thread.id, e.currentTarget);
-                    }}
-                  >
-                    ⋯
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      className="agent-thread-main"
+                      data-thread-id={thread.id}
+                      onClick={() => !editing && onSelectThread(thread.id)}
+                    >
+                      {editing ? (
+                        <ThreadTitleEditor
+                          initialTitle={thread.title ?? 'Agent'}
+                          onCommit={(title) => onRenameCommit(thread.id, title)}
+                          onCancel={onRenameCancel}
+                        />
+                      ) : (
+                        <>
+                          <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
+                          {meta ? <span className="agent-thread-meta">{meta}</span> : null}
+                        </>
+                      )}
+                    </button>
+                    {!editing ? (
+                      <button
+                        type="button"
+                        className="agent-thread-menu-btn"
+                        aria-label="更多操作"
+                        title="更多"
+                        data-thread-id={thread.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onOpenMenu(thread.id, e.currentTarget);
+                        }}
+                      >
+                        ⋯
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
               {showMore ? (
                 <button
                   type="button"

@@ -7,6 +7,17 @@ export function pushAgentTab(tabIds: string[], threadId: string): string[] {
   return next.slice(next.length - MAX_AGENT_TABS);
 }
 
+/** Open or focus a tab; skip MRU reorder when clicking an existing top tab. */
+export function activateAgentTab(
+  tabIds: string[],
+  threadId: string,
+  opts?: { reorder?: boolean },
+): string[] {
+  if (!tabIds.includes(threadId)) return pushAgentTab(tabIds, threadId);
+  if (opts?.reorder === false) return tabIds;
+  return pushAgentTab(tabIds, threadId);
+}
+
 export function closeAgentTab(
   tabIds: string[],
   threadId: string,

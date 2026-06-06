@@ -1,6 +1,6 @@
 # Issue 工单索引（Agent B 执行）
 
-本目录存放 **Issue 规格正文**（Agent A 产出），供 [issue-implementer](.claude/agents/issue-implementer.md) 按「一 Issue 一分支」实现。
+本目录存放 **Issue 规格正文**（Agent A 产出），供 [issue-implementer](.claude/agents/issue-implementer.md) 按「一 Issue 一分支」实现。系列交付由 [issue-orchestrator](.claude/agents/issue-orchestrator.md) 编排；Epic 验收见 `docs/superpowers/verification/`。
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
@@ -160,7 +160,13 @@
 | 3 | [#172](https://github.com/oychao1988/media2text/issues/172) | [#176](https://github.com/oychao1988/media2text/pull/176) | [m2t-desktop-agent-pane-pr3-layout-presets.md](./m2t-desktop-agent-pane-pr3-layout-presets.md) | `issue-172-desktop-layout-presets` |
 | 4 | [#173](https://github.com/oychao1988/media2text/issues/173) | [#177](https://github.com/oychao1988/media2text/pull/177) | [m2t-desktop-agent-pane-pr4-agent-ui.md](./m2t-desktop-agent-pane-pr4-agent-ui.md) | `issue-173-agent-multi-thread-ui` |
 
-**合并顺序**：#170 → #171 / #172（可并行）→ #173。
+**合并顺序**：#170 → #171 / #172（可并行）→ #173（**已交付**，Epic 验收：[agent-pane-acceptance](../superpowers/verification/2026-06-06-m2t-desktop-agent-pane-acceptance.md)）。
+
+### m2t-desktop 转写场次 + 监控弹窗 UX（2026-06-06）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#178](https://github.com/oychao1988/media2text/issues/178) | （本 PR） | [m2t-desktop-transcript-session-monitor-ux.md](./m2t-desktop-transcript-session-monitor-ux.md) | `issue-178-m2t-desktop-transcript-session-monitor-ux` |
 
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 

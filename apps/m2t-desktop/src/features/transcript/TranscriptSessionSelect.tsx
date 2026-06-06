@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { M2tSelect } from '../../components/M2tSelect';
 import { apiGet } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import { useCreators } from '../creators/CreatorsContext';
 import { useLayoutStore } from '../layout/useLayoutStore';
+import {
+  formatSessionOptionMeta,
+  sessionOptionTitle,
+} from './transcriptSessionFormat';
 import {
   LIVE_TRANSCRIPT_SELECTION,
   selectionFromSessionRow,
@@ -21,11 +26,12 @@ function selectionKey(sel: TranscriptSelection): string {
   return `${sel.kind}:${sel.itemId}`;
 }
 
-function rowLabel(row: SessionListItem): string {
-  const base = row.display_label || row.item_id;
-  if (row.kind === 'vod') return `${base} · 作品`;
-  return `${base} · 直播`;
+function liveCurrentLabel(isLive: boolean): string {
+  return isLive ? '当前 · 录制中' : '当前 · 等待录制';
 }
+
+/** Survives TranscriptPane remounts so history picks are not reset to live. */
+let lastSessionsCreatorId: string | null = null;
 
 export function TranscriptSessionSelect() {
   const { selectedId, selected } = useCreators();
@@ -35,10 +41,18 @@ export function TranscriptSessionSelect() {
 
   useEffect(() => {
     if (!selectedId) {
+      lastSessionsCreatorId = null;
       setSessions([]);
       setTranscriptSelection(LIVE_TRANSCRIPT_SELECTION);
       return;
     }
+
+    const creatorChanged = lastSessionsCreatorId !== selectedId;
+    lastSessionsCreatorId = selectedId;
+    if (creatorChanged) {
+      setTranscriptSelection(LIVE_TRANSCRIPT_SELECTION);
+    }
+
     let cancelled = false;
     setLoading(true);
     void (async () => {
@@ -49,7 +63,6 @@ export function TranscriptSessionSelect() {
         );
         if (cancelled) return;
         setSessions(res.sessions ?? []);
-        setTranscriptSelection(LIVE_TRANSCRIPT_SELECTION);
       } catch {
         if (!cancelled) setSessions([]);
       } finally {
@@ -62,29 +75,41 @@ export function TranscriptSessionSelect() {
   }, [selectedId, setTranscriptSelection]);
 
   const activeSessionId = selected?.active_session_id ?? null;
+  const isLiveNow = Boolean(selected?.is_live || selected?.status_light === 'green');
 
   const options = useMemo(() => {
-    const rows: { key: string; label: string; selection: TranscriptSelection; hasTranscript: boolean }[] =
-      [];
-    if (activeSessionId) {
-      rows.push({
-        key: 'live',
-        label: '当前直播',
-        selection: LIVE_TRANSCRIPT_SELECTION,
-        hasTranscript: true,
-      });
-    }
+    const rows: {
+      key: string;
+      label: string;
+      selection: TranscriptSelection;
+      hasTranscript: boolean;
+      iconKind: 'live-current' | 'live' | 'vod';
+      meta?: string;
+      badge?: string;
+    }[] = [];
+    rows.push({
+      key: 'live',
+      label: liveCurrentLabel(isLiveNow && Boolean(activeSessionId)),
+      selection: LIVE_TRANSCRIPT_SELECTION,
+      hasTranscript: true,
+      iconKind: 'live-current',
+      meta: '实时',
+    });
     for (const row of sessions) {
       if (row.kind === 'live' && row.item_id === activeSessionId) continue;
+      const hasTranscript = row.has_transcript;
       rows.push({
         key: selectionKey(selectionFromSessionRow(row)),
-        label: rowLabel(row),
+        label: sessionOptionTitle(row),
         selection: selectionFromSessionRow(row),
-        hasTranscript: row.has_transcript,
+        hasTranscript,
+        iconKind: row.kind === 'vod' ? 'vod' : 'live',
+        meta: formatSessionOptionMeta(row.started_at),
+        badge: !hasTranscript ? '无转写' : undefined,
       });
     }
     return rows;
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, isLiveNow, sessions]);
 
   const currentKey = selectionKey(transcriptSelection);
 
@@ -94,7 +119,6 @@ export function TranscriptSessionSelect() {
       if (!opt) return;
       if (!opt.hasTranscript && opt.selection.mode === 'history') {
         showToast('该场次暂无转写', 'info');
-        return;
       }
       setTranscriptSelection(opt.selection);
     },
@@ -104,20 +128,23 @@ export function TranscriptSessionSelect() {
   if (!selectedId) return null;
 
   return (
-    <select
-      id="transcript-session-select"
-      className="transcript-session-select"
-      aria-label="转写场次"
-      disabled={loading}
-      value={options.some((o) => o.key === currentKey) ? currentKey : 'live'}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((opt) => (
-        <option key={opt.key} value={opt.key}>
-          {opt.label}
-          {!opt.hasTranscript && opt.selection.mode === 'history' ? '（无转写）' : ''}
-        </option>
-      ))}
-    </select>
+    <div className="transcript-session-wrap" title="历史场次">
+      <M2tSelect
+        id="transcript-session-select"
+        className="transcript-session-select m2t-select m2t-select--compact"
+        ariaLabel="选择历史场次"
+        disabled={loading}
+        menuMinWidth={320}
+        value={options.some((o) => o.key === currentKey) ? currentKey : 'live'}
+        options={options.map((opt) => ({
+          value: opt.key,
+          label: opt.label,
+          iconKind: opt.iconKind,
+          meta: opt.meta,
+          badge: opt.badge,
+        }))}
+        onChange={onChange}
+      />
+    </div>
   );
 }

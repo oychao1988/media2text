@@ -33,6 +33,7 @@ media2text doctor --json    # ffmpeg、playwright、session、磁盘
 
 - 规格：[docs/superpowers/specs/2026-06-04-m2t-desktop-design.md](docs/superpowers/specs/2026-06-04-m2t-desktop-design.md)
 - 验收：[docs/superpowers/verification/2026-06-04-m2t-desktop-acceptance.md](docs/superpowers/verification/2026-06-04-m2t-desktop-acceptance.md)
+- Agent Pane 验收：[docs/superpowers/verification/2026-06-06-m2t-desktop-agent-pane-acceptance.md](docs/superpowers/verification/2026-06-06-m2t-desktop-agent-pane-acceptance.md)
 
 ```bash
 source .venv/bin/activate
@@ -235,6 +236,19 @@ pyright
 ```
 
 抖音适配器：`src/media2text/core/platform/douyin/`（`adapter.py`、`playwright_client.py`、`catalog.py`、`live.py`）。
+
+## Issue 编排（spec → 交付）
+
+四段式 Agent（见 `.claude/agents/`）：
+
+| Agent | 职责 |
+|-------|------|
+| [issue-spec-author](.claude/agents/issue-spec-author.md) | 从 plan 写 `docs/issues/*.md` + GitHub Issue |
+| [issue-implementer](.claude/agents/issue-implementer.md) | 一 Issue 一分支/PR；跑验证命令 |
+| [issue-reviewer](.claude/agents/issue-reviewer.md) | 对照 AC/spec 裁决 PASS；merge 前闸门 |
+| [issue-orchestrator](.claude/agents/issue-orchestrator.md) | 按 `docs/issues/README.md` 顺序驱动 A→B→C→Epic 验收 |
+
+**关单规则：** merge 前 `issue-reviewer` PASS + 勾选 `docs/issues/*.md`；系列最后一单后填 `docs/superpowers/verification/` 验收表。
 
 ## Agent 操作约束
 

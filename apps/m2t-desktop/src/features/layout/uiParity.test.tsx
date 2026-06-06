@@ -8,6 +8,7 @@ import { AgentComposer } from '../agent/AgentComposer';
 import { ViewPlayback } from '../history/ViewPlayback';
 import { DesktopLayoutPresets } from './DesktopLayoutPresets';
 import { initLayoutStore, useLayoutStore } from './useLayoutStore';
+import { LAYOUT_STORAGE_KEY, loadLayout } from './layoutConstants';
 
 const layoutCss = readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), '../../styles/layout.css'),
@@ -46,6 +47,9 @@ describe('ui parity CSS', () => {
     expect(layoutCss).toContain('.desktop-layout-transcript');
     expect(layoutCss).toContain('.transcript-center-slot');
     expect(layoutCss).toContain('.layout-preset-btn');
+    expect(layoutCss).toMatch(
+      /\.app\.desktop-layout-transcript:not\(\.right-collapsed\)[\s\S]*var\(--right-w\)/,
+    );
   });
 });
 
@@ -71,18 +75,20 @@ describe('AgentComposer structure', () => {
 });
 
 describe('DesktopLayoutPresets', () => {
-  it('applies desktop-layout-transcript class on #app when transcript-chat selected', async () => {
+  it('sets rightW to half viewport when selecting transcript-chat preset', async () => {
     localStorage.clear();
     initLayoutStore();
+    Object.defineProperty(window, 'innerWidth', { value: 1200, configurable: true });
+    document.documentElement.style.setProperty('--sidebar-w', '240px');
+    document.documentElement.style.setProperty('--grip-w', '6px');
     document.body.innerHTML = '<div id="app" class="app"></div>';
     const user = userEvent.setup();
 
     render(<DesktopLayoutPresets />);
-    await user.click(screen.getByRole('button', { name: '博主 + 转写 | 对话' }));
+    await user.click(screen.getByRole('button', { name: '博主 · 转写 · 对话' }));
 
-    expect(document.getElementById('app')?.classList.contains('desktop-layout-transcript')).toBe(
-      true,
-    );
+    expect(loadLayout().rightW).toBe(600);
+    expect(document.documentElement.style.getPropertyValue('--right-w')).toBe('600px');
   });
 });
 

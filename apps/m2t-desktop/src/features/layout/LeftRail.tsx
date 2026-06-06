@@ -1,5 +1,6 @@
 import type { Creator } from '../../lib/types';
-import { useMonitorActive } from '../runtime/RuntimeContext';
+import { healthAriaLabel } from '../daemon/daemonHealth';
+import { useRuntime } from '../runtime/RuntimeContext';
 import { CreatorAvatar } from '../creators/CreatorAvatar';
 import { CreatorHoverPopover } from '../creators/CreatorHoverPopover';
 import { isCreatorLive } from '../creators/creatorUtils';
@@ -13,8 +14,13 @@ type Props = {
 };
 
 export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props) {
-  const { expandLeftPanel, setUserMenuOpen, userMenuOpen } = useLayoutStore();
-  const daemonRunning = useMonitorActive();
+  const { expandLeftPanel, setUserMenuOpen, setDaemonMenuOpen, userMenuOpen, daemonMenuOpen } =
+    useLayoutStore();
+  const { runtime } = useRuntime();
+
+  const health = runtime?.health ?? 'stopped';
+  const running = runtime?.daemon.running ?? false;
+  const statusLabel = healthAriaLabel(health, running);
 
   return (
     <div className="left-rail rail" aria-label="折叠快捷栏">
@@ -67,12 +73,15 @@ export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props
           type="button"
           className="rail-daemon"
           id="rail-daemon"
-          title="Daemon · 点击展开侧栏"
-          aria-label="Daemon 状态"
-          onClick={expandLeftPanel}
+          title={`${statusLabel} · 点击查看`}
+          aria-label={statusLabel}
+          aria-haspopup="dialog"
+          aria-expanded={daemonMenuOpen}
+          aria-controls="daemon-monitor-menu"
+          onClick={() => setDaemonMenuOpen(!daemonMenuOpen)}
         >
           <span
-            className={`rail-daemon-dot${daemonRunning ? ' live' : ''}`}
+            className={`rail-daemon-dot health-${health}${running ? ' live' : ''}`}
             id="rail-daemon-dot"
             aria-hidden="true"
           />

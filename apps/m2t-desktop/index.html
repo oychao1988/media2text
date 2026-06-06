@@ -6,6 +6,25 @@
         var t = localStorage.getItem('m2t-desktop-theme');
         document.documentElement.setAttribute('data-theme', t === 'dark' ? 'dark' : 'light');
       } catch (_) {}
+      try {
+        var raw = localStorage.getItem('m2t-desktop-layout');
+        if (raw) {
+          var layout = JSON.parse(raw);
+          var root = document.documentElement;
+          if (typeof layout.sidebarW === 'number') {
+            root.style.setProperty('--sidebar-w', layout.sidebarW + 'px');
+          }
+          if (typeof layout.rightW === 'number') {
+            root.style.setProperty('--right-w', layout.rightW + 'px');
+          }
+          if (typeof layout.agentH === 'number') {
+            root.style.setProperty('--right-agent-h', layout.agentH + 'px');
+          }
+          if (typeof layout.agentHistoryW === 'number') {
+            root.style.setProperty('--agent-history-w', layout.agentHistoryW + 'px');
+          }
+        }
+      } catch (_) {}
     </script>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { M2tSelect } from '../../components/M2tSelect';
 import { ConfigAiPanel, type ConfigAiPanelHandle, llmProvidersForPatch } from './ConfigAiPanel';
 import { requestAgentReload } from '../agent/agentSidecar';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
@@ -399,15 +400,17 @@ export function ConfigForm() {
                 <div className={`field-row${errCls('theme')}`}>
                   <label htmlFor="cfg-theme">界面主题</label>
                   <div className="field-control">
-                    <select
-                      className="config-select"
+                    <M2tSelect
+                      className="config-select m2t-select"
                       id="cfg-theme"
+                      ariaLabel="界面主题"
                       value={draft.theme}
-                      onChange={(e) => patchDraft('theme', e.target.value)}
-                    >
-                      <option value="light">亮色</option>
-                      <option value="dark">暗色</option>
-                    </select>
+                      onChange={(v) => patchDraft('theme', v)}
+                      options={[
+                        { value: 'light', label: '亮色' },
+                        { value: 'dark', label: '暗色' },
+                      ]}
+                    />
                   </div>
                 </div>
                 <p className="hint">切换后立即生效；保存后写入本地配置。</p>
@@ -595,15 +598,17 @@ export function ConfigForm() {
                 <div className={`field-row${errCls('pipelineMode')}`}>
                   <label htmlFor="cfg-pipeline-mode">录制管线</label>
                   <div className="field-control">
-                    <select
+                    <M2tSelect
                       id="cfg-pipeline-mode"
-                      className="config-select"
+                      className="config-select m2t-select"
+                      ariaLabel="录制管线"
                       value={draft.pipelineMode}
-                      onChange={(e) => patchDraft('pipelineMode', e.target.value)}
-                    >
-                      <option value="streaming">流式（实时转写，推荐）</option>
-                      <option value="legacy">传统（录后转写）</option>
-                    </select>
+                      onChange={(v) => patchDraft('pipelineMode', v)}
+                      options={[
+                        { value: 'streaming', label: '流式（实时转写，推荐）' },
+                        { value: 'legacy', label: '传统（录后转写）' },
+                      ]}
+                    />
                   </div>
                 </div>
                 <div className="toggle-row">
@@ -633,33 +638,31 @@ export function ConfigForm() {
                 <div className={`field-row${errCls('streamingSttEngine')}`}>
                   <label htmlFor="cfg-streaming-engine">转写引擎</label>
                   <div className="field-control">
-                    <select
+                    <M2tSelect
                       id="cfg-streaming-engine"
-                      className="config-select"
+                      className="config-select m2t-select"
+                      ariaLabel="转写引擎"
                       value={draft.streamingSttEngine}
-                      onChange={(e) => patchDraft('streamingSttEngine', e.target.value)}
-                    >
-                      <option value="deepgram">Deepgram（云端，推荐）</option>
-                      <option value="whisper">Whisper（本地，实验）</option>
-                      <option value="openai">OpenAI（云端）</option>
-                    </select>
+                      onChange={(v) => patchDraft('streamingSttEngine', v)}
+                      options={[
+                        { value: 'deepgram', label: 'Deepgram（云端，推荐）' },
+                        { value: 'whisper', label: 'Whisper（本地，实验）' },
+                        { value: 'openai', label: 'OpenAI（云端）' },
+                      ]}
+                    />
                   </div>
                 </div>
                 <div className={`field-row${errCls('streamingSttModel')}`}>
                   <label htmlFor="cfg-streaming-model">模型</label>
                   <div className="field-control">
-                    <select
+                    <M2tSelect
                       id="cfg-streaming-model"
-                      className="config-select"
+                      className="config-select m2t-select"
+                      ariaLabel="模型"
                       value={draft.streamingSttModel}
-                      onChange={(e) => patchDraft('streamingSttModel', e.target.value)}
-                    >
-                      {sttModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
+                      onChange={(v) => patchDraft('streamingSttModel', v)}
+                      options={sttModels.map((m) => ({ value: m, label: m }))}
+                    />
                   </div>
                 </div>
                 <div className={`field-row${errCls('flushIntervalSec')}`}>
@@ -719,37 +722,29 @@ export function ConfigForm() {
                 <div className={`field-row${errCls('summarizeProviderId')}`}>
                   <label htmlFor="cfg-summarize-provider">摘要服务</label>
                   <div className="field-control">
-                    <select
+                    <M2tSelect
                       id="cfg-summarize-provider"
-                      className="config-select"
+                      className="config-select m2t-select"
+                      ariaLabel="摘要服务"
                       value={draft.summarizeProviderId || draft.llmProviders[0]?.name || ''}
-                      onChange={(e) => patchSummarizeProvider(e.target.value)}
+                      onChange={patchSummarizeProvider}
                       disabled={draft.llmProviders.length === 0}
-                    >
-                      {draft.llmProviders.map((p) => (
-                        <option key={p.name} value={p.name}>
-                          {p.name}
-                        </option>
-                      ))}
-                    </select>
+                      options={draft.llmProviders.map((p) => ({ value: p.name, label: p.name }))}
+                    />
                   </div>
                 </div>
                 <div className={`field-row${errCls('summarizeModel')}`}>
                   <label htmlFor="cfg-summarize-model-live">摘要模型</label>
                   <div className="field-control">
-                    <select
+                    <M2tSelect
                       id="cfg-summarize-model-live"
-                      className="config-select"
+                      className="config-select m2t-select"
+                      ariaLabel="摘要模型"
                       value={draft.summarizeModel || summarizeModels[0] || ''}
-                      onChange={(e) => patchDraft('summarizeModel', e.target.value)}
+                      onChange={(v) => patchDraft('summarizeModel', v)}
                       disabled={summarizeModels.length === 0}
-                    >
-                      {summarizeModels.map((m) => (
-                        <option key={m} value={m}>
-                          {m}
-                        </option>
-                      ))}
-                    </select>
+                      options={summarizeModels.map((m) => ({ value: m, label: m }))}
+                    />
                   </div>
                 </div>
                 <p className="hint">摘要服务与模型来自「AI」中的 Provider。</p>
@@ -871,18 +866,14 @@ export function ConfigForm() {
                   <div className={`field-row${errCls('agentModel')}`}>
                     <label htmlFor="cfg-agent-model">默认模型</label>
                     <div className="field-control">
-                      <select
+                      <M2tSelect
                         id="cfg-agent-model"
-                        className="config-select"
+                        className="config-select m2t-select"
+                        ariaLabel="默认模型"
                         value={draft.agentModel}
-                        onChange={(e) => patchDraft('agentModel', e.target.value)}
-                      >
-                        {agentModelOptions.map((o) => (
-                          <option key={o.value} value={o.value}>
-                            {o.label}
-                          </option>
-                        ))}
-                      </select>
+                        onChange={(v) => patchDraft('agentModel', v)}
+                        options={agentModelOptions.map((o) => ({ value: o.value, label: o.label }))}
+                      />
                     </div>
                   </div>
                   <div className={`field-row${errCls('maxContextChars')}`}>
