@@ -6,6 +6,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { AgentComposer } from '../agent/AgentComposer';
 import { ViewPlayback } from '../history/ViewPlayback';
+import { DesktopLayoutPresets } from './DesktopLayoutPresets';
 import { initLayoutStore, useLayoutStore } from './useLayoutStore';
 
 const layoutCss = readFileSync(
@@ -40,6 +41,12 @@ describe('ui parity CSS', () => {
     expect(layoutCss).toMatch(/\*::-webkit-scrollbar-thumb[\s\S]*border-radius:\s*999px/);
     expect(layoutCss).toContain('scrollbar-color: var(--scrollbar-thumb)');
   });
+
+  it('includes desktop layout preset styles', () => {
+    expect(layoutCss).toContain('.desktop-layout-transcript');
+    expect(layoutCss).toContain('.transcript-center-slot');
+    expect(layoutCss).toContain('.layout-preset-btn');
+  });
 });
 
 describe('AgentComposer structure', () => {
@@ -60,6 +67,22 @@ describe('AgentComposer structure', () => {
     expect(screen.getByLabelText('Agent 模型')).toBeTruthy();
     expect(screen.getByText('∞')).toBeTruthy();
     expect(screen.getByText('Agent')).toBeTruthy();
+  });
+});
+
+describe('DesktopLayoutPresets', () => {
+  it('applies desktop-layout-transcript class on #app when transcript-chat selected', async () => {
+    localStorage.clear();
+    initLayoutStore();
+    document.body.innerHTML = '<div id="app" class="app"></div>';
+    const user = userEvent.setup();
+
+    render(<DesktopLayoutPresets />);
+    await user.click(screen.getByRole('button', { name: '博主 + 转写 | 对话' }));
+
+    expect(document.getElementById('app')?.classList.contains('desktop-layout-transcript')).toBe(
+      true,
+    );
   });
 });
 

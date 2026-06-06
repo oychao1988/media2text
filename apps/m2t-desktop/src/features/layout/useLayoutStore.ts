@@ -6,8 +6,15 @@ import {
   DEFAULT_LAYOUT,
   loadLayout,
   saveLayout,
+  syncDesktopLayoutPresetClasses,
+  type DesktopLayoutPreset,
   type LayoutPersist,
 } from './layoutConstants';
+import {
+  LIVE_TRANSCRIPT_SELECTION,
+  type TranscriptSelection,
+} from '../transcript/transcriptSelection';
+import { showToast } from '../../lib/toast';
 
 type LayoutStoreState = LayoutPersist & {
   centerView: CenterView;
@@ -15,6 +22,13 @@ type LayoutStoreState = LayoutPersist & {
   userMenuOpen: boolean;
   creatorsLoading: boolean;
   showEmptyCreators: boolean;
+  transcriptSelection: TranscriptSelection;
+};
+
+const DESKTOP_LAYOUT_LABELS: Record<DesktopLayoutPreset, string> = {
+  full: '三栏',
+  'transcript-chat': '四区',
+  'chat-only': '对话',
 };
 
 let state: LayoutStoreState = {
@@ -24,6 +38,7 @@ let state: LayoutStoreState = {
   userMenuOpen: false,
   creatorsLoading: false,
   showEmptyCreators: readEmptyListPreview(),
+  transcriptSelection: LIVE_TRANSCRIPT_SELECTION,
 };
 
 const listeners = new Set<() => void>();
@@ -66,7 +81,9 @@ function patch(partial: Partial<LayoutStoreState>) {
     next.rightCollapsed !== state.rightCollapsed ||
     next.sidebarW !== state.sidebarW ||
     next.rightW !== state.rightW ||
-    next.agentH !== state.agentH;
+    next.agentH !== state.agentH ||
+    next.desktopLayoutPreset !== state.desktopLayoutPreset ||
+    next.agentHistoryW !== state.agentHistoryW;
 
   state = next;
   if (layoutChanged) {
@@ -76,14 +93,21 @@ function patch(partial: Partial<LayoutStoreState>) {
       sidebarW: state.sidebarW,
       rightW: state.rightW,
       agentH: state.agentH,
+      desktopLayoutPreset: state.desktopLayoutPreset,
+      agentHistoryW: state.agentHistoryW,
     });
     applyLayoutCssVars(state);
+    syncDesktopLayoutPresetClasses(state.desktopLayoutPreset);
   }
   emit();
 }
 
 export function initLayoutStore(): void {
   applyLayoutCssVars(state);
+  syncDesktopLayoutPresetClasses(state.desktopLayoutPreset);
+  if (state.desktopLayoutPreset === 'chat-only' && state.rightCollapsed) {
+    patch({ rightCollapsed: false });
+  }
 }
 
 /** Persist pane sizes after drag (skipped during pointermove for smoothness). */
@@ -144,6 +168,23 @@ export function useLayoutStore() {
     patch({ creatorsLoading });
   }, []);
 
+  const setDesktopLayoutPreset = useCallback((desktopLayoutPreset: DesktopLayoutPreset) => {
+    const partial: Partial<LayoutStoreState> = { desktopLayoutPreset };
+    if (desktopLayoutPreset === 'chat-only' && state.rightCollapsed) {
+      partial.rightCollapsed = false;
+    }
+    patch(partial);
+    showToast(`布局：${DESKTOP_LAYOUT_LABELS[desktopLayoutPreset]}`, 'info');
+  }, []);
+
+  const setTranscriptSelection = useCallback((transcriptSelection: TranscriptSelection) => {
+    patch({ transcriptSelection });
+  }, []);
+
+  const setAgentHistoryW = useCallback((agentHistoryW: number) => {
+    patch({ agentHistoryW });
+  }, []);
+
   return {
     ...snap,
     setLeftCollapsed,
@@ -157,6 +198,9 @@ export function useLayoutStore() {
     backToHistory,
     setUserMenuOpen,
     setCreatorsLoading,
-    resetLayout: () => patch({ ...DEFAULT_LAYOUT }),
+    setDesktopLayoutPreset,
+    setTranscriptSelection,
+    setAgentHistoryW,
+    resetLayout: () => patch({ ...DEFAULT_LAYOUT, transcriptSelection: LIVE_TRANSCRIPT_SELECTION }),
   };
 }

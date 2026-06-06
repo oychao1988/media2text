@@ -8,12 +8,14 @@ import { ViewPlayback } from '../history/ViewPlayback';
 import { useLiveStatus } from '../live/useLiveStatus';
 import { AgentPanel } from '../agent/AgentPanel';
 import { TranscriptPane } from '../transcript/TranscriptPane';
+import { TranscriptSessionSelect } from '../transcript/TranscriptSessionSelect';
 import type { LiveSessionSummary } from '../../lib/types';
 import { ViewConfig } from '../views/ViewConfig';
 import { ViewHistory } from '../views/ViewHistory';
 import { ViewLive } from '../views/ViewLive';
 import { ViewManage } from '../views/ViewManage';
 import { CenterToolbar } from './CenterToolbar';
+import { DesktopLayoutPresets } from './DesktopLayoutPresets';
 import { LeftRail } from './LeftRail';
 import { RightRail } from './RightRail';
 import { SidePanelHeader } from './SidePanelHeader';
@@ -43,6 +45,8 @@ export function AppShell() {
     setUserMenuOpen,
     userMenuOpen,
     showEmptyCreators,
+    desktopLayoutPreset,
+    transcriptSelection,
   } = useLayoutStore();
 
   const {
@@ -71,6 +75,10 @@ export function AppShell() {
   const resize = useColumnResize();
   const rowResize = useRowResize();
 
+  const isTranscriptChat = desktopLayoutPreset === 'transcript-chat';
+  const isChatOnly = desktopLayoutPreset === 'chat-only';
+  const showTranscriptPane = !isChatOnly;
+
   const appClass = [
     'app',
     leftCollapsed ? 'left-collapsed' : '',
@@ -90,21 +98,66 @@ export function AppShell() {
     (centerView === 'live' || centerView === 'history') &&
     Boolean(selected?.active_session_id);
 
+  const historySessionRow = useMemo(() => {
+    if (transcriptSelection.mode !== 'history' || !selectedId) return null;
+    return {
+      creatorId: selectedId,
+      kind: transcriptSelection.kind,
+      itemId: transcriptSelection.itemId,
+    };
+  }, [selectedId, transcriptSelection]);
+
   const transcriptSessionId = useMemo(() => {
+    if (historySessionRow) {
+      return historySessionRow.kind === 'live' ? historySessionRow.itemId : null;
+    }
     if (centerView === 'playback' && playbackSession) return playbackSession.session_id;
     if (centerView === 'live' || centerTab === 'live') return selected?.active_session_id ?? null;
     return null;
-  }, [centerView, centerTab, playbackSession, selected]);
+  }, [centerView, centerTab, historySessionRow, playbackSession, selected]);
 
   const summaryPath = useMemo(() => {
+    if (historySessionRow && transcriptSelection.mode === 'history') {
+      return null;
+    }
     if (centerView === 'playback' && playbackSession) return playbackSession.summary_path;
     return null;
-  }, [centerView, playbackSession]);
+  }, [centerView, historySessionRow, playbackSession, transcriptSelection.mode]);
 
   const transcriptPath = useMemo(() => {
+    if (historySessionRow && transcriptSelection.mode === 'history') {
+      return null;
+    }
     if (centerView === 'playback' && playbackSession) return playbackSession.transcript_path;
     return null;
-  }, [centerView, playbackSession]);
+  }, [centerView, historySessionRow, playbackSession, transcriptSelection.mode]);
+
+  const playbackItem = useMemo(() => {
+    if (historySessionRow) {
+      return {
+        creatorId: historySessionRow.creatorId,
+        kind: historySessionRow.kind,
+        itemId: historySessionRow.itemId,
+        hasTranscript: true,
+        hasSummary: true,
+      };
+    }
+    if (centerView === 'playback' && playbackSession && selectedId) {
+      return {
+        creatorId: selectedId,
+        kind: playbackSession.kind,
+        itemId: playbackSession.session_id,
+        hasTranscript: playbackSession.has_transcript,
+        hasSummary: playbackSession.has_summary,
+      };
+    }
+    return null;
+  }, [centerView, historySessionRow, playbackSession, selectedId]);
+
+  const transcriptMode =
+    historySessionRow || centerView === 'playback' ? ('playback' as const) : ('live' as const);
+
+  const rightPanelTitle = isTranscriptChat ? 'Agent' : '内容';
 
   const listLoading = previewLoading || creatorsLoading;
   const listEmpty = !listLoading && !creatorsError && (showEmptyCreators || creators.length === 0);
@@ -130,6 +183,26 @@ export function AppShell() {
     },
     [centerView, creators, openCenterView, setSelectedId],
   );
+
+  const transcriptPaneKey = historySessionRow
+    ? `history-${historySessionRow.kind}-${historySessionRow.itemId}`
+    : `live-${transcriptSessionId ?? 'none'}`;
+
+  const transcriptPane = showTranscriptPane ? (
+    <TranscriptPane
+      key={transcriptPaneKey}
+      sessionId={transcriptSessionId}
+      summaryPath={summaryPath}
+      transcriptPath={transcriptPath}
+      mode={transcriptMode}
+      playbackTime={playbackTime}
+      playbackItem={playbackItem}
+      onSummaryUpdated={(path) => {
+        if (!playbackSession) return;
+        setPlaybackSession({ ...playbackSession, has_summary: Boolean(path), summary_path: path });
+      }}
+    />
+  ) : null;
 
   return (
     <div className={appClass} id="app">
@@ -204,44 +277,64 @@ export function AppShell() {
       />
 
       <main className="center" aria-label="主展示区">
-        {showCreatorContext ? (
-          <CenterToolbar
-            creatorName={selected?.display_name ?? ''}
-            badge={badge.text}
-            badgeClass={badge.className}
-            hideTabs={centerView === 'playback'}
-          />
+        {isTranscriptChat && showTranscriptPane ? (
+          <div className="transcript-center-slot" id="transcript-center-slot">
+            <SidePanelHeader
+              title="转写"
+              side="right"
+              collapseLabel="折叠右栏"
+              onCollapse={() => setRightCollapsed(true)}
+              actions={
+                <>
+                  <TranscriptSessionSelect />
+                  <DesktopLayoutPresets />
+                </>
+              }
+            />
+            {transcriptPane}
+          </div>
         ) : (
-          <CenterToolbar creatorName="" badge="" badgeClass="" hideTabs={false} />
-        )}
-        <div className="center-body" id="center-body">
-          {centerView === 'config' ? (
-            <ViewConfig />
-          ) : centerView === 'manage' ? (
-            <ViewManage />
-          ) : (
-            <>
-              <ViewLive
-                active={activeCreatorTab === 'live' && centerView !== 'playback'}
-                keepStream={keepLiveStream}
-                creatorId={selectedId}
-                showRecordBanner={showRecordBanner}
-                onRecordingStarted={() => void refreshLive()}
-              />
-              <ViewHistory
-                active={activeCreatorTab === 'history' && centerView !== 'playback'}
-                creatorId={selectedId}
-                onSessionSelect={handleHistorySessionSelect}
-              />
-              <ViewPlayback
-                active={centerView === 'playback'}
+          <>
+            {showCreatorContext ? (
+              <CenterToolbar
                 creatorName={selected?.display_name ?? ''}
-                session={playbackSession}
-                onTimeUpdate={setPlaybackTime}
+                badge={badge.text}
+                badgeClass={badge.className}
+                hideTabs={centerView === 'playback'}
               />
-            </>
-          )}
-        </div>
+            ) : (
+              <CenterToolbar creatorName="" badge="" badgeClass="" hideTabs={false} />
+            )}
+            <div className="center-body" id="center-body">
+              {centerView === 'config' ? (
+                <ViewConfig />
+              ) : centerView === 'manage' ? (
+                <ViewManage />
+              ) : (
+                <>
+                  <ViewLive
+                    active={activeCreatorTab === 'live' && centerView !== 'playback'}
+                    keepStream={keepLiveStream}
+                    creatorId={selectedId}
+                    showRecordBanner={showRecordBanner}
+                    onRecordingStarted={() => void refreshLive()}
+                  />
+                  <ViewHistory
+                    active={activeCreatorTab === 'history' && centerView !== 'playback'}
+                    creatorId={selectedId}
+                    onSessionSelect={handleHistorySessionSelect}
+                  />
+                  <ViewPlayback
+                    active={centerView === 'playback'}
+                    creatorName={selected?.display_name ?? ''}
+                    session={playbackSession}
+                    onTimeUpdate={setPlaybackTime}
+                  />
+                </>
+              )}
+            </div>
+          </>
+        )}
       </main>
 
       <div
@@ -260,48 +353,37 @@ export function AppShell() {
         <RightRail />
         <div className="right-content right-split">
           <SidePanelHeader
-            title="内容"
+            title={rightPanelTitle}
             side="right"
             collapseLabel="折叠右栏"
             onCollapse={() => setRightCollapsed(true)}
-          />
-          <TranscriptPane
-            sessionId={transcriptSessionId}
-            summaryPath={summaryPath}
-            transcriptPath={transcriptPath}
-            mode={centerView === 'playback' ? 'playback' : 'live'}
-            playbackTime={playbackTime}
-            playbackItem={
-              centerView === 'playback' && playbackSession && selectedId
-                ? {
-                    creatorId: selectedId,
-                    kind: playbackSession.kind,
-                    itemId: playbackSession.session_id,
-                    hasTranscript: playbackSession.has_transcript,
-                    hasSummary: playbackSession.has_summary,
-                  }
-                : null
+            actions={
+              !isTranscriptChat ? (
+                <>
+                  {showTranscriptPane ? <TranscriptSessionSelect /> : null}
+                  <DesktopLayoutPresets />
+                </>
+              ) : null
             }
-            onSummaryUpdated={(path) => {
-              if (!playbackSession) return;
-              setPlaybackSession({ ...playbackSession, has_summary: Boolean(path), summary_path: path });
-            }}
           />
-          <div
-            className="row-resize"
-            id="resize-right-split"
-            role="separator"
-            aria-orientation="horizontal"
-            aria-label="调整 Agent 区域高度"
-            tabIndex={0}
-            onPointerDown={rowResize.onPointerDown}
-            onPointerMove={rowResize.onPointerMove}
-            onPointerUp={rowResize.onPointerUp}
-          />
+          {!isTranscriptChat && showTranscriptPane ? transcriptPane : null}
+          {!isChatOnly ? (
+            <div
+              className="row-resize"
+              id="resize-right-split"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="调整 Agent 区域高度"
+              tabIndex={0}
+              onPointerDown={rowResize.onPointerDown}
+              onPointerMove={rowResize.onPointerMove}
+              onPointerUp={rowResize.onPointerUp}
+            />
+          ) : null}
           <AgentPanel
             creatorId={selectedId}
             sessionId={transcriptSessionId}
-            playbackMode={centerView === 'playback'}
+            playbackMode={transcriptMode === 'playback'}
           />
         </div>
       </aside>
