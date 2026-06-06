@@ -35,6 +35,7 @@ export type ThreadRow = {
   title: string | null;
   provider_name: string | null;
   model: string;
+  updated_at?: string | null;
 };
 
 export type ChatProvider = {

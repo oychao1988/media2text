@@ -382,7 +382,17 @@ export function AppShell() {
           ) : null}
           <AgentPanel
             creatorId={selectedId}
-            sessionId={transcriptSessionId}
+            sessionContext={{
+              sessionId: transcriptSessionId,
+              sessionKind: historySessionRow
+                ? historySessionRow.kind
+                : transcriptSelection.mode === 'live'
+                  ? 'live'
+                  : null,
+              transcriptPath,
+              summaryPath,
+              contextMode: 'both',
+            }}
             playbackMode={transcriptMode === 'playback'}
           />
         </div>

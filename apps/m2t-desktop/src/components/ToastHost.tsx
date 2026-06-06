@@ -14,6 +14,18 @@ export function ToastHost() {
       id="toast"
     >
       <span>{item.message}</span>
+      {item.actionLabel && item.onAction ? (
+        <button
+          type="button"
+          className="toast-action"
+          onClick={() => {
+            item.onAction?.();
+            dismissToast(item.id);
+          }}
+        >
+          {item.actionLabel}
+        </button>
+      ) : null}
       <button
         type="button"
         className="toast-dismiss"

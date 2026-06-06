@@ -4,6 +4,8 @@ export type ToastItem = {
   id: number;
   message: string;
   kind: ToastKind;
+  actionLabel?: string;
+  onAction?: () => void;
 };
 
 type Listener = (item: ToastItem | null) => void;
@@ -28,12 +30,27 @@ export function subscribeToasts(listener: Listener): () => void {
 }
 
 export function showToast(message: string, kind: ToastKind = 'info', durationMs = 4500): void {
+  showToastWithAction(message, kind, durationMs);
+}
+
+export function showToastWithAction(
+  message: string,
+  kind: ToastKind = 'info',
+  durationMs = 4500,
+  action?: { label: string; onAction: () => void },
+): void {
   if (hideTimer !== undefined) {
     window.clearTimeout(hideTimer);
     hideTimer = undefined;
   }
   const id = nextId++;
-  current = { id, message, kind };
+  current = {
+    id,
+    message,
+    kind,
+    actionLabel: action?.label,
+    onAction: action?.onAction,
+  };
   emit();
   hideTimer = window.setTimeout(() => {
     if (current?.id === id) {
