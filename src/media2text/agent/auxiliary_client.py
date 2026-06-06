@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from media2text.core.config import AppConfig
 
 
