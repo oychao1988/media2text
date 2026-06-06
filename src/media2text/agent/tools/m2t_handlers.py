@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from media2text.agent.profile_resolver import AgentProfileContext
+
 
 from media2text.api.services import recording as recording_svc
 from media2text.api.services import runtime as runtime_svc
@@ -30,6 +34,7 @@ class ToolContext:
     supervisor: Any | None = None
     session_id: str | None = None
     display_thread_id: str | None = None
+    profile: AgentProfileContext | dict[str, Any] | None = None
 
 
 def _ok(data: Any = None) -> dict[str, Any]:

@@ -5,6 +5,8 @@ import {
   THREAD_GROUP_LABELS,
   type ThreadTimeGroup,
 } from './threadGroups';
+import { isGlobalThread } from './agentThreadSelect';
+import type { HistoryFilter } from './useAgentThreads';
 import type { ThreadRow } from './types';
 
 const GROUP_ORDER: ThreadTimeGroup[] = ['today', 'yesterday', 'week', 'month'];
@@ -12,6 +14,9 @@ const GROUP_ORDER: ThreadTimeGroup[] = ['today', 'yesterday', 'week', 'month'];
 type Props = {
   threads: ThreadRow[];
   activeThreadId: string | null;
+  historyFilter: HistoryFilter;
+  onHistoryFilterChange: (filter: HistoryFilter) => void;
+  onNewGlobalThread: () => void;
   menuOpenThreadId?: string | null;
   editingThreadId?: string | null;
   onSelectThread: (threadId: string) => void;
@@ -79,6 +84,9 @@ function ThreadTitleEditor({
 export function AgentHistorySidebar({
   threads,
   activeThreadId,
+  historyFilter,
+  onHistoryFilterChange,
+  onNewGlobalThread,
   menuOpenThreadId = null,
   editingThreadId = null,
   onSelectThread,
@@ -101,6 +109,35 @@ export function AgentHistorySidebar({
 
   return (
     <aside className="agent-history" id="agent-history" aria-label="历史会话">
+      <div className="agent-history-toolbar" id="agent-history-toolbar">
+        <div className="agent-history-filter" role="group" aria-label="历史筛选">
+          <button
+            type="button"
+            className={`agent-history-filter-btn${historyFilter === 'all' ? ' active' : ''}`}
+            aria-pressed={historyFilter === 'all'}
+            onClick={() => onHistoryFilterChange('all')}
+          >
+            全部
+          </button>
+          <button
+            type="button"
+            className={`agent-history-filter-btn${historyFilter === 'creator' ? ' active' : ''}`}
+            aria-pressed={historyFilter === 'creator'}
+            onClick={() => onHistoryFilterChange('creator')}
+          >
+            当前博主
+          </button>
+        </div>
+        <button
+          type="button"
+          className="agent-history-new-global"
+          id="btn-agent-new-global"
+          title="新建全局会话"
+          onClick={onNewGlobalThread}
+        >
+          新建全局会话
+        </button>
+      </div>
       <input
         className="agent-history-search"
         id="agent-history-search"
@@ -157,7 +194,14 @@ export function AgentHistorySidebar({
                         />
                       ) : (
                         <>
-                          <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
+                          <span className="agent-thread-title-row">
+                            <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
+                            {isGlobalThread(thread.creator_id) ? (
+                              <span className="agent-thread-badge agent-thread-badge--global">
+                                全局
+                              </span>
+                            ) : null}
+                          </span>
                           {meta ? <span className="agent-thread-meta">{meta}</span> : null}
                         </>
                       )}

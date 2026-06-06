@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from media2text.api.cors import install_desktop_cors
 from media2text.api.routes import (
     agent,
+    agent_profiles,
     agent_stream,
     auth,
     chat,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     api.include_router(post_process.router)
     api.include_router(monitor_tasks.router)
     api.include_router(agent.router)
+    api.include_router(agent_profiles.router)
     api.include_router(agent_stream.router)
     api.include_router(chat.router)
     api.include_router(events.router)

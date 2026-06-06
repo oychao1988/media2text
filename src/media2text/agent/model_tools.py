@@ -7,8 +7,13 @@ from dataclasses import asdict
 from typing import Any
 
 from media2text.agent.hermes_state import SessionDB
-from media2text.agent.memory_store import MemorySafetyError, MemoryTarget, read_file, write_file
-from media2text.agent.profile_resolver import resolve_profile
+from media2text.agent.memory_store import (
+    MemorySafetyError,
+    MemoryTarget,
+    read_file_for_profile,
+    write_file_for_profile,
+)
+from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.skills_index import handle_skill_view, handle_skills_list
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
@@ -54,9 +59,11 @@ def handle_function_call(
         if tool.kind == "hermes" and name == "session_search":
             return _handle_session_search(params, ctx)
         if tool.kind == "hermes" and name == "skills_list":
-            return handle_skills_list(resolve_profile(ctx.cfg))
+            profile = ctx.profile or resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
+            return handle_skills_list(profile)
         if tool.kind == "hermes" and name == "skill_view":
-            return handle_skill_view(params, profile_ctx=resolve_profile(ctx.cfg))
+            profile = ctx.profile or resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
+            return handle_skill_view(params, profile_ctx=profile)
         result = tool.handler(ctx, **params)
     except AgentToolError as exc:
         return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}
@@ -87,12 +94,19 @@ def _resolve_target(params: dict[str, Any]) -> MemoryTarget:
     raise AgentToolError("target must be memory, user, or soul")
 
 
+def _active_profile(ctx: ToolContext) -> AgentProfileContext:
+    if isinstance(ctx.profile, AgentProfileContext):
+        return ctx.profile
+    return resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
+
+
 def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     action = str(params.get("action") or "").lower()
     target = _resolve_target(params)
+    profile = _active_profile(ctx)
 
     if action == "read":
-        content = read_file(ctx.cfg, target)
+        content = read_file_for_profile(profile, target)
         return {"ok": True, "data": {"target": target, "content": content}}
 
     if action in ("write", "append"):
@@ -105,8 +119,11 @@ def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
             content = f"- {key}: {val}\n"
         text = str(content or "")
         mode = "append" if action == "append" else "replace"
-        meta = write_file(ctx.cfg, target, text, mode=mode)
-        return {"ok": True, "data": {**meta, "content": read_file(ctx.cfg, target)}}
+        meta = write_file_for_profile(ctx.cfg, profile, target, text, mode=mode)
+        return {
+            "ok": True,
+            "data": {**meta, "content": read_file_for_profile(profile, target)},
+        }
 
     raise AgentToolError("action must be read, write, or append")
 

@@ -30,7 +30,7 @@ export type ActiveTurn = {
 
 export type ThreadRow = {
   id: string;
-  creator_id: string;
+  creator_id: string | null;
   session_id: string | null;
   title: string | null;
   provider_name: string | null;

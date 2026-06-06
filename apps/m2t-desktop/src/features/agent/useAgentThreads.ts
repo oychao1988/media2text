@@ -2,14 +2,24 @@ import { useCallback, useEffect, useState } from 'react';
 import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import type { ThreadRow } from './types';
 
-export function useAgentThreads() {
+export type HistoryFilter = 'all' | 'creator';
+
+export function useAgentThreads(selectedCreatorId: string | null) {
   const [threads, setThreads] = useState<ThreadRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<HistoryFilter>('all');
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<{ ok: boolean; threads: ThreadRow[] }>('/api/agent/threads', true);
+      const query =
+        historyFilter === 'creator' && selectedCreatorId
+          ? `?creatorId=${encodeURIComponent(selectedCreatorId)}`
+          : '';
+      const res = await apiGet<{ ok: boolean; threads: ThreadRow[] }>(
+        `/api/agent/threads${query}`,
+        true,
+      );
       const rows = (res.threads ?? []).slice().sort((a, b) => {
         const ta = Date.parse(a.updated_at ?? '') || 0;
         const tb = Date.parse(b.updated_at ?? '') || 0;
@@ -21,7 +31,7 @@ export function useAgentThreads() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [historyFilter, selectedCreatorId]);
 
   useEffect(() => {
     void refresh();
@@ -41,6 +51,16 @@ export function useAgentThreads() {
     },
     [refresh],
   );
+
+  const createGlobalThread = useCallback(async (): Promise<ThreadRow | null> => {
+    const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/agent/threads', {
+      title: '全局 Agent',
+      model: 'auto',
+      contextMode: 'both',
+    });
+    await refresh();
+    return res.thread ?? null;
+  }, [refresh]);
 
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
@@ -68,8 +88,11 @@ export function useAgentThreads() {
   return {
     threads,
     loading,
+    historyFilter,
+    setHistoryFilter,
     refresh,
     createThread,
+    createGlobalThread,
     renameThread,
     deleteThread,
     patchThreadSession,

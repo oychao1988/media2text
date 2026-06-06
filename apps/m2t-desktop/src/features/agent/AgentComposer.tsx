@@ -4,6 +4,7 @@ import { useAutoResizeTextarea } from './useAutoResizeTextarea';
 
 type AgentComposerProps = {
   ready: boolean;
+  blocked?: boolean;
   model: string;
   providerModels: string[];
   onModelChange: (model: string) => void;
@@ -47,6 +48,7 @@ function SendIcon() {
 
 export function AgentComposer({
   ready,
+  blocked = false,
   model,
   providerModels,
   onModelChange,
@@ -57,7 +59,7 @@ export function AgentComposer({
 
   const submit = () => {
     const trimmed = text.trim();
-    if (!trimmed || !ready) return;
+    if (!trimmed || !ready || blocked) return;
     onSend(trimmed);
     setText('');
   };
@@ -66,6 +68,14 @@ export function AgentComposer({
     { value: 'auto', label: 'Auto' },
     ...providerModels.map((m) => ({ value: m, label: m })),
   ];
+
+  const placeholder = blocked
+    ? '博主不一致，无法发送…'
+    : ready
+      ? '继续提问…'
+      : 'Agent 启动中…';
+
+  const controlsDisabled = !ready || blocked;
 
   return (
     <form
@@ -81,10 +91,10 @@ export function AgentComposer({
         className="agent-composer-input"
         rows={1}
         id="agent-input"
-        placeholder={ready ? '继续提问…' : 'Agent 启动中…'}
+        placeholder={placeholder}
         aria-label="Agent 输入"
         value={text}
-        disabled={!ready}
+        disabled={!ready || blocked}
         onChange={(e) => setText(e.target.value)}
         onKeyDown={(e) => {
           if (e.key === 'Enter' && !e.shiftKey) {
@@ -100,7 +110,7 @@ export function AgentComposer({
             className="agent-mode-pill"
             id="agent-mode-pill"
             title="Agent 模式"
-            disabled={!ready}
+            disabled={controlsDisabled}
           >
             <span className="agent-mode-icon" aria-hidden="true">
               ∞
@@ -116,7 +126,7 @@ export function AgentComposer({
               className="agent-model-select m2t-select m2t-select--ghost"
               ariaLabel="Agent 模型"
               value={model}
-              disabled={!ready}
+              disabled={controlsDisabled}
               options={modelOptions}
               onChange={onModelChange}
             />
@@ -129,7 +139,7 @@ export function AgentComposer({
             id="agent-ctx-btn"
             title="上下文"
             aria-label="上下文"
-            disabled={!ready}
+            disabled={controlsDisabled}
           >
             ◎
           </button>
@@ -139,7 +149,7 @@ export function AgentComposer({
             id="agent-attach-btn"
             title="附件"
             aria-label="附件"
-            disabled={!ready}
+            disabled={controlsDisabled}
           >
             <AttachIcon />
           </button>
@@ -149,7 +159,7 @@ export function AgentComposer({
             id="btn-agent-send"
             title="发送"
             aria-label="发送"
-            disabled={!ready || !text.trim()}
+            disabled={controlsDisabled || !text.trim()}
           >
             <SendIcon />
           </button>

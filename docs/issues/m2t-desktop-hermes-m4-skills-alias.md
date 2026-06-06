@@ -12,27 +12,27 @@ M3 完成记忆与压缩。M4 落地 **agentskills.io 三级披露**（`skills_l
 
 ### Task 1 — Skills 索引
 
-- [ ] `build_skills_index()` 扫描 `packages/agent-skills/`（M4 仅全局根；博主根 M5a 扩展）
-- [ ] stable tier 仅 Level-0 name + description；全文经 `skill_view` 按需
-- [ ] 废弃 v1 sidecar startup 全量 `SKILL.md` 注入
+- [x] `build_skills_index()` 扫描 `packages/agent-skills/`（M4 仅全局根；博主根 M5a 扩展）
+- [x] stable tier 仅 Level-0 name + description；全文经 `skill_view` 按需
+- [x] 废弃 v1 sidecar startup 全量 `SKILL.md` 注入
 
 ### Task 2 — skill_view 路径
 
-- [ ] `skill_view(name)` / `skill_view(name, path)` 读 references/
-- [ ] 单测：stable prompt token 不含完整 SKILL 正文
+- [x] `skill_view(name)` / `skill_view(name, path)` 读 references/
+- [x] 单测：stable prompt token 不含完整 SKILL 正文
 
 ### Task 3 — API 兼容
 
-- [ ] 全部 chat routes alias 测试覆盖；OpenAPI/README 标记 deprecated
-- [ ] `media2text` CLI help 指向 `/api/agent/*`
+- [x] 全部 chat routes alias 测试覆盖；OpenAPI/README 标记 deprecated
+- [x] `media2text` CLI help 指向 `/api/agent/*`
 
 ### Task 4 — 文档
 
-- [ ] 更新 [m2t-desktop-design](../superpowers/specs/2026-06-04-m2t-desktop-design.md) §4.6 指向 Hermes 规格
+- [x] 更新 [m2t-desktop-design](../superpowers/specs/2026-06-04-m2t-desktop-design.md) §4.6 指向 Hermes 规格
 
 ### 测试
 
-- [ ] `pytest tests/unit/test_agent_skills.py -v -m agent`
+- [x] `pytest tests/unit/test_agent_skills.py -v -m agent`
 
 ## 验证命令
 

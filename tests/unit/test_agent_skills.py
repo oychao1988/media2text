@@ -77,28 +77,25 @@ def test_skill_view_reference_path(skills_tree) -> None:
     assert "/api/agent/threads" in payload["data"]["content"]
 
 
-def test_skills_list_tool_via_model_tools(skills_tree, tmp_path, monkeypatch) -> None:
+def test_skills_list_tool_via_model_tools(skills_tree, tmp_path) -> None:
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
-    ctx = ToolContext(cfg=cfg, conn=None, creator_id=None)
     profile = {"skills_roots": [str(skills_tree)]}
-    monkeypatch.setattr(
-        "media2text.agent.model_tools.resolve_profile",
-        lambda _cfg: profile,
-    )
+    ctx = ToolContext(cfg=cfg, conn=None, creator_id=None, profile=profile)
     result = handle_function_call("skills_list", "{}", ctx)
     assert result["ok"] is True
     names = [s["name"] for s in result["data"]["skills"]]
     assert "demo-skill" in names
 
 
-def test_skill_view_tool_missing_name(tmp_path, monkeypatch) -> None:
+def test_skill_view_tool_missing_name(tmp_path) -> None:
     from media2text.agent.skills_index import default_skills_root
 
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
-    ctx = ToolContext(cfg=cfg, conn=None, creator_id=None)
-    monkeypatch.setattr(
-        "media2text.agent.model_tools.resolve_profile",
-        lambda _cfg: {"skills_roots": [str(default_skills_root())]},
+    ctx = ToolContext(
+        cfg=cfg,
+        conn=None,
+        creator_id=None,
+        profile={"skills_roots": [str(default_skills_root())]},
     )
     result = handle_function_call(
         "skill_view",
