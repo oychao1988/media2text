@@ -166,7 +166,7 @@
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
 |------|--------|-----|------|------|
-| 1 | [#178](https://github.com/oychao1988/media2text/issues/178) | （本 PR） | [m2t-desktop-transcript-session-monitor-ux.md](./m2t-desktop-transcript-session-monitor-ux.md) | `issue-178-m2t-desktop-transcript-session-monitor-ux` |
+| 1 | [#178](https://github.com/oychao1988/media2text/issues/178) | [#179](https://github.com/oychao1988/media2text/pull/179) | [m2t-desktop-transcript-session-monitor-ux.md](./m2t-desktop-transcript-session-monitor-ux.md) | `issue-178-m2t-desktop-transcript-session-monitor-ux` |
 
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 

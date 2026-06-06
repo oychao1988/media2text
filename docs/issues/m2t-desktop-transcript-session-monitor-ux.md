@@ -63,5 +63,5 @@ pnpm --filter m2t-desktop tauri dev
 
 ## 实现备注
 
-- GitHub Issue: [#178](https://github.com/oychao1988/media2text/issues/178)
+- GitHub Issue: [#178](https://github.com/oychao1988/media2text/issues/178) · PR: [#179](https://github.com/oychao1988/media2text/pull/179)
 - 分支：`issue-178-m2t-desktop-transcript-session-monitor-ux`
