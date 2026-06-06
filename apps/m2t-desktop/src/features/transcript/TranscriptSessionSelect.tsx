@@ -22,9 +22,13 @@ function selectionKey(sel: TranscriptSelection): string {
 }
 
 function rowLabel(row: SessionListItem): string {
-  const base = row.display_label || row.item_id;
+  const base = row.display_label || row.title || row.item_id;
   if (row.kind === 'vod') return `${base} · 作品`;
   return `${base} · 直播`;
+}
+
+function liveCurrentLabel(isLive: boolean): string {
+  return isLive ? '当前 · 录制中' : '当前 · 等待录制';
 }
 
 export function TranscriptSessionSelect() {
@@ -62,18 +66,17 @@ export function TranscriptSessionSelect() {
   }, [selectedId, setTranscriptSelection]);
 
   const activeSessionId = selected?.active_session_id ?? null;
+  const isLiveNow = Boolean(selected?.is_live || selected?.status_light === 'green');
 
   const options = useMemo(() => {
     const rows: { key: string; label: string; selection: TranscriptSelection; hasTranscript: boolean }[] =
       [];
-    if (activeSessionId) {
-      rows.push({
-        key: 'live',
-        label: '当前直播',
-        selection: LIVE_TRANSCRIPT_SELECTION,
-        hasTranscript: true,
-      });
-    }
+    rows.push({
+      key: 'live',
+      label: liveCurrentLabel(isLiveNow && Boolean(activeSessionId)),
+      selection: LIVE_TRANSCRIPT_SELECTION,
+      hasTranscript: true,
+    });
     for (const row of sessions) {
       if (row.kind === 'live' && row.item_id === activeSessionId) continue;
       rows.push({
@@ -84,7 +87,7 @@ export function TranscriptSessionSelect() {
       });
     }
     return rows;
-  }, [activeSessionId, sessions]);
+  }, [activeSessionId, isLiveNow, sessions]);
 
   const currentKey = selectionKey(transcriptSelection);
 
@@ -104,20 +107,22 @@ export function TranscriptSessionSelect() {
   if (!selectedId) return null;
 
   return (
-    <select
-      id="transcript-session-select"
-      className="transcript-session-select"
-      aria-label="转写场次"
-      disabled={loading}
-      value={options.some((o) => o.key === currentKey) ? currentKey : 'live'}
-      onChange={(e) => onChange(e.target.value)}
-    >
-      {options.map((opt) => (
-        <option key={opt.key} value={opt.key}>
-          {opt.label}
-          {!opt.hasTranscript && opt.selection.mode === 'history' ? '（无转写）' : ''}
-        </option>
-      ))}
-    </select>
+    <label className="transcript-session-wrap" title="历史场次">
+      <select
+        id="transcript-session-select"
+        className="transcript-session-select"
+        aria-label="选择历史场次"
+        disabled={loading}
+        value={options.some((o) => o.key === currentKey) ? currentKey : 'live'}
+        onChange={(e) => onChange(e.target.value)}
+      >
+        {options.map((opt) => (
+          <option key={opt.key} value={opt.key}>
+            {opt.label}
+            {!opt.hasTranscript && opt.selection.mode === 'history' ? '（无转写）' : ''}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }

@@ -72,6 +72,7 @@ describe('AgentPanel structure (A1/A7)', () => {
   it('includes agent multi-tab CSS tokens', () => {
     expect(layoutCss).toContain('.agent-tabs-bar');
     expect(layoutCss).toContain('.agent-history');
+    expect(layoutCss).toContain('.agent-header-icon-btn');
     expect(layoutCss).toContain('.agent-pane.agent-history-collapsed');
     expect(layoutCss).toContain('.toast-action');
   });

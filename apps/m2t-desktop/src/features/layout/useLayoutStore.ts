@@ -26,9 +26,9 @@ type LayoutStoreState = LayoutPersist & {
 };
 
 const DESKTOP_LAYOUT_LABELS: Record<DesktopLayoutPreset, string> = {
-  full: '三栏',
-  'transcript-chat': '四区',
-  'chat-only': '对话',
+  full: '博主 · 播放 · 转写 · 对话',
+  'transcript-chat': '博主 · 转写 · 对话',
+  'chat-only': '博主 · 对话',
 };
 
 let state: LayoutStoreState = {
@@ -112,7 +112,7 @@ export function initLayoutStore(): void {
 
 /** Persist pane sizes after drag (skipped during pointermove for smoothness). */
 export function commitLayoutSizes(
-  sizes: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH'>>,
+  sizes: Partial<Pick<LayoutPersist, 'sidebarW' | 'rightW' | 'agentH' | 'agentHistoryW'>>,
 ): void {
   patch(sizes);
 }

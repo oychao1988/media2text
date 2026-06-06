@@ -12,11 +12,23 @@ const GROUP_ORDER: ThreadTimeGroup[] = ['today', 'yesterday', 'week', 'month'];
 type Props = {
   threads: ThreadRow[];
   activeThreadId: string | null;
+  menuOpenThreadId?: string | null;
   onSelectThread: (threadId: string) => void;
   onOpenMenu: (threadId: string, anchor: HTMLElement) => void;
 };
 
-export function AgentHistorySidebar({ threads, activeThreadId, onSelectThread, onOpenMenu }: Props) {
+function threadMeta(thread: ThreadRow): string | null {
+  if (thread.model && thread.model !== 'auto') return thread.model;
+  return null;
+}
+
+export function AgentHistorySidebar({
+  threads,
+  activeThreadId,
+  menuOpenThreadId = null,
+  onSelectThread,
+  onOpenMenu,
+}: Props) {
   const [search, setSearch] = useState('');
   const [weekExpanded, setWeekExpanded] = useState(false);
 
@@ -52,38 +64,51 @@ export function AgentHistorySidebar({ threads, activeThreadId, onSelectThread, o
           return (
             <div key={groupKey} className="agent-thread-group" data-group={groupKey}>
               <div className="agent-thread-group-title">{THREAD_GROUP_LABELS[groupKey]}</div>
-              {visible.map((thread) => (
-                <div
-                  key={thread.id}
-                  className={`agent-thread-item${thread.id === activeThreadId ? ' selected' : ''}`}
-                  role="listitem"
-                  data-thread-id={thread.id}
-                >
-                  <button
-                    type="button"
-                    className="agent-thread-main"
+              {visible.map((thread) => {
+                const meta = threadMeta(thread);
+                const selected = thread.id === activeThreadId;
+                const menuOpen = thread.id === menuOpenThreadId;
+                return (
+                  <div
+                    key={thread.id}
+                    className={[
+                      'agent-thread-item',
+                      selected ? 'selected' : '',
+                      menuOpen ? 'menu-open' : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' ')}
+                    role="listitem"
                     data-thread-id={thread.id}
-                    onClick={() => onSelectThread(thread.id)}
                   >
                     <span className="agent-thread-icon" aria-hidden="true">
-                      ◆
+                      ✓
                     </span>
-                    <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
-                  </button>
-                  <button
-                    type="button"
-                    className="agent-thread-menu-btn"
-                    aria-label="会话菜单"
-                    data-thread-id={thread.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onOpenMenu(thread.id, e.currentTarget);
-                    }}
-                  >
-                    ⋯
-                  </button>
-                </div>
-              ))}
+                    <button
+                      type="button"
+                      className="agent-thread-main"
+                      data-thread-id={thread.id}
+                      onClick={() => onSelectThread(thread.id)}
+                    >
+                      <span className="agent-thread-title">{thread.title ?? 'Agent'}</span>
+                      {meta ? <span className="agent-thread-meta">{meta}</span> : null}
+                    </button>
+                    <button
+                      type="button"
+                      className="agent-thread-menu-btn"
+                      aria-label="更多操作"
+                      title="更多"
+                      data-thread-id={thread.id}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onOpenMenu(thread.id, e.currentTarget);
+                      }}
+                    >
+                      ⋯
+                    </button>
+                  </div>
+                );
+              })}
               {showMore ? (
                 <button
                   type="button"

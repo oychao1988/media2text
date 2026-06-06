@@ -26,7 +26,8 @@
   --right-collapsed-w: 48px;
   --grip-w: 6px;
   --center-min-w: 25vw;
-  --right-agent-h: 320px;
+  --right-agent-h: 380px;
+  --agent-history-w: 200px;
   --center-max-w: 1120px;
   --center-edge-pad: 32px;
   --scrollbar-size: 8px;

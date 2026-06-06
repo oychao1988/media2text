@@ -276,6 +276,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             <AgentHistorySidebar
               threads={threads}
               activeThreadId={activeThreadId}
+              menuOpenThreadId={contextMenu?.threadId ?? null}
               onSelectThread={(id) => activateThread(id)}
               onOpenMenu={(threadId, anchor) => {
                 const rect = anchor.getBoundingClientRect();

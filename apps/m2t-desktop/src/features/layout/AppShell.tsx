@@ -8,7 +8,6 @@ import { ViewPlayback } from '../history/ViewPlayback';
 import { useLiveStatus } from '../live/useLiveStatus';
 import { AgentPanel } from '../agent/AgentPanel';
 import { TranscriptPane } from '../transcript/TranscriptPane';
-import { TranscriptSessionSelect } from '../transcript/TranscriptSessionSelect';
 import type { LiveSessionSummary } from '../../lib/types';
 import { ViewConfig } from '../views/ViewConfig';
 import { ViewHistory } from '../views/ViewHistory';
@@ -284,12 +283,6 @@ export function AppShell() {
               side="right"
               collapseLabel="折叠右栏"
               onCollapse={() => setRightCollapsed(true)}
-              actions={
-                <>
-                  <TranscriptSessionSelect />
-                  <DesktopLayoutPresets />
-                </>
-              }
             />
             {transcriptPane}
           </div>
@@ -357,14 +350,7 @@ export function AppShell() {
             side="right"
             collapseLabel="折叠右栏"
             onCollapse={() => setRightCollapsed(true)}
-            actions={
-              !isTranscriptChat ? (
-                <>
-                  {showTranscriptPane ? <TranscriptSessionSelect /> : null}
-                  <DesktopLayoutPresets />
-                </>
-              ) : null
-            }
+            actions={<DesktopLayoutPresets />}
           />
           {!isTranscriptChat && showTranscriptPane ? transcriptPane : null}
           {!isChatOnly ? (

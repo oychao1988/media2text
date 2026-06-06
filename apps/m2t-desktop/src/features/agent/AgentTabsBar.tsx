@@ -64,7 +64,7 @@ export function AgentTabsBar({
       <div className="agent-tabs-actions">
         <button
           type="button"
-          className="icon-btn agent-tabs-action"
+          className="agent-header-icon-btn"
           id="btn-agent-new"
           title="新建 Agent"
           aria-label="新建 Agent"
@@ -74,7 +74,7 @@ export function AgentTabsBar({
         </button>
         <button
           type="button"
-          className="icon-btn agent-tabs-action"
+          className="agent-header-icon-btn"
           id="btn-agent-history-toggle"
           title={historyCollapsed ? '显示历史会话' : '隐藏历史会话'}
           aria-label={historyCollapsed ? '显示历史会话' : '隐藏历史会话'}

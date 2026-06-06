@@ -78,7 +78,7 @@ describe('DesktopLayoutPresets', () => {
     const user = userEvent.setup();
 
     render(<DesktopLayoutPresets />);
-    await user.click(screen.getByRole('button', { name: '博主 + 转写 | 对话' }));
+    await user.click(screen.getByRole('button', { name: '博主 · 转写 · 对话' }));
 
     expect(document.getElementById('app')?.classList.contains('desktop-layout-transcript')).toBe(
       true,

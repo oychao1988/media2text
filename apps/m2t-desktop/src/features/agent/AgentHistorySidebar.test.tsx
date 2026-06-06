@@ -112,7 +112,7 @@ describe('AgentHistorySidebar', () => {
         onOpenMenu={onOpenMenu}
       />,
     );
-    await user.click(screen.getByLabelText('会话菜单'));
+    await user.click(screen.getByLabelText('更多操作'));
     expect(onOpenMenu).toHaveBeenCalledWith('x', expect.any(HTMLElement));
   });
 });

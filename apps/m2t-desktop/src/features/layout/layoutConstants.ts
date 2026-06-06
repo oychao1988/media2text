@@ -3,7 +3,7 @@ export const LAYOUT_STORAGE_KEY = 'm2t-desktop-layout';
 export const SIZE_DEFAULTS = {
   sidebarW: 240,
   rightW: 360,
-  agentH: 320,
+  agentH: 380,
   agentHistoryW: 200,
 } as const;
 
