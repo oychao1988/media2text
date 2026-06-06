@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install Python deps
+        run: |
+          python -m pip install -U pip
+          pip install -e ".[desktop,dev]"
+
+      - name: Ruff
+        run: ruff check src tests
+
+      - name: Pyright (agent kernel)
+        run: pyright src/media2text/agent/
+
+      - name: Pytest (desktop + agent)
+        run: pytest tests/unit/test_desktop_* tests/unit/test_api_* tests/unit/test_agent_* -v --tb=short -q -m "desktop or agent"
+
+  desktop-frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: pnpm
+
+      - name: Install JS deps
+        run: pnpm install --frozen-lockfile
+
+      - name: m2t-desktop test
+        run: pnpm --filter m2t-desktop test

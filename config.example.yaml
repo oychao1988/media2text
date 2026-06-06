@@ -68,6 +68,18 @@ desktop:
     default_model: auto
     max_context_chars: 24000
 
+# Hermes agent kernel (§14) — memory/compression used from M3+
+memory:
+  max_chars: 2200
+  user_max_chars: 1375
+compression:
+  enabled: true
+  preflight_ratio: 0.5
+  auto_ratio: 0.85
+  protect_last_n: 20
+agent:
+  max_turns: 25
+
 # 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
 aliyundrive:
   enabled: false

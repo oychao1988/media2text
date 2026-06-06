@@ -4,7 +4,6 @@ import pytest
 from fastapi import HTTPException
 
 from media2text.api.services.history_content import (
-    read_history_summary,
     read_history_transcript,
     resolve_history_media_path,
 )
