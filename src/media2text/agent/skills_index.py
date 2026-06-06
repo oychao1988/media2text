@@ -6,11 +6,14 @@ import os
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import yaml
 
 from media2text.core.config import _project_root
+
+if TYPE_CHECKING:
+    from media2text.agent.profile_resolver import AgentProfileContext
 
 _FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
@@ -30,9 +33,15 @@ def default_skills_root() -> Path:
     return _project_root() / "packages" / "agent-skills"
 
 
-def resolve_skills_roots(profile_ctx: dict[str, Any] | None) -> list[Path]:
-    """M4: global ``packages/agent-skills/`` only; M5a adds creator roots."""
-    if profile_ctx and profile_ctx.get("skills_roots"):
+def resolve_skills_roots(
+    profile_ctx: AgentProfileContext | dict[str, Any] | None,
+) -> list[Path]:
+    """M4: global root; M5a merges creator ``.agent/skills/`` (later roots win)."""
+    if profile_ctx is None:
+        return [default_skills_root()]
+    if hasattr(profile_ctx, "skills_roots"):
+        return list(profile_ctx.skills_roots)  # type: ignore[union-attr]
+    if profile_ctx.get("skills_roots"):
         return [Path(p).expanduser().resolve() for p in profile_ctx["skills_roots"]]
     return [default_skills_root()]
 
@@ -90,7 +99,9 @@ def _discover_skills_in_root(root: Path) -> dict[str, SkillMeta]:
     return found
 
 
-def build_skills_index(profile_ctx: dict[str, Any] | None = None) -> list[SkillMeta]:
+def build_skills_index(
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
+) -> list[SkillMeta]:
     """Merge skills roots; later entries override same slug (M5a creator override)."""
     merged: dict[str, SkillMeta] = {}
     for root in resolve_skills_roots(profile_ctx):
@@ -110,7 +121,10 @@ def format_skills_index_block(skills: list[SkillMeta]) -> str:
     return "\n".join(lines)
 
 
-def _find_skill(name: str, profile_ctx: dict[str, Any] | None) -> SkillMeta | None:
+def _find_skill(
+    name: str,
+    profile_ctx: AgentProfileContext | dict[str, Any] | None,
+) -> SkillMeta | None:
     slug = name.strip().strip("/")
     if not slug:
         return None
@@ -120,7 +134,11 @@ def _find_skill(name: str, profile_ctx: dict[str, Any] | None) -> SkillMeta | No
     return None
 
 
-def read_skill_body(name: str, *, profile_ctx: dict[str, Any] | None = None) -> str:
+def read_skill_body(
+    name: str,
+    *,
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
+) -> str:
     skill = _find_skill(name, profile_ctx)
     if skill is None:
         raise ValueError(f"skill not found: {name}")
@@ -131,7 +149,7 @@ def read_skill_reference(
     name: str,
     path: str,
     *,
-    profile_ctx: dict[str, Any] | None = None,
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
 ) -> tuple[str, Path]:
     skill = _find_skill(name, profile_ctx)
     if skill is None:
@@ -146,7 +164,9 @@ def read_skill_reference(
     return target.read_text(encoding="utf-8"), target
 
 
-def handle_skills_list(profile_ctx: dict[str, Any] | None = None) -> dict[str, Any]:
+def handle_skills_list(
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
+) -> dict[str, Any]:
     skills = build_skills_index(profile_ctx)
     return {
         "ok": True,
@@ -161,7 +181,7 @@ def handle_skills_list(profile_ctx: dict[str, Any] | None = None) -> dict[str, A
 def handle_skill_view(
     params: dict[str, Any],
     *,
-    profile_ctx: dict[str, Any] | None = None,
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     name = str(params.get("name") or "").strip()
     if not name:

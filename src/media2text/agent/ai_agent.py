@@ -12,6 +12,7 @@ from media2text.agent.context_compressor import maybe_post_turn_compress, maybe_
 from media2text.agent.hermes_state import MessageRow, SessionDB, parse_binding
 from media2text.agent.iteration_budget import IterationBudget
 from media2text.agent.model_tools import handle_function_call
+from media2text.agent.profile_resolver import resolve_profile
 from media2text.agent.prompt_builder import build_system_prompt, frozen_system_messages
 from media2text.agent.runtime_provider import (
     ChatClient,
@@ -22,7 +23,7 @@ from media2text.agent.runtime_provider import (
 )
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import openai_tools
-from media2text.agent.tools.toolsets import DEFAULT_TOOLSET, tool_names_for_set
+from media2text.agent.tools.toolsets import DEFAULT_TOOLSET, resolve_tool_names
 from media2text.core.config import AppConfig
 
 
@@ -81,8 +82,10 @@ class AIAgent:
 
         self._db.append_message(session_id, MessageRow(role="user", content=user_text))
 
+        profile = resolve_profile(creator_id=creator_id, cfg=self._cfg)
         parts = build_system_prompt(
             cfg=self._cfg,
+            profile_ctx=profile,
             thread={
                 "creator_id": creator_id,
                 "model": binding.get("model"),
@@ -96,7 +99,7 @@ class AIAgent:
         messages: list[dict[str, Any]] = system_msgs + replay
         messages = maybe_preflight(messages, self._cfg)
 
-        tool_names = tool_names_for_set(self._toolset)
+        tool_names = resolve_tool_names(profile)
         tools_schema = openai_tools(tool_names)
         model = resolve_model(self._cfg, binding.get("model"))
         llm = self._llm or build_openai_client(self._cfg, provider_name=binding.get("provider_name"))
@@ -108,6 +111,7 @@ class AIAgent:
             supervisor=self._supervisor,
             session_id=session_id,
             display_thread_id=display_thread_id,
+            profile=profile,
         )
 
         final_text = ""

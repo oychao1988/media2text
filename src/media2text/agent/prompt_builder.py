@@ -6,8 +6,12 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
-from media2text.agent.memory_store import format_memory_block, load_volatile_snapshot
-from media2text.agent.profile_resolver import resolve_profile
+from media2text.agent.memory_store import (
+    format_memory_block,
+    load_volatile_snapshot,
+    load_volatile_snapshot_for_profile,
+)
+from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
 from media2text.agent.skills_index import build_skills_index, format_skills_index_block
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
@@ -55,14 +59,20 @@ def _manifest_summary(cfg: AppConfig, creator_id: str | None) -> str:
 
 def build_system_prompt(
     *,
-    profile_ctx: dict[str, Any] | None = None,
+    profile_ctx: AgentProfileContext | dict[str, Any] | None = None,
     thread: dict[str, Any] | None = None,
     cfg: AppConfig | None = None,
 ) -> SystemPromptParts:
     cfg = cfg or AppConfig.load()
-    profile = profile_ctx or resolve_profile(cfg)
     thread = thread or {}
     creator_id = thread.get("creator_id")
+    if profile_ctx is None:
+        profile: AgentProfileContext | dict[str, Any] = resolve_profile(
+            creator_id=creator_id,
+            cfg=cfg,
+        )
+    else:
+        profile = profile_ctx
     binding = thread.get("binding") or {}
     context_mode = binding.get("context_mode") or thread.get("context_mode") or "both"
 
@@ -75,12 +85,19 @@ def build_system_prompt(
     if skills_block:
         stable_parts.append(skills_block)
     stable = "\n\n".join(stable_parts)
+    if isinstance(profile, AgentProfileContext):
+        profile_line = f"Profile: {profile.profile_id} ({profile.memory_paths.profile_dir})"
+    else:
+        profile_line = f"Profile dir: {profile.get('profile_dir')}"
     context_lines = [
-        f"Profile dir: {profile.get('profile_dir')}",
+        profile_line,
         f"Context mode: {context_mode}",
         _manifest_summary(cfg, creator_id),
     ]
-    snapshot = load_volatile_snapshot(cfg)
+    if isinstance(profile, AgentProfileContext):
+        snapshot = load_volatile_snapshot_for_profile(profile)
+    else:
+        snapshot = load_volatile_snapshot(cfg)
     memory_block = format_memory_block(snapshot)
     volatile_lines = [
         f"Thread model: {binding.get('model') or thread.get('model') or 'auto'}",

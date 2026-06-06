@@ -5,9 +5,12 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from media2text.core.config import AppConfig
+
+if TYPE_CHECKING:
+    from media2text.agent.profile_resolver import AgentProfileContext
 
 logger = logging.getLogger(__name__)
 
@@ -44,10 +47,37 @@ def _path_for(cfg: AppConfig, target: MemoryTarget) -> Path:
     return agent_dir(cfg) / _TARGET_FILES[target]
 
 
+def _path_for_profile(profile: AgentProfileContext, target: MemoryTarget) -> Path:
+    paths = profile.memory_paths
+    if target == "memory":
+        return paths.memory
+    if target == "user":
+        return paths.user
+    return paths.soul
+
+
 def _limit_for(cfg: AppConfig, target: MemoryTarget) -> int:
     if target == "user":
         return cfg.memory.user_max_chars
     return cfg.memory.max_chars
+
+
+def _limit_for_profile(
+    cfg: AppConfig,
+    profile: AgentProfileContext,
+    target: MemoryTarget,
+) -> int:
+    overrides = profile.profile_yaml.get("memory")
+    if isinstance(overrides, dict):
+        if target == "user":
+            raw = overrides.get("user_char_limit")
+            if isinstance(raw, int) and raw > 0:
+                return raw
+        else:
+            raw = overrides.get("memory_char_limit")
+            if isinstance(raw, int) and raw > 0:
+                return raw
+    return _limit_for(cfg, target)
 
 
 def scan_content(text: str) -> str | None:
@@ -62,6 +92,16 @@ def scan_content(text: str) -> str | None:
 
 def read_file(cfg: AppConfig, target: MemoryTarget) -> str:
     path = _path_for(cfg, target)
+    if not path.is_file():
+        return ""
+    try:
+        return path.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def read_file_for_profile(profile: AgentProfileContext, target: MemoryTarget) -> str:
+    path = _path_for_profile(profile, target)
     if not path.is_file():
         return ""
     try:
@@ -96,17 +136,73 @@ def write_file(
     if len(content) > limit:
         raise ValueError(f"content exceeds {limit} char limit for {target}")
 
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(content, encoding="utf-8")
+    return {"target": target, "chars": len(content), "stored": True}
+
+
+def write_file_for_profile(
+    cfg: AppConfig,
+    profile: AgentProfileContext,
+    target: MemoryTarget,
+    content: str,
+    *,
+    mode: str = "replace",
+) -> dict[str, str | int | bool]:
+    reason = scan_content(content)
+    if reason:
+        logger.warning("memory write blocked: %s target=%s", reason, target)
+        raise MemorySafetyError(f"content blocked: {reason}")
+
+    limit = _limit_for_profile(cfg, profile, target)
+    if len(content) > limit:
+        raise ValueError(f"content exceeds {limit} char limit for {target}")
+
+    path = _path_for_profile(profile, target)
+    if mode == "append" and path.is_file():
+        existing = path.read_text(encoding="utf-8")
+        if existing and not existing.endswith("\n"):
+            existing += "\n"
+        content = existing + content
+
+    if len(content) > limit:
+        raise ValueError(f"content exceeds {limit} char limit for {target}")
+
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(content, encoding="utf-8")
     return {"target": target, "chars": len(content), "stored": True}
 
 
 def load_volatile_snapshot(cfg: AppConfig) -> dict[str, str]:
-    """Read MEMORY/USER/SOUL for volatile tier (workspace scope only in M3)."""
+    """Read MEMORY/USER/SOUL for workspace profile (backward compat)."""
     return {
         "memory": read_file(cfg, "memory"),
         "user": read_file(cfg, "user"),
         "soul": read_file(cfg, "soul"),
     }
+
+
+def load_volatile_snapshot_for_profile(profile: AgentProfileContext) -> dict[str, str]:
+    """Read MEMORY/USER/SOUL for the active profile scope only."""
+    return {
+        "memory": read_file_for_profile(profile, "memory"),
+        "user": read_file_for_profile(profile, "user"),
+        "soul": read_file_for_profile(profile, "soul"),
+    }
+
+
+def memory_usage_for_profile(
+    cfg: AppConfig,
+    profile: AgentProfileContext,
+) -> dict[str, dict[str, int]]:
+    out: dict[str, dict[str, int]] = {}
+    for target in ("memory", "user", "soul"):
+        content = read_file_for_profile(profile, target)  # type: ignore[arg-type]
+        out[target] = {
+            "chars": len(content),
+            "limit": _limit_for_profile(cfg, profile, target),  # type: ignore[arg-type]
+        }
+    return out
 
 
 def format_memory_block(snapshot: dict[str, str]) -> str:
