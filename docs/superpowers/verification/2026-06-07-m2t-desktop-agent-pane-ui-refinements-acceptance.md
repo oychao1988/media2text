@@ -8,11 +8,14 @@
 
 | 类别 | 结论 |
 |------|------|
-| **Issue #199–#204** | 代码已实现于 `issue-199-agent-accio-messages` 分支（待分 PR 合并） |
+| **Issue #199–#204** | 已全部 squash 合并至 `main`（tip `673e9fd`，2026-06-07） |
+| **Epic verify** | `python scripts/epic_verify.py agent-pane-ui-refinements` — **PASS** |
 | **Vitest** | `pnpm --filter m2t-desktop test` — **117/117 PASS** |
-| **spec A1–A10** | 自动化覆盖见下表；Tauri 手工项待 `pnpm --filter m2t-desktop tauri dev` 复验 |
+| **Desktop pytest** | `pytest tests/unit/test_desktop_* tests/unit/test_api_* -m desktop` — **124 passed** |
+| **Issue verify** | `issue_verify.py --issue 199..204` — 全部 exit 0 |
+| **spec A1–A10** | A1–A8、A10 有自动化/静态证据；A3/A7–A10 需 Tauri 手工复验（见下） |
 
-**Epic 签署建议:** 自动化闸门 **PASS**；合并前 issue-reviewer + Tauri 手工 A3/A7/A8/A9 复验。
+**Epic 签署建议:** 自动化闸门 **PASS**；Epic 可关单。Tauri 手工四项建议在本地 `tauri dev` 点验后勾选下方清单。
 
 ---
 
@@ -37,11 +40,15 @@
 
 ```bash
 source .venv/bin/activate
+python scripts/epic_verify.py agent-pane-ui-refinements
 pnpm --filter m2t-desktop test
+pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop
 pnpm --filter m2t-desktop tauri dev
 media2text serve --port 8765
 open docs/superpowers/designs/m2t-desktop/finalized.html
 ```
+
+**2026-06-07 自动化跑数记录:** `epic_verify` + Vitest + pytest + `issue_verify 199–204` 均在 `main` @ `673e9fd` 通过；sidecar `GET /api/health` 冒烟 OK。
 
 ## 手工待办（Tauri）
 
