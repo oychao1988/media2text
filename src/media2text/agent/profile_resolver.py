@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from media2text.agent.skills_index import default_skills_root
 from media2text.core.config import AppConfig
 
 
@@ -15,4 +16,5 @@ def resolve_profile(cfg: AppConfig) -> dict[str, Any]:
         "profile_dir": str(root),
         "profile_id": "default",
         "source": "workspace_stub",
+        "skills_roots": [str(default_skills_root())],
     }
