@@ -10,6 +10,8 @@ export const ToolUiKindSchema = z.enum([
 
 export const ToolResultPayloadSchema = z.object({
   ok: z.boolean(),
+  /** Tool function name (UI only; omitted from LLM context). */
+  name: z.string().optional(),
   data: z.unknown().optional(),
   error: z
     .object({
@@ -69,6 +71,13 @@ export const PiEventSchema = z.discriminatedUnion('type', [
   z.object({
     type: z.literal('turn.end'),
     payload: z.object({ durationMs: z.number() }),
+  }),
+  z.object({
+    type: z.literal('thread.title'),
+    payload: z.object({
+      threadId: z.string(),
+      title: z.string(),
+    }),
   }),
   z.object({
     type: z.literal('tool.result'),

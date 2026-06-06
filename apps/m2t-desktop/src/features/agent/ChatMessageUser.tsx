@@ -1,4 +1,5 @@
 import { showToast } from '../../lib/toast';
+import { USER_DISPLAY_NAME, userDisplayInitial } from '../layout/userDisplay';
 import { formatChatTime } from './formatChatTime';
 import { IconCopy, IconEdit, IconRetry } from './chatMessageIcons';
 import { ChatMarkdown } from './ChatMarkdown';
@@ -30,9 +31,9 @@ export function ChatMessageUser({ text, createdAt }: ChatMessageUserProps) {
         ) : (
           <span className="chat-msg-time chat-msg-time--placeholder" aria-hidden="true" />
         )}
-        <span className="chat-msg-name">你</span>
-        <span className="chat-msg-avatar" aria-hidden="true">
-          你
+        <span className="chat-msg-name">{USER_DISPLAY_NAME}</span>
+        <span className="chat-msg-avatar user" aria-hidden="true">
+          {userDisplayInitial()}
         </span>
       </div>
       <div className="chat-msg-bubble">

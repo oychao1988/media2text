@@ -3,6 +3,7 @@ import { parsePiEventLine, type PiEvent } from '@m2t/shared';
 import { apiGet, apiPatch, apiPost, ApiError, buildWsUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import { buildActivatePayload, type AgentContext } from './agentContext';
+import { parseToolMessagePayload } from './toolMessagePayload';
 import type { ActiveTurn, ChatMessage, ChatProvider } from './types';
 
 const INITIAL_TURN: ActiveTurn = {
@@ -22,10 +23,15 @@ export type SessionContext = AgentContext;
 
 export function useM2tAgent(opts: {
   threadId: string | null;
+  /** Sidebar-selected creator (mismatch checks only). */
   creatorId: string | null;
+  /** Thread-bound creator; omit for global threads. */
+  threadCreatorId?: string | null;
   sessionContext: SessionContext;
+  onTurnEnd?: () => void;
+  onThreadTitle?: (threadId: string, title: string) => void;
 }) {
-  const { threadId, creatorId, sessionContext } = opts;
+  const { threadId, creatorId, threadCreatorId, sessionContext, onTurnEnd, onThreadTitle } = opts;
   const [status, setStatus] = useState<AgentStatus>('connecting');
   const [fatalError, setFatalError] = useState<string | null>(null);
   const [threadModel, setThreadModel] = useState<string>('auto');
@@ -39,6 +45,8 @@ export function useM2tAgent(opts: {
         id: string;
         role: string;
         content: string;
+        tool_name?: string | null;
+        toolName?: string | null;
         thinking_text?: string | null;
         duration_ms?: number | null;
         created_at?: string | null;
@@ -55,19 +63,15 @@ export function useM2tAgent(opts: {
         };
       }
       if (m.role === 'tool') {
-        let toolPayload: import('@m2t/shared').ToolResultPayload = {
-          ok: false,
-          error: { code: 'parse_error', message: m.content || 'invalid tool payload' },
-        };
-        try {
-          toolPayload = JSON.parse(m.content || '{}') as import('@m2t/shared').ToolResultPayload;
-        } catch {
-          /* keep fallback */
-        }
+        const { payload, toolName } = parseToolMessagePayload(
+          m.content,
+          m.tool_name ?? m.toolName,
+        );
         return {
           id: m.id,
           role: 'tool' as const,
-          result: { type: 'tool.result' as const, payload: toolPayload },
+          toolName,
+          result: { type: 'tool.result' as const, payload },
         };
       }
       return {
@@ -207,6 +211,11 @@ export function useM2tAgent(opts: {
       if (event.type === 'turn.end') {
         setActiveTurn(null);
         if (threadId) void loadHistory(threadId);
+        onTurnEnd?.();
+        return;
+      }
+      if (event.type === 'thread.title') {
+        onThreadTitle?.(event.payload.threadId, event.payload.title);
         return;
       }
       if (event.type === 'approval.request') {
@@ -220,13 +229,20 @@ export function useM2tAgent(opts: {
         return;
       }
       if (event.type === 'tool.result') {
+        const { name, ...payload } = event.payload;
+        const toolName = typeof name === 'string' ? name : undefined;
         setMessages((prev) => [
           ...prev,
-          { id: nextId(), role: 'tool', result: { type: 'tool.result', payload: event.payload } },
+          {
+            id: nextId(),
+            role: 'tool',
+            toolName,
+            result: { type: 'tool.result', payload },
+          },
         ]);
       }
     },
-    [loadHistory, threadId],
+    [loadHistory, onThreadTitle, onTurnEnd, threadId],
   );
 
   const handleEventRef = useRef(handleEvent);
@@ -292,7 +308,7 @@ export function useM2tAgent(opts: {
   useEffect(() => {
     if (!threadId) return;
     const payload = buildActivatePayload({
-      creatorId: creatorId ?? undefined,
+      creatorId: threadCreatorId ?? undefined,
       sessionId: sessionContext.sessionId ?? null,
       threadId,
       sessionKind: sessionContext.sessionKind ?? null,
@@ -301,15 +317,25 @@ export function useM2tAgent(opts: {
       contextMode: sessionContext.contextMode,
     });
     void apiPatch(`/api/agent/threads/${threadId}/activate`, payload, true).catch(() => {});
-  }, [creatorId, threadId, sessionContext]);
+  }, [threadCreatorId, threadId, sessionContext]);
 
   const patchThreadModel = useCallback(
-    async (model: string) => {
-      if (!threadId) return;
+    async (model: string, providerName?: string | null) => {
+      const previous = threadModel;
       setThreadModel(model);
-      await apiPatch(`/api/agent/threads/${threadId}`, { model });
+      if (!threadId) return;
+      try {
+        await apiPatch(`/api/agent/threads/${threadId}`, {
+          model,
+          ...(providerName ? { providerName } : {}),
+        });
+      } catch (err) {
+        setThreadModel(previous);
+        const msg = err instanceof ApiError ? err.message : '模型切换失败';
+        showToast(msg, 'error');
+      }
     },
-    [threadId],
+    [threadId, threadModel],
   );
 
   const sendMessage = useCallback(
@@ -351,10 +377,6 @@ export function useM2tAgent(opts: {
       } catch (err) {
         setActiveTurn(null);
         setMessages((prev) => prev.filter((m) => m.id !== userMsg.id));
-        if (err instanceof ApiError && err.status === 409) {
-          showToast('当前对话与侧边栏博主不一致，请切换对话或博主', 'error');
-          return;
-        }
         const msg = err instanceof Error ? err.message : '发送失败';
         showToast(msg, 'error');
       }

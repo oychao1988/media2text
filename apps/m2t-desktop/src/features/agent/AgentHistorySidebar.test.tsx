@@ -11,7 +11,6 @@ const creators = [
 
 const defaultProps = {
   creators,
-  onNewGlobalDraft: () => {},
   onSelectThread: () => {},
   onOpenMenu: () => {},
   onRenameCommit: () => {},

@@ -101,6 +101,8 @@ def _message_dict(row, *, display_thread_id: str) -> dict[str, Any]:
         "duration_ms": row["duration_ms"],
         "durationMs": row["duration_ms"],
         "created_at": row["created_at"],
+        "tool_name": row["tool_name"],
+        "toolName": row["tool_name"],
     }
 
 
@@ -111,18 +113,6 @@ def _get_db_session(conn=Depends(get_db)) -> SessionDB:
 def _assert_thread_exists(db: SessionDB, thread_id: str) -> None:
     if db.get_thread_by_display_id(thread_id) is None:
         raise HTTPException(status_code=404, detail="thread not found")
-
-
-def _check_creator_mismatch(db: SessionDB, thread_id: str, sidebar_creator_id: str | None) -> None:
-    row = db.get_thread_by_display_id(thread_id)
-    if row is None:
-        raise HTTPException(status_code=404, detail="thread not found")
-    thread_creator = row["creator_id"]
-    if thread_creator and sidebar_creator_id and sidebar_creator_id != thread_creator:
-        raise HTTPException(
-            status_code=409,
-            detail={"code": "creator_mismatch"},
-        )
 
 
 def _run_turn(
@@ -315,7 +305,6 @@ def start_turn(
     db: SessionDB = Depends(_get_db_session),
     cfg: AppConfig = Depends(get_cfg),
 ) -> dict:
-    _check_creator_mismatch(db, thread_id, body.sidebar_creator_id)
     turn_id = str(uuid.uuid4())
     turn_registry.register(
         turn_id=turn_id,

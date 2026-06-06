@@ -44,12 +44,19 @@ def turn_end(duration_ms: int) -> dict[str, Any]:
     return pi_event("turn.end", {"durationMs": duration_ms})
 
 
+def thread_title(thread_id: str, title: str) -> dict[str, Any]:
+    return pi_event("thread.title", {"threadId": thread_id, "title": title})
+
+
 def tool_start(*, tool_call_id: str, name: str) -> dict[str, Any]:
     return pi_event("tool.start", {"toolCallId": tool_call_id, "name": name})
 
 
-def tool_result_payload(result: dict[str, Any]) -> dict[str, Any]:
-    return pi_event("tool.result", result)
+def tool_result_payload(result: dict[str, Any], *, name: str | None = None) -> dict[str, Any]:
+    payload = dict(result)
+    if name:
+        payload["name"] = name
+    return pi_event("tool.result", payload)
 
 
 def agent_error(message: str, *, code: str | None = None) -> dict[str, Any]:

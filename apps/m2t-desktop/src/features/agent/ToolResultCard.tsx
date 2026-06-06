@@ -6,17 +6,16 @@ type ToolResultCardProps = {
 };
 
 export function ToolResultCard({ result, toolName = 'tool' }: ToolResultCardProps) {
-  const headerLabel = result.ok ? toolName : `${toolName} · error`;
+  const headerLabel = result.ok ? toolName : `${toolName} · 异常`;
 
-  if (!result.ok && result.error) {
+  if (!result.ok) {
     return (
       <div className="tool-card tool-card--err">
         <div className="tool-card-header">
           <span>{headerLabel}</span>
         </div>
         <div className="tool-card-body">
-          <p>{result.error.message}</p>
-          <span className="muted code-cell">{result.error.code}</span>
+          <p>出现异常</p>
         </div>
       </div>
     );

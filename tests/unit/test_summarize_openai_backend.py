@@ -50,11 +50,46 @@ def test_extra_body_omitted_when_thinking_true() -> None:
 def test_primary_model() -> None:
     cfg = SummarizeLlmConfig(
         providers=[
-            SummarizeLlmProviderConfig(models=["glm", "deepseek"]),
-            SummarizeLlmProviderConfig(models=["gpt-4o-mini"]),
+            SummarizeLlmProviderConfig(name="nvidia", models=["glm", "deepseek"]),
+            SummarizeLlmProviderConfig(name="openai", models=["gpt-4o-mini"]),
         ]
     )
     assert primary_model(cfg) == "glm"
+
+
+def test_primary_model_respects_default_provider() -> None:
+    cfg = SummarizeLlmConfig(
+        providers=[
+            SummarizeLlmProviderConfig(name="nvidia", models=["glm"]),
+            SummarizeLlmProviderConfig(name="DeepSeek", models=["deepseek-chat"]),
+        ],
+        default_provider="DeepSeek",
+    )
+    assert primary_model(cfg) == "deepseek-chat"
+
+
+def test_primary_model_respects_default_model() -> None:
+    cfg = SummarizeLlmConfig(
+        providers=[
+            SummarizeLlmProviderConfig(name="nvidia", models=["glm"]),
+        ],
+        default_model="custom-model",
+    )
+    assert primary_model(cfg) == "custom-model"
+
+
+def test_resolve_provider_for_model() -> None:
+    cfg = SummarizeLlmConfig(
+        providers=[
+            SummarizeLlmProviderConfig(name="nvidia", models=["glm"]),
+            SummarizeLlmProviderConfig(name="DeepSeek", models=["deepseek-chat"]),
+        ]
+    )
+    from media2text.core.summarize.openai_backend import resolve_provider_for_model
+
+    assert resolve_provider_for_model(cfg, "deepseek-chat") == "DeepSeek"
+    assert resolve_provider_for_model(cfg, "glm") == "nvidia"
+    assert resolve_provider_for_model(cfg, "auto") is None
 
 
 @patch.dict("os.environ", {"KEY_A": "a", "KEY_B": "b", "OPENAI_API_KEY": "o"}, clear=True)

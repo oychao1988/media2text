@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AgentAvatar, type AgentCreatorRef } from './AgentAvatar';
 import {
   filterThreadsByQuery,
   groupThreadsByAgent,
@@ -9,9 +10,8 @@ import type { ThreadRow } from './types';
 
 type Props = {
   threads: ThreadRow[];
-  creators: Array<{ id: string; display_name: string | null }>;
+  creators: AgentCreatorRef[];
   activeThreadId: string | null;
-  onNewGlobalDraft: () => void;
   menuOpenThreadId?: string | null;
   editingThreadId?: string | null;
   onSelectThread: (threadId: string) => void;
@@ -84,8 +84,10 @@ function AgentGroupSection({
   onRenameCommit,
   onRenameCancel,
   onBatchDeleteRequest,
+  creators,
 }: {
   group: AgentThreadGroup;
+  creators: AgentCreatorRef[];
   collapsed: boolean;
   onToggleCollapse: () => void;
   activeThreadId: string | null;
@@ -114,12 +116,7 @@ function AgentGroupSection({
           <span className="agent-thread-group-chevron" aria-hidden="true">
             ▾
           </span>
-          <span
-            className={`agent-thread-group-avatar${profile.isGlobal ? ' global' : ''}`}
-            aria-hidden="true"
-          >
-            {profile.abbr}
-          </span>
+          <AgentAvatar profile={profile} creators={creators} size="group" />
           <span className="agent-thread-group-name">{profile.name}</span>
         </button>
         <div className="agent-thread-group-actions">
@@ -198,7 +195,6 @@ export function AgentHistorySidebar({
   threads,
   creators,
   activeThreadId,
-  onNewGlobalDraft,
   menuOpenThreadId = null,
   editingThreadId = null,
   onSelectThread,
@@ -230,17 +226,6 @@ export function AgentHistorySidebar({
 
   return (
     <aside className="agent-history" id="agent-history" aria-label="历史会话">
-      <div className="agent-history-toolbar" id="agent-history-toolbar">
-        <button
-          type="button"
-          className="agent-history-new-global"
-          id="btn-agent-new-global"
-          title="新建全局 Agent"
-          onClick={onNewGlobalDraft}
-        >
-          新建全局 Agent
-        </button>
-      </div>
       <input
         className="agent-history-search"
         id="agent-history-search"
@@ -256,6 +241,7 @@ export function AgentHistorySidebar({
             <AgentGroupSection
               key={group.agentId}
               group={group}
+              creators={creators}
               collapsed={Boolean(collapsedMap[group.agentId])}
               onToggleCollapse={() => toggleGroup(group.agentId)}
               activeThreadId={activeThreadId}

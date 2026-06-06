@@ -11,6 +11,7 @@ from media2text.core.summarize.openai_backend import (
     primary_model,
     resolve_api_key_envs,
     resolve_llm_endpoints,
+    resolve_provider_for_model,
 )
 
 
@@ -57,6 +58,25 @@ def resolve_model(cfg: AppConfig, thread_model: str | None) -> str:
     if model and model != "auto":
         return model
     return primary_model(cfg.summarize.llm)
+
+
+def resolve_agent_provider(
+    cfg: AppConfig,
+    *,
+    model: str,
+    provider_name: str | None,
+) -> str | None:
+    """Pick LLM provider for a thread binding (model wins over stale provider_name)."""
+    llm = cfg.summarize.llm
+    by_model = resolve_provider_for_model(llm, model)
+    if by_model:
+        return by_model
+    if provider_name:
+        for prov in llm.providers:
+            if (prov.name or "").lower() == provider_name.lower():
+                return prov.name
+    default = (llm.default_provider or "").strip()
+    return default or None
 
 
 def build_openai_client(cfg: AppConfig, *, provider_name: str | None = None) -> ChatClient:

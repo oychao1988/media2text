@@ -18,6 +18,11 @@ export function agentAbbr(name: string): string {
   return trimmed.length <= 2 ? trimmed : trimmed.slice(0, 2);
 }
 
+/** Agent id for empty/draft state from left-rail selection. */
+export function sidebarAgentId(creatorId: string | null | undefined): string {
+  return creatorId ?? 'global';
+}
+
 export function resolveAgentProfile(
   threadCreatorId: string | null | undefined,
   creators: Array<{ id: string; display_name: string | null }>,

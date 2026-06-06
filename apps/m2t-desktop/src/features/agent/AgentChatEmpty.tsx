@@ -1,13 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { AgentAvatar, type AgentCreatorRef } from './AgentAvatar';
 import { resolveAgentProfile, AGENT_GLOBAL_PROFILE, type AgentProfile } from './agentProfile';
 
 type Props = {
   agentId: string;
-  creators: Array<{ id: string; display_name: string | null }>;
+  creators: AgentCreatorRef[];
   onAgentChange: (agentId: string) => void;
 };
 
-function buildProfiles(creators: Array<{ id: string; display_name: string | null }>): AgentProfile[] {
+function buildProfiles(creators: AgentCreatorRef[]): AgentProfile[] {
   return [AGENT_GLOBAL_PROFILE, ...creators.map((c) => resolveAgentProfile(c.id, creators))];
 }
 
@@ -27,16 +28,10 @@ export function AgentChatEmpty({ agentId, creators, onAgentChange }: Props) {
   }, [menuOpen]);
 
   return (
-    <div className="agent-chat-empty" id="agent-chat-empty">
+    <div className="agent-chat-empty" id="agent-chat-empty" ref={wrapRef}>
       <div className="agent-identity-bar">
-        <div
-          className={`agent-identity-logo${active.isGlobal ? ' global' : ''}`}
-          id="agent-identity-logo"
-          aria-hidden="true"
-        >
-          {active.abbr}
-        </div>
-        <div className="agent-identity-picker-wrap" ref={wrapRef}>
+        <AgentAvatar profile={active} creators={creators} size="logo" />
+        <div className="agent-identity-picker-wrap">
           <button
             type="button"
             className="agent-identity-picker"
@@ -53,41 +48,48 @@ export function AgentChatEmpty({ agentId, creators, onAgentChange }: Props) {
               ▾
             </span>
           </button>
-          {!menuOpen ? null : (
-            <div className="agent-identity-menu" id="agent-identity-menu" role="listbox">
-              {profiles.map((p) => {
-                const selected = p.id === active.id;
-                return (
-                  <button
-                    key={p.id}
-                    type="button"
-                    role="option"
-                    aria-selected={selected}
-                    className={`agent-identity-option${selected ? ' selected' : ''}`}
-                    onClick={() => {
-                      onAgentChange(p.id);
-                      setMenuOpen(false);
-                    }}
-                  >
-                    <span
-                      className={`agent-identity-option-avatar${p.isGlobal ? ' global' : ''}`}
-                      aria-hidden="true"
-                    >
-                      {p.abbr}
-                    </span>
-                    <span className="agent-identity-option-label">{p.name}</span>
-                    {p.isGlobal ? (
-                      <span className="agent-identity-option-tag">全局</span>
-                    ) : (
-                      <span className="agent-identity-option-tag">博主</span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
         </div>
       </div>
+      {!menuOpen ? null : (
+        <div
+          className="agent-identity-menu-backdrop"
+          role="presentation"
+          onClick={() => setMenuOpen(false)}
+        >
+          <div
+            className="agent-identity-menu"
+            id="agent-identity-menu"
+            role="listbox"
+            aria-label="选择 Agent"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {profiles.map((p) => {
+              const selected = p.id === active.id;
+              return (
+                <button
+                  key={p.id}
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  className={`agent-identity-option${selected ? ' selected' : ''}`}
+                  onClick={() => {
+                    onAgentChange(p.id);
+                    setMenuOpen(false);
+                  }}
+                >
+                  <AgentAvatar profile={p} creators={creators} size="option" />
+                  <span className="agent-identity-option-label">{p.name}</span>
+                  {p.isGlobal ? (
+                    <span className="agent-identity-option-tag">全局</span>
+                  ) : (
+                    <span className="agent-identity-option-tag">博主</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
