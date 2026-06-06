@@ -75,6 +75,15 @@ export const PiEventSchema = z.discriminatedUnion('type', [
     payload: ToolResultPayloadSchema,
   }),
   z.object({
+    type: z.literal('approval.request'),
+    payload: z.object({
+      id: z.string(),
+      action: z.string(),
+      summary: z.string(),
+      detail: z.record(z.unknown()).optional(),
+    }),
+  }),
+  z.object({
     type: z.literal('job.progress'),
     payload: z.object({
       job_id: z.string(),

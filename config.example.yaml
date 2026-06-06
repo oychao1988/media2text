@@ -71,6 +71,28 @@ desktop:
     max_tool_output_chars: 16000
     session_search_default_limit: 8
     llm_timeout_sec: 120        # agent LLM HTTP timeout; avoids infinite「思考中」
+    allow_toolsets:
+      - m2t-core
+      - m2t-terminal
+      - m2t-delegation
+    distill:
+      on_creator_add: false
+      defer_until_min_chars: 2000
+
+terminal:
+  backend: local
+  cwd: ./data
+  default_shell: bash
+  timeout_sec: 60
+
+security:
+  command_approval: prompt   # prompt | allowlist | off
+  allowlist: []
+
+delegation:
+  max_concurrent_children: 2
+  max_spawn_depth: 2
+  orchestrator_enabled: false
 
 # Hermes agent kernel (§14) — memory/compression used from M3+
 memory:
