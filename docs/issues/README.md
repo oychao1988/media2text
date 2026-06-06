@@ -162,6 +162,21 @@
 
 **合并顺序**：#170 → #171 / #172（可并行）→ #173（**已交付**，Epic 验收：[agent-pane-acceptance](../superpowers/verification/2026-06-06-m2t-desktop-agent-pane-acceptance.md)）。
 
+### m2t-desktop Agent Pane UI 细化（2026-06-07）
+
+规格：[2026-06-07-m2t-desktop-agent-pane-ui-refinements-design.md](../superpowers/specs/2026-06-07-m2t-desktop-agent-pane-ui-refinements-design.md) · 原型：[finalized.html](../superpowers/designs/m2t-desktop/finalized.html)
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| 1 | [#199](https://github.com/oychao1988/media2text/issues/199) | [pr1-accio-messages](./m2t-desktop-agent-pane-ui-refinements-pr1-accio-messages.md) | `issue-199-agent-accio-messages` |
+| 2 | [#200](https://github.com/oychao1988/media2text/issues/200) | [pr2-agent-history](./m2t-desktop-agent-pane-ui-refinements-pr2-agent-history.md) | `issue-200-agent-history-groups` |
+| 3 | [#201](https://github.com/oychao1988/media2text/issues/201) | [pr3-draft-thread](./m2t-desktop-agent-pane-ui-refinements-pr3-draft-thread.md) | `issue-201-agent-draft-thread` |
+| 4 | [#202](https://github.com/oychao1988/media2text/issues/202) | [pr4-tab-avatars](./m2t-desktop-agent-pane-ui-refinements-pr4-tab-avatars.md) | `issue-202-agent-tab-avatars` |
+| 5 | [#203](https://github.com/oychao1988/media2text/issues/203) | [pr5-layout-chatonly](./m2t-desktop-agent-pane-ui-refinements-pr5-layout-chatonly.md) | `issue-203-agent-layout-chatonly` |
+| 6 | [#204](https://github.com/oychao1988/media2text/issues/204) | [pr6-composer](./m2t-desktop-agent-pane-ui-refinements-pr6-composer.md) | `issue-204-agent-composer` |
+
+**合并顺序**：#199 / #200 可并行 → #201 → #202 → #203 / #204（可并行）→ 系列验收 A1–A10（规格 §11）。**零后端变更**。
+
 ### m2t-desktop 转写场次 + 监控弹窗 UX（2026-06-06）
 
 | 顺序 | GitHub | PR | 文件 | 分支 |
