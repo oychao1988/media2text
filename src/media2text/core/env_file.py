@@ -6,7 +6,7 @@ import os
 import re
 from pathlib import Path
 
-from media2text.core.config import _project_root, load_dotenv_file
+from media2text.core.config import _project_root
 
 
 def _quote_env_value(value: str) -> str:

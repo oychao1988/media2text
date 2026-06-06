@@ -2,10 +2,10 @@ import json
 
 import pytest
 
-from media2text.core.storage.db import _migrate_desktop_v1, _migrate_hermes_v1, connect
+from media2text.core.storage.db import _migrate_hermes_v1, connect
+from media2text.core.storage.repos import CreatorRepo, DesktopChatRepo, LiveSnapshotRepo
 
 pytestmark = pytest.mark.desktop
-from media2text.core.storage.repos import CreatorRepo, DesktopChatRepo, LiveSnapshotRepo
 
 
 def test_desktop_v1_tables_exist(tmp_path) -> None:
