@@ -94,3 +94,24 @@ def test_turn_async_persists_messages(api_client, workspace, monkeypatch) -> Non
     msgs = chat.list_messages(tid)
     conn.close()
     assert any(m.content == "mock reply" for m in msgs)
+
+
+def test_activate_thread_updates_binding(api_client, workspace) -> None:
+    cid = _seed_creator(workspace)
+    r = api_client.post("/api/agent/threads", json={"creatorId": cid, "title": "activate"})
+    tid = r.json()["thread"]["id"]
+    r2 = api_client.patch(
+        f"/api/agent/threads/{tid}/activate",
+        json={
+            "creatorId": cid,
+            "sessionId": "sess-1",
+            "sessionKind": "vod",
+            "transcriptPath": "creators/x/videos/a.transcript.json",
+            "summaryPath": None,
+            "contextMode": "transcript",
+        },
+    )
+    assert r2.status_code == 200
+    thread = r2.json()["thread"]
+    assert thread["contextMode"] == "transcript"
+    assert thread["sessionId"] == "sess-1"

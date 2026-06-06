@@ -9,7 +9,7 @@ export function useAgentThreads() {
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await apiGet<{ ok: boolean; threads: ThreadRow[] }>('/api/chat/threads', true);
+      const res = await apiGet<{ ok: boolean; threads: ThreadRow[] }>('/api/agent/threads', true);
       const rows = (res.threads ?? []).slice().sort((a, b) => {
         const ta = Date.parse(a.updated_at ?? '') || 0;
         const tb = Date.parse(b.updated_at ?? '') || 0;
@@ -29,7 +29,7 @@ export function useAgentThreads() {
 
   const createThread = useCallback(
     async (creatorId: string, sessionId?: string | null): Promise<ThreadRow | null> => {
-      const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/chat/threads', {
+      const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/agent/threads', {
         creatorId,
         sessionId: sessionId ?? undefined,
         title: 'Agent',
@@ -44,7 +44,7 @@ export function useAgentThreads() {
 
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
-      await apiPatch(`/api/chat/threads/${threadId}`, { title });
+      await apiPatch(`/api/agent/threads/${threadId}`, { title });
       await refresh();
     },
     [refresh],
@@ -52,14 +52,14 @@ export function useAgentThreads() {
 
   const deleteThread = useCallback(
     async (threadId: string) => {
-      await apiDelete(`/api/chat/threads/${threadId}`);
+      await apiDelete(`/api/agent/threads/${threadId}`);
       await refresh();
     },
     [refresh],
   );
 
   const patchThreadSession = useCallback(async (threadId: string, sessionId: string | null) => {
-    await apiPatch(`/api/chat/threads/${threadId}`, {
+    await apiPatch(`/api/agent/threads/${threadId}`, {
       sessionId: sessionId ?? undefined,
       clearSession: sessionId == null,
     });

@@ -77,8 +77,8 @@ function AgentChatMessages({
           ) : null}
         </div>
       ) : null}
-      {agent.status === 'crashed' ? (
-        <p className="muted agent-status-hint">Agent 已退出，正在尝试恢复…</p>
+      {agent.status === 'reconnecting' ? (
+        <p className="muted agent-status-hint">Agent 流重连中…</p>
       ) : null}
     </>
   );

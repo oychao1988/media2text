@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { M2tSelect } from '../../components/M2tSelect';
 import { ConfigAiPanel, type ConfigAiPanelHandle, llmProvidersForPatch } from './ConfigAiPanel';
-import { requestAgentReload } from '../agent/agentSidecar';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { AuthPlatformStatus, ConfigDto, LlmProvider } from '../../lib/types';
@@ -181,8 +180,7 @@ export function ConfigForm() {
       if (window.confirm('是否立即重启守护进程？')) void restartDaemon();
     }
     if (res.requires_agent_reload?.length) {
-      showToast('Agent 配置已更新，当前轮次结束后将重载', 'info');
-      requestAgentReload();
+      showToast('Agent 配置已更新，下一轮对话将使用新配置', 'info');
     }
   };
 

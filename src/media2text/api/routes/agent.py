@@ -58,6 +58,18 @@ class TurnBody(BaseModel):
     sidebar_creator_id: str | None = Field(default=None, alias="sidebarCreatorId")
 
 
+class ActivateBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    creator_id: str | None = Field(default=None, alias="creatorId")
+    session_id: str | None = Field(default=None, alias="sessionId")
+    session_kind: str | None = Field(default=None, alias="sessionKind")
+    transcript_path: str | None = Field(default=None, alias="transcriptPath")
+    summary_path: str | None = Field(default=None, alias="summaryPath")
+    context_mode: str | None = Field(default=None, alias="contextMode")
+    clear_session: bool = Field(default=False, alias="clearSession")
+
+
 def _thread_dict(row) -> dict[str, Any]:
     binding = parse_binding(row["active_binding_json"])
     return {
@@ -216,6 +228,38 @@ def patch_thread(
         context_mode=body.context_mode,
         live_session_id=body.session_id,
         clear_live_session=body.clear_session,
+    )
+    row = db.get_thread_by_display_id(thread_id)
+    assert row is not None
+    return {"ok": True, "thread": _thread_dict(row)}
+
+
+@router.patch("/threads/{thread_id}/activate")
+def activate_thread(
+    thread_id: str,
+    payload: dict[str, Any],
+    conn=Depends(get_db),
+) -> dict:
+    body = ActivateBody.model_validate(payload)
+    if body.context_mode is not None and body.context_mode not in _VALID_CONTEXT_MODES:
+        raise HTTPException(
+            status_code=400,
+            detail="contextMode must be transcript, summary, or both",
+        )
+    if body.creator_id is not None and not CreatorRepo(conn).get(body.creator_id):
+        raise HTTPException(status_code=404, detail="creator not found")
+    db = SessionDB(conn)
+    if db.get_thread_by_display_id(thread_id) is None:
+        raise HTTPException(status_code=404, detail="thread not found")
+    db.activate_thread(
+        thread_id,
+        creator_id=body.creator_id,
+        live_session_id=body.session_id,
+        clear_live_session=body.clear_session,
+        session_kind=body.session_kind,
+        transcript_path=body.transcript_path,
+        summary_path=body.summary_path,
+        context_mode=body.context_mode,
     )
     row = db.get_thread_by_display_id(thread_id)
     assert row is not None
