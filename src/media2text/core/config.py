@@ -272,6 +272,24 @@ class AgentLoopConfig(BaseModel):
     max_turns: int = 25
 
 
+class TerminalConfig(BaseModel):
+    backend: str = "local"
+    cwd: str = "./data"
+    default_shell: str = "bash"
+    timeout_sec: float = 60.0
+
+
+class SecurityConfig(BaseModel):
+    command_approval: str = "prompt"  # prompt | allowlist | off
+    allowlist: list[str] = Field(default_factory=list)
+
+
+class DelegationConfig(BaseModel):
+    max_concurrent_children: int = 2
+    max_spawn_depth: int = 2
+    orchestrator_enabled: bool = False
+
+
 class DistillConfig(BaseModel):
     on_creator_add: bool = False
     max_input_chars: int = 120_000
@@ -288,6 +306,9 @@ class DesktopAgentConfig(BaseModel):
     max_tool_output_chars: int = 16000
     session_search_default_limit: int = 8
     llm_timeout_sec: int = 120
+    allow_toolsets: list[str] = Field(
+        default_factory=lambda: ["m2t-core", "m2t-terminal", "m2t-delegation"]
+    )
     distill: DistillConfig = Field(default_factory=DistillConfig)
 
 
@@ -335,6 +356,9 @@ class AppConfig(BaseSettings):
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
     compression: CompressionConfig = Field(default_factory=CompressionConfig)
     agent: AgentLoopConfig = Field(default_factory=AgentLoopConfig)
+    terminal: TerminalConfig = Field(default_factory=TerminalConfig)
+    security: SecurityConfig = Field(default_factory=SecurityConfig)
+    delegation: DelegationConfig = Field(default_factory=DelegationConfig)
     live: LiveConfig = Field(default_factory=LiveConfig)
     transcribe: TranscribeConfig = Field(default_factory=TranscribeConfig)
     summarize: SummarizeConfig = Field(default_factory=SummarizeConfig)

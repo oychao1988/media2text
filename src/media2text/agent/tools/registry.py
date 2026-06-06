@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from typing import Any, Callable
 
 from media2text.agent.tools import m2t_handlers
+from media2text.agent.tools import terminal_handlers
+from media2text.agent.tools.delegate import delegate_task
 
 ToolHandler = Callable[..., dict[str, Any]]
 
@@ -127,6 +129,70 @@ M2T_TOOLS: list[ToolDef] = [
     ),
 ]
 
+TERMINAL_TOOLS: list[ToolDef] = [
+    ToolDef(
+        name="read_file",
+        description="Read a UTF-8 file under the sandbox cwd",
+        parameters={
+            "type": "object",
+            "properties": {"path": {"type": "string"}},
+            "required": ["path"],
+        },
+        handler=terminal_handlers.read_file,
+        kind="hermes",
+    ),
+    ToolDef(
+        name="search_files",
+        description="Glob files under sandbox cwd",
+        parameters={
+            "type": "object",
+            "properties": {"pattern": {"type": "string"}},
+        },
+        handler=terminal_handlers.search_files,
+        kind="hermes",
+    ),
+    ToolDef(
+        name="patch",
+        description="Replace first occurrence of old_string in a file",
+        parameters={
+            "type": "object",
+            "properties": {
+                "path": {"type": "string"},
+                "old_string": {"type": "string"},
+                "new_string": {"type": "string"},
+            },
+            "required": ["path", "old_string", "new_string"],
+        },
+        handler=terminal_handlers.patch,
+        kind="hermes",
+    ),
+    ToolDef(
+        name="terminal",
+        description="Run a shell command in sandbox cwd (local backend)",
+        parameters={
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"],
+        },
+        handler=terminal_handlers.terminal,
+        kind="hermes",
+    ),
+]
+
+DELEGATION_TOOLS: list[ToolDef] = [
+    ToolDef(
+        name="delegate_task",
+        description="Run a synchronous sub-agent on the same creator profile",
+        parameters={
+            "type": "object",
+            "properties": {"task": {"type": "string"}},
+            "required": ["task"],
+        },
+        handler=delegate_task,
+        kind="hermes",
+    ),
+]
+
 HERMES_STUB_TOOLS: list[ToolDef] = [
     ToolDef(
         name="memory",
@@ -192,7 +258,9 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
     ),
 ]
 
-ALL_TOOLS: dict[str, ToolDef] = {t.name: t for t in M2T_TOOLS + HERMES_STUB_TOOLS}
+ALL_TOOLS: dict[str, ToolDef] = {
+    t.name: t for t in M2T_TOOLS + TERMINAL_TOOLS + DELEGATION_TOOLS + HERMES_STUB_TOOLS
+}
 
 
 def get_tool(name: str) -> ToolDef | None:

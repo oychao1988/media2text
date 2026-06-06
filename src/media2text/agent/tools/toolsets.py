@@ -4,18 +4,23 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from media2text.agent.tools.registry import ALL_TOOLS, M2T_TOOLS
+from media2text.agent.tools.registry import ALL_TOOLS, DELEGATION_TOOLS, M2T_TOOLS, TERMINAL_TOOLS
 
 if TYPE_CHECKING:
     from media2text.agent.profile_resolver import AgentProfileContext
+    from media2text.core.config import AppConfig
 
 DEFAULT_TOOLSET = "m2t-core"
 
 _M2T_NAMES = [t.name for t in M2T_TOOLS]
 _HERMES_NAMES = ["memory", "session_search", "skills_list", "skill_view"]
+_TERMINAL_NAMES = [t.name for t in TERMINAL_TOOLS]
+_DELEGATION_NAMES = [t.name for t in DELEGATION_TOOLS]
 
 TOOLSETS: dict[str, list[str]] = {
     DEFAULT_TOOLSET: _M2T_NAMES + _HERMES_NAMES,
+    "m2t-terminal": _TERMINAL_NAMES,
+    "m2t-delegation": _DELEGATION_NAMES,
 }
 
 
@@ -23,11 +28,16 @@ def tool_names_for_set(name: str = DEFAULT_TOOLSET) -> list[str]:
     return list(TOOLSETS.get(name, TOOLSETS[DEFAULT_TOOLSET]))
 
 
-def resolve_tool_names(profile: AgentProfileContext) -> list[str]:
+def resolve_tool_names(profile: AgentProfileContext, cfg: AppConfig | None = None) -> list[str]:
     """Union enabled toolsets minus disabled_tools (Hermes §24.1.4)."""
+    allowed_sets: set[str] | None = None
+    if cfg is not None:
+        allowed_sets = set(cfg.desktop.agent.allow_toolsets or [])
     names: list[str] = []
     seen: set[str] = set()
     for toolset in profile.enabled_toolsets:
+        if allowed_sets is not None and toolset not in allowed_sets:
+            continue
         for name in TOOLSETS.get(toolset, []):
             if name in profile.disabled_tools or name in seen:
                 continue

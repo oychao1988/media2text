@@ -199,6 +199,16 @@ export function useM2tAgent(opts: {
         if (threadId) void loadHistory(threadId);
         return;
       }
+      if (event.type === 'approval.request') {
+        const { id, action, summary } = event.payload;
+        const ok = window.confirm(`Agent 请求确认：${action}\n\n${summary}`);
+        void apiPost(`/api/agent/approvals/${encodeURIComponent(id)}`, { approved: ok }, true).catch(
+          () => {
+            showToast('无法提交确认结果', 'error');
+          },
+        );
+        return;
+      }
       if (event.type === 'tool.result') {
         setMessages((prev) => [
           ...prev,

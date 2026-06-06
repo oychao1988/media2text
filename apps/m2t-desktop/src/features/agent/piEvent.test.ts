@@ -26,6 +26,15 @@ describe('parsePiEventLine', () => {
     expect(ev?.type).toBe('tool.result');
   });
 
+  it('parses approval.request', () => {
+    const line = JSON.stringify({
+      type: 'approval.request',
+      payload: { id: 'a1', action: 'terminal', summary: 'rm -rf .' },
+    });
+    const ev = parsePiEventLine(line);
+    expect(ev?.type).toBe('approval.request');
+  });
+
   it('returns null for invalid json', () => {
     expect(parsePiEventLine('not json')).toBeNull();
   });

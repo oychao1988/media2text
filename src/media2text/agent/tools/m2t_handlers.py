@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from media2text.agent.approval import ApprovalGate
     from media2text.agent.profile_resolver import AgentProfileContext
 
 
@@ -35,6 +36,7 @@ class ToolContext:
     session_id: str | None = None
     display_thread_id: str | None = None
     profile: AgentProfileContext | dict[str, Any] | None = None
+    approval_gate: ApprovalGate | None = None
 
 
 def _ok(data: Any = None) -> dict[str, Any]:
@@ -80,6 +82,16 @@ def m2t_start_recording(ctx: ToolContext, **params: Any) -> dict[str, Any]:
     cid = _resolve_creator(ctx, params)
     if not cid:
         return _err("MISSING_CREATOR", "未指定 creator_id")
+    from media2text.agent.approval import ApprovalGate, m2t_tool_needs_approval
+
+    if m2t_tool_needs_approval("m2t_start_recording"):
+        gate = ctx.approval_gate or ApprovalGate(ctx.cfg, auto_approve=True)
+        if not gate.ensure(
+            action="m2t_start_recording",
+            summary=f"Start recording for creator {cid}",
+            detail={"creator_id": cid},
+        ):
+            return _err("DENIED", "approval denied")
     result = recording_svc.start_recording(ctx.cfg, ctx.conn, cid)
     if not result.get("ok"):
         return result
@@ -106,6 +118,16 @@ def m2t_daemon_start(ctx: ToolContext, **_params: Any) -> dict[str, Any]:
 def m2t_daemon_stop(ctx: ToolContext, **_params: Any) -> dict[str, Any]:
     if ctx.supervisor is None:
         return _err("NO_SUPERVISOR", "monitor supervisor unavailable")
+    from media2text.agent.approval import ApprovalGate, m2t_tool_needs_approval
+
+    if m2t_tool_needs_approval("m2t_daemon_stop"):
+        gate = ctx.approval_gate or ApprovalGate(ctx.cfg, auto_approve=True)
+        if not gate.ensure(
+            action="m2t_daemon_stop",
+            summary="Stop monitor watch daemon",
+            detail={},
+        ):
+            return _err("DENIED", "approval denied")
     return runtime_svc.stop_runtime(ctx.cfg, ctx.supervisor)
 
 

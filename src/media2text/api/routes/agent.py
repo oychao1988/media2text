@@ -333,6 +333,20 @@ def cancel_turn(turn_id: str) -> dict:
     return {"ok": True, "turnId": turn_id, "cancelled": True}
 
 
+class ApprovalBody(BaseModel):
+    approved: bool
+
+
+@router.post("/approvals/{approval_id}")
+def resolve_approval(approval_id: str, body: ApprovalBody) -> dict:
+    from media2text.agent.approval import GLOBAL_APPROVAL_REGISTRY
+
+    ok = GLOBAL_APPROVAL_REGISTRY.resolve(approval_id, approved=body.approved)
+    if not ok:
+        raise HTTPException(status_code=404, detail="approval not found or already resolved")
+    return {"ok": True, "approvalId": approval_id, "approved": body.approved}
+
+
 def mark_deprecated(response: Response | None) -> None:
     if response is None:
         return

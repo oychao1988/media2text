@@ -21,6 +21,7 @@ from media2text.agent.runtime_provider import (
     resolve_model,
     tool_result_text as format_tool_output,
 )
+from media2text.agent.approval import ApprovalGate
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import openai_tools
 from media2text.agent.tools.toolsets import DEFAULT_TOOLSET, resolve_tool_names
@@ -99,11 +100,12 @@ class AIAgent:
         messages: list[dict[str, Any]] = system_msgs + replay
         messages = maybe_preflight(messages, self._cfg)
 
-        tool_names = resolve_tool_names(profile)
+        tool_names = resolve_tool_names(profile, self._cfg)
         tools_schema = openai_tools(tool_names)
         model = resolve_model(self._cfg, binding.get("model"))
         llm = self._llm or build_openai_client(self._cfg, provider_name=binding.get("provider_name"))
         budget = IterationBudget(self._cfg.agent.max_turns)
+        approval_gate = ApprovalGate(self._cfg, emit=emit)
         tool_ctx = ToolContext(
             cfg=self._cfg,
             conn=self._db.conn,
@@ -112,6 +114,7 @@ class AIAgent:
             session_id=session_id,
             display_thread_id=display_thread_id,
             profile=profile,
+            approval_gate=approval_gate,
         )
 
         final_text = ""
