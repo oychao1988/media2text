@@ -3,13 +3,16 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 
 from media2text.agent.ai_agent import AIAgent
 from media2text.agent.hermes_state import MessageRow, SessionDB, parse_binding
+from media2text.agent.turn_registry import turn_registry
 from media2text.api.deps import get_cfg, get_db
+from media2text.api.services.agent_stream_hub import agent_stream_hub
 from media2text.core.config import AppConfig
+from media2text.core.runtime.supervisor import MonitorSupervisor
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 
@@ -116,13 +119,36 @@ def _run_turn(
     text: str,
     turn_id: str,
 ) -> None:
+    handle = turn_registry.get(turn_id)
+    supervisor = handle.supervisor if handle else None
+
+    def emit(event: dict[str, Any]) -> None:
+        agent_stream_hub.publish(event, thread_id=thread_id)
+
     conn = open_db(cfg)
     try:
         db = SessionDB(conn)
-        AIAgent(db, cfg).run_conversation(display_thread_id=thread_id, user_text=text)
+        agent = AIAgent(db, cfg, supervisor=supervisor)
+        cancel = handle.cancel if handle else None
+        agent.run_conversation(
+            display_thread_id=thread_id,
+            user_text=text,
+            turn_id=turn_id,
+            cancel_event=cancel,
+            emit=emit,
+        )
     finally:
         conn.close()
-    _ = turn_id
+        turn_registry.unregister(turn_id)
+
+
+def _supervisor(request: Request) -> MonitorSupervisor | None:
+    sup = getattr(request.app.state, "supervisor", None)
+    if sup is None:
+        api_app = getattr(request.app.state, "api_app", None)
+        if api_app is not None:
+            sup = getattr(api_app.state, "supervisor", None)
+    return sup
 
 
 @router.get("/threads")
@@ -241,13 +267,26 @@ def start_turn(
     thread_id: str,
     body: TurnBody,
     background_tasks: BackgroundTasks,
+    request: Request,
     db: SessionDB = Depends(_get_db_session),
     cfg: AppConfig = Depends(get_cfg),
 ) -> dict:
     _check_creator_mismatch(db, thread_id, body.sidebar_creator_id)
     turn_id = str(uuid.uuid4())
+    turn_registry.register(
+        turn_id=turn_id,
+        thread_id=thread_id,
+        supervisor=_supervisor(request),
+    )
     background_tasks.add_task(_run_turn, cfg, thread_id, body.text, turn_id)
     return {"ok": True, "turnId": turn_id}
+
+
+@router.post("/turns/{turn_id}/cancel")
+def cancel_turn(turn_id: str) -> dict:
+    if not turn_registry.cancel(turn_id):
+        raise HTTPException(status_code=404, detail="turn not found")
+    return {"ok": True, "turnId": turn_id, "cancelled": True}
 
 
 def mark_deprecated(response: Response | None) -> None:

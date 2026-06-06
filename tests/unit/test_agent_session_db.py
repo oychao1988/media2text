@@ -32,18 +32,20 @@ def test_session_db_create_append_replay(tmp_path) -> None:
     conn.close()
 
 
-def test_ai_agent_echo_persists(tmp_path) -> None:
+def test_ai_agent_mock_llm_persists(tmp_path) -> None:
+    from media2text.agent.runtime_provider import LlmCompletion, MockChatClient
+
     conn = connect(tmp_path / "media2text.db")
     db = SessionDB(conn)
     thread_id = "thread-echo"
     db.create_session(display_thread_id=thread_id, title="echo")
-    agent = AIAgent(db)
+    agent = AIAgent(db, llm=MockChatClient([LlmCompletion(content="mock reply")]))
     reply = agent.run_conversation(display_thread_id=thread_id, user_text="ping")
-    assert reply == "echo: ping"
+    assert reply == "mock reply"
     msgs = db.get_messages(thread_id)
     assert len(msgs) == 2
     assert msgs[0]["role"] == "user"
-    assert msgs[1]["content"] == "echo: ping"
+    assert msgs[1]["content"] == "mock reply"
     conn.close()
 
 
