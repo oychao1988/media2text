@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any
+from typing import Any, Literal
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.schemas.events import EventType, event_payload
 from media2text.api.services import creator_avatar as creator_avatar_svc
+from media2text.api.services import history_content as history_content_svc
 from media2text.api.services import history_media as history_media_svc
 from media2text.api.services import live_snapshot as live_snapshot_svc
 from media2text.api.services import recording as recording_svc
@@ -258,6 +259,37 @@ def list_sessions(
         status=status,
     )
     return result
+
+
+@router.get("/{creator_id}/history/{kind}/{item_id}/transcript")
+def get_history_transcript(
+    creator_id: str,
+    kind: Literal["live", "vod"],
+    item_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=422, detail="kind must be live or vod")
+    payload = history_content_svc.read_history_transcript(
+        conn, workspace=cfg.ensure_workspace(), creator_id=creator_id, kind=kind, item_id=item_id
+    )
+    return {"ok": True, **payload}
+
+
+@router.get("/{creator_id}/history/{kind}/{item_id}/summary")
+def get_history_summary(
+    creator_id: str,
+    kind: Literal["live", "vod"],
+    item_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if kind not in ("live", "vod"):
+        raise HTTPException(status_code=422, detail="kind must be live or vod")
+    return history_content_svc.read_history_summary(
+        conn, workspace=cfg.ensure_workspace(), creator_id=creator_id, kind=kind, item_id=item_id
+    )
 
 
 @router.post("/{creator_id}/history/{kind}/{item_id}/summarize")
