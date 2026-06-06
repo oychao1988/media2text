@@ -2,6 +2,7 @@ import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'rea
 import {
   applyLayoutSizesTransient,
   clamp,
+  maxCenterRightWForTranscriptLayout,
   maxRightWForViewport,
   maxSidebarWForViewport,
   SIZE_LIMITS,
@@ -15,7 +16,7 @@ function setAppResizing(active: boolean) {
 }
 
 export function useColumnResize() {
-  const { leftCollapsed, rightCollapsed } = useLayoutStore();
+  const { leftCollapsed, rightCollapsed, desktopLayoutPreset } = useLayoutStore();
   const dragging = useRef<Side | null>(null);
   const startX = useRef(0);
   const startSidebarW = useRef(0);
@@ -87,10 +88,14 @@ export function useColumnResize() {
         );
         applyLayoutSizesTransient({ sidebarW: pendingSidebarW.current });
       } else {
+        const maxRight =
+          desktopLayoutPreset === 'transcript-chat'
+            ? maxCenterRightWForTranscriptLayout(startSidebarW.current)
+            : maxRightWForViewport(startSidebarW.current);
         pendingRightW.current = clamp(
           startRightW.current - dx,
           SIZE_LIMITS.right.min,
-          maxRightWForViewport(startSidebarW.current),
+          maxRight,
         );
         applyLayoutSizesTransient({ rightW: pendingRightW.current });
       }

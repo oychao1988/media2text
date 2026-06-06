@@ -4,6 +4,7 @@ export const SIZE_DEFAULTS = {
   sidebarW: 240,
   rightW: 360,
   agentH: 320,
+  agentHistoryW: 200,
 } as const;
 
 export const SIZE_LIMITS = {
@@ -12,8 +13,11 @@ export const SIZE_LIMITS = {
   /** JS clamp fallback; CSS uses --center-min-w (25vw). */
   center: { min: 100 },
   agent: { min: 160, max: 720 },
+  agentHistory: { min: 140, max: 340 },
   transcriptMin: 100,
 } as const;
+
+export type DesktopLayoutPreset = 'full' | 'transcript-chat' | 'chat-only';
 
 export type CenterTab = 'live' | 'history';
 export type CenterView = CenterTab | 'playback' | 'config' | 'manage';
@@ -24,6 +28,8 @@ export type LayoutPersist = {
   sidebarW: number;
   rightW: number;
   agentH: number;
+  desktopLayoutPreset: DesktopLayoutPreset;
+  agentHistoryW: number;
 };
 
 export const DEFAULT_LAYOUT: LayoutPersist = {
@@ -32,6 +38,8 @@ export const DEFAULT_LAYOUT: LayoutPersist = {
   sidebarW: SIZE_DEFAULTS.sidebarW,
   rightW: SIZE_DEFAULTS.rightW,
   agentH: SIZE_DEFAULTS.agentH,
+  desktopLayoutPreset: 'full',
+  agentHistoryW: SIZE_DEFAULTS.agentHistoryW,
 };
 
 export function clamp(n: number, min: number, max: number): number {
@@ -61,6 +69,16 @@ export function loadLayout(): LayoutPersist {
         SIZE_LIMITS.agent.min,
         SIZE_LIMITS.agent.max,
       ),
+      desktopLayoutPreset:
+        parsed.desktopLayoutPreset === 'transcript-chat' ||
+        parsed.desktopLayoutPreset === 'chat-only'
+          ? parsed.desktopLayoutPreset
+          : 'full',
+      agentHistoryW: clamp(
+        Number(parsed.agentHistoryW) || SIZE_DEFAULTS.agentHistoryW,
+        SIZE_LIMITS.agentHistory.min,
+        SIZE_LIMITS.agentHistory.max,
+      ),
     };
   } catch {
     return { ...DEFAULT_LAYOUT };
@@ -80,6 +98,25 @@ export function applyLayoutCssVars(layout: LayoutPersist): void {
   root.style.setProperty('--sidebar-w', `${layout.sidebarW}px`);
   root.style.setProperty('--right-w', `${layout.rightW}px`);
   root.style.setProperty('--right-agent-h', `${layout.agentH}px`);
+  root.style.setProperty('--agent-history-w', `${layout.agentHistoryW}px`);
+}
+
+export function syncDesktopLayoutPresetClasses(preset: DesktopLayoutPreset): void {
+  const app = document.getElementById('app');
+  if (!app) return;
+  app.classList.remove(
+    'desktop-layout-full',
+    'desktop-layout-transcript',
+    'desktop-layout-chat-only',
+    'desktop-layout-chat',
+  );
+  if (preset === 'transcript-chat') {
+    app.classList.add('desktop-layout-transcript');
+  } else if (preset === 'chat-only') {
+    app.classList.add('desktop-layout-chat-only', 'desktop-layout-chat');
+  } else {
+    app.classList.add('desktop-layout-full');
+  }
 }
 
 function readCssPx(varName: string, fallback: number): number {
@@ -116,6 +153,17 @@ export function maxRightWForViewport(sidebarW?: number): number {
   const available = window.innerWidth - readCenterMinPx() - readGripPx() * 2 - sw;
   const halfMax = Math.floor(window.innerWidth * 0.5);
   return Math.max(SIZE_LIMITS.right.min, Math.min(halfMax, SIZE_LIMITS.right.max, available));
+}
+
+/** Split remaining width between center transcript and right agent columns. */
+export function maxCenterRightWForTranscriptLayout(sidebarW?: number): number {
+  const sw = sidebarW ?? readCssPx('--sidebar-w', SIZE_DEFAULTS.sidebarW);
+  const grips = readGripPx() * 2;
+  const remaining = window.innerWidth - sw - grips;
+  const minCenter = Math.max(SIZE_LIMITS.center.min, 280);
+  const minRight = SIZE_LIMITS.right.min;
+  const half = Math.floor(remaining / 2);
+  return Math.max(minRight, Math.min(half, remaining - minCenter));
 }
 
 /** Update pane CSS vars during drag without localStorage or React re-renders. */

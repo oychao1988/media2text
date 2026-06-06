@@ -206,6 +206,22 @@ export function TranscriptPane({
 
     const loadRest = async () => {
       try {
+        if (mode === 'playback' && playbackItem) {
+          if (transcriptPath) {
+            const url = await mediaUrl(transcriptPath);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('transcript unavailable');
+            const payload = (await res.json()) as TranscriptPayload;
+            if (!cancelled) applyPayload(payload);
+            return;
+          }
+          const res = await apiGet<TranscriptPayload & { ok: boolean }>(
+            `/api/creators/${playbackItem.creatorId}/history/${playbackItem.kind}/${playbackItem.itemId}/transcript`,
+            true,
+          );
+          if (!cancelled) applyPayload(res);
+          return;
+        }
         if (mode === 'playback' && transcriptPath) {
           const url = await mediaUrl(transcriptPath);
           const res = await fetch(url);
@@ -276,7 +292,7 @@ export function TranscriptPane({
       if (reconnectTimer != null) window.clearTimeout(reconnectTimer);
       ws?.close();
     };
-  }, [sessionId, transcriptPath, mode]);
+  }, [sessionId, transcriptPath, mode, playbackItem]);
 
   useEffect(() => {
     if (tab !== 'summary') return;
@@ -286,6 +302,22 @@ export function TranscriptPane({
     setSummaryMd(null);
     void (async () => {
       try {
+        if (mode === 'playback' && playbackItem) {
+          if (activeSummaryPath) {
+            const url = await mediaUrl(activeSummaryPath);
+            const res = await fetch(url);
+            if (!res.ok) throw new Error('摘要不可用');
+            const text = await res.text();
+            if (!cancelled) setSummaryMd(text.trim() ? text : null);
+            return;
+          }
+          const res = await apiGet<{ ok: boolean; text: string }>(
+            `/api/creators/${playbackItem.creatorId}/history/${playbackItem.kind}/${playbackItem.itemId}/summary`,
+            true,
+          );
+          if (!cancelled) setSummaryMd(res.text?.trim() ? res.text : null);
+          return;
+        }
         if (mode === 'playback' && activeSummaryPath) {
           const url = await mediaUrl(activeSummaryPath);
           const res = await fetch(url);
@@ -320,7 +352,7 @@ export function TranscriptPane({
     return () => {
       cancelled = true;
     };
-  }, [tab, activeSummaryPath, sessionId, mode]);
+  }, [tab, activeSummaryPath, sessionId, mode, playbackItem]);
 
   const canSummarize =
     mode === 'playback' && playbackItem != null && playbackItem.hasTranscript;
