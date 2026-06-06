@@ -46,7 +46,14 @@ def test_creator_mismatch_409(api_client, workspace) -> None:
     assert r2.json()["detail"]["code"] == "creator_mismatch"
 
 
-def test_global_thread_skips_mismatch(api_client) -> None:
+def test_global_thread_skips_mismatch(api_client, monkeypatch) -> None:
+    from media2text.agent.runtime_provider import LlmCompletion, MockChatClient
+
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.build_openai_client",
+        lambda *_a, **_k: MockChatClient([LlmCompletion(content="mock reply")]),
+    )
+
     r = api_client.post("/api/agent/threads", json={"title": "global"})
     tid = r.json()["thread"]["id"]
     r2 = api_client.post(
