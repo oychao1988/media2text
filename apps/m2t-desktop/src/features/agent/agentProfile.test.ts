@@ -1,4 +1,9 @@
-import { agentAbbr, resolveAgentProfile, AGENT_GLOBAL_PROFILE } from './agentProfile';
+import {
+  agentAbbr,
+  resolveAgentProfile,
+  sidebarAgentId,
+  AGENT_GLOBAL_PROFILE,
+} from './agentProfile';
 import { formatChatTime } from './formatChatTime';
 import { describe, expect, it } from 'vitest';
 
@@ -17,6 +22,11 @@ describe('agentProfile', () => {
 
   it('abbreviates short names', () => {
     expect(agentAbbr('灵犀')).toBe('灵犀');
+  });
+
+  it('maps sidebar selection to agent id', () => {
+    expect(sidebarAgentId(null)).toBe('global');
+    expect(sidebarAgentId('creator-1')).toBe('creator-1');
   });
 });
 

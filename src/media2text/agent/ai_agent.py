@@ -18,6 +18,7 @@ from media2text.agent.runtime_provider import (
     ChatClient,
     TurnCancelled,
     build_openai_client,
+    resolve_agent_provider,
     resolve_model,
     tool_result_text as format_tool_output,
 )
@@ -25,6 +26,7 @@ from media2text.agent.approval import ApprovalGate
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import openai_tools
 from media2text.agent.tools.toolsets import DEFAULT_TOOLSET, resolve_tool_names
+from media2text.agent.thread_title import maybe_auto_title_thread
 from media2text.core.config import AppConfig
 
 
@@ -103,7 +105,12 @@ class AIAgent:
         tool_names = resolve_tool_names(profile, self._cfg)
         tools_schema = openai_tools(tool_names)
         model = resolve_model(self._cfg, binding.get("model"))
-        llm = self._llm or build_openai_client(self._cfg, provider_name=binding.get("provider_name"))
+        provider_name = resolve_agent_provider(
+            self._cfg,
+            model=model,
+            provider_name=binding.get("provider_name"),
+        )
+        llm = self._llm or build_openai_client(self._cfg, provider_name=provider_name)
         budget = IterationBudget(self._cfg.agent.max_turns)
         approval_gate = ApprovalGate(self._cfg, emit=emit)
         tool_ctx = ToolContext(
@@ -162,7 +169,7 @@ class AIAgent:
                         )
                         self._emit(emit, pi_emit.turn_phase("tool", f"工具 · {tc.name}"))
                         payload = handle_function_call(tc.name, tc.arguments, tool_ctx)
-                        self._emit(emit, pi_emit.tool_result_payload(payload))
+                        self._emit(emit, pi_emit.tool_result_payload(payload, name=tc.name))
                         text_out = self._truncate(format_tool_output(payload))
                         return tc, payload, text_out
 
@@ -233,6 +240,19 @@ class AIAgent:
                 messages=messages,
                 cfg=self._cfg,
             )
+            if final_text.strip() and user_text.strip():
+                new_title = maybe_auto_title_thread(
+                    self._db,
+                    self._cfg,
+                    display_thread_id,
+                    user_text=user_text,
+                    assistant_text=final_text,
+                )
+                if new_title:
+                    self._emit(
+                        emit,
+                        pi_emit.thread_title(display_thread_id, new_title),
+                    )
             duration_ms = int((time.time() - started) * 1000)
             self._emit(emit, pi_emit.turn_end(duration_ms))
 

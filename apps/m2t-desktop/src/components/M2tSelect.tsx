@@ -31,6 +31,8 @@ type Props = {
   className?: string;
   title?: string;
   menuMinWidth?: number;
+  /** Prefer opening above the trigger (e.g. bottom composer). */
+  preferPlacement?: 'auto' | 'above' | 'below';
 };
 
 const MENU_GAP = 4;
@@ -66,12 +68,21 @@ function SelectOptionIcon({ kind }: { kind?: M2tSelectIconKind }) {
   );
 }
 
-function computeMenuStyle(trigger: HTMLElement, menuMinWidth = 0): CSSProperties {
+function computeMenuStyle(
+  trigger: HTMLElement,
+  menuMinWidth = 0,
+  preferPlacement: 'auto' | 'above' | 'below' = 'auto',
+): CSSProperties {
   const rect = trigger.getBoundingClientRect();
   const maxH = Math.min(MAX_MENU_HEIGHT, window.innerHeight - 16);
   const spaceBelow = window.innerHeight - rect.bottom - MENU_GAP - 8;
   const spaceAbove = rect.top - MENU_GAP - 8;
-  const openDown = spaceBelow >= Math.min(160, maxH) || spaceBelow >= spaceAbove;
+  const openDown =
+    preferPlacement === 'below'
+      ? true
+      : preferPlacement === 'above'
+        ? false
+        : spaceBelow >= Math.min(160, maxH) || spaceBelow >= spaceAbove;
   const maxWidth = Math.min(420, window.innerWidth - 16);
   const minWidth = Math.max(rect.width, menuMinWidth);
 
@@ -89,7 +100,7 @@ function computeMenuStyle(trigger: HTMLElement, menuMinWidth = 0): CSSProperties
   const menuHeight = Math.min(maxH, Math.max(120, spaceAbove));
   return {
     position: 'fixed',
-    top: Math.max(8, rect.top - MENU_GAP - menuHeight),
+    bottom: window.innerHeight - rect.top + MENU_GAP,
     left: Math.min(rect.left, window.innerWidth - maxWidth - 8),
     minWidth,
     maxWidth,
@@ -120,6 +131,7 @@ export function M2tSelect({
   className = 'm2t-select',
   title,
   menuMinWidth = 0,
+  preferPlacement = 'auto',
 }: Props) {
   const listId = useId();
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -138,25 +150,25 @@ export function M2tSelect({
       return;
     }
 
+    let raf = 0;
     const update = () => {
       if (!triggerRef.current) return;
-      setMenuStyle(computeMenuStyle(triggerRef.current, menuMinWidth));
+      setMenuStyle(computeMenuStyle(triggerRef.current, menuMinWidth, preferPlacement));
+    };
+    const schedule = () => {
+      cancelAnimationFrame(raf);
+      raf = requestAnimationFrame(update);
     };
 
-    const onScroll = (event: Event) => {
-      const target = event.target as Node | null;
-      if (menuRef.current?.contains(target)) return;
-      close();
-    };
-
-    update();
-    window.addEventListener('resize', update);
-    window.addEventListener('scroll', onScroll, true);
+    schedule();
+    window.addEventListener('resize', schedule);
+    window.addEventListener('scroll', schedule, true);
     return () => {
-      window.removeEventListener('resize', update);
-      window.removeEventListener('scroll', onScroll, true);
+      cancelAnimationFrame(raf);
+      window.removeEventListener('resize', schedule);
+      window.removeEventListener('scroll', schedule, true);
     };
-  }, [close, menuMinWidth, open, options.length]);
+  }, [menuMinWidth, open, options.length, preferPlacement]);
 
   useEffect(() => {
     if (!open) return;

@@ -159,6 +159,7 @@ describe('useM2tAgent (M2 WS + turn)', () => {
       useM2tAgent({
         threadId: 'thread-1',
         creatorId: 'creator-1',
+        threadCreatorId: 'creator-1',
         sessionContext: {
           sessionId: 'sess-9',
           sessionKind: 'vod',
@@ -182,29 +183,21 @@ describe('useM2tAgent (M2 WS + turn)', () => {
     });
   });
 
-  it('shows toast on 409 creator_mismatch', async () => {
-    apiPost.mockRejectedValueOnce(new api.ApiError('mismatch', 409, { code: 'creator_mismatch' }));
-
-    const { result } = renderHook(() =>
+  it('does not bind sidebar creator on global thread activate', async () => {
+    renderHook(() =>
       useM2tAgent({
-        threadId: 'thread-1',
+        threadId: 'thread-global',
         creatorId: 'creator-1',
+        threadCreatorId: null,
         sessionContext: { sessionId: null, contextMode: 'both' },
       }),
     );
 
-    await waitFor(() => expect(mockSockets.length).toBe(1));
-    act(() => emitWs({ type: 'sidecar.ready', payload: { version: 'test' } }));
-    await waitFor(() => expect(result.current.ready).toBe(true));
-
-    await act(async () => {
-      await result.current.sendMessage('conflict');
+    await waitFor(() => {
+      expect(apiPatch).toHaveBeenCalled();
+      const [, body] = apiPatch.mock.calls[0]!;
+      expect(body).not.toHaveProperty('creatorId');
     });
-
-    expect(toast.showToast).toHaveBeenCalledWith(
-      '当前对话与侧边栏博主不一致，请切换对话或博主',
-      'error',
-    );
   });
 
   it('appends tool.result messages from WS', async () => {

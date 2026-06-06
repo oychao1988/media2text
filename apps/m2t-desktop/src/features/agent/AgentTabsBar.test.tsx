@@ -53,7 +53,7 @@ describe('AgentTabsBar', () => {
     expect(avatars).toHaveLength(2);
     expect(avatars[0]?.classList.contains('global')).toBe(true);
     expect(avatars[0]?.textContent).toBe('灵');
-    expect(avatars[1]?.textContent).toBe('博主');
+    expect(avatars[1]?.textContent).toBe('博');
   });
 
   it('renders draft tab with agent avatar', () => {
@@ -72,7 +72,7 @@ describe('AgentTabsBar', () => {
       />,
     );
     expect(screen.getByText('新对话')).toBeTruthy();
-    expect(document.querySelector('.agent-tab-avatar')?.textContent).toBe('博主');
+    expect(document.querySelector('.agent-tab-avatar')?.textContent).toBe('博');
   });
 
   it('calls onNewDraft from + button', async () => {

@@ -20,6 +20,7 @@ export type ChatMessage =
   | {
       id: string;
       role: 'tool';
+      toolName?: string;
       result: Extract<PiEvent, { type: 'tool.result' }>;
     };
 

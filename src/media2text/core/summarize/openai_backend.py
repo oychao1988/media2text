@@ -46,10 +46,28 @@ class LlmEndpoint:
 
 
 def primary_model(cfg: SummarizeLlmConfig) -> str:
+    default_model = (cfg.default_model or "").strip()
+    if default_model:
+        return default_model
+    default_provider = (cfg.default_provider or "").strip()
+    if default_provider:
+        for prov in cfg.providers:
+            if (prov.name or "").lower() == default_provider.lower() and prov.models:
+                return prov.models[0]
     for prov in cfg.providers:
         if prov.models:
             return prov.models[0]
     return "unknown"
+
+
+def resolve_provider_for_model(cfg: SummarizeLlmConfig, model: str | None) -> str | None:
+    target = (model or "").strip()
+    if not target or target == "auto":
+        return None
+    for prov in cfg.providers:
+        if prov.name and any(m == target for m in prov.models):
+            return prov.name
+    return None
 
 
 def resolve_api_key_envs(cfg: SummarizeLlmConfig) -> list[str]:

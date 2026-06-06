@@ -31,12 +31,17 @@ export function useAgentThreads(_selectedCreatorId: string | null) {
   }, [refresh]);
 
   const createThread = useCallback(
-    async (creatorId: string, sessionId?: string | null): Promise<ThreadRow | null> => {
+    async (
+      creatorId: string,
+      sessionId?: string | null,
+      opts?: { model?: string; providerName?: string | null },
+    ): Promise<ThreadRow | null> => {
       const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/agent/threads', {
         creatorId,
         sessionId: sessionId ?? undefined,
         title: 'Agent',
-        model: 'auto',
+        model: opts?.model ?? 'auto',
+        providerName: opts?.providerName ?? undefined,
         contextMode: 'both',
       });
       await refresh();
@@ -45,15 +50,19 @@ export function useAgentThreads(_selectedCreatorId: string | null) {
     [refresh],
   );
 
-  const createGlobalThread = useCallback(async (): Promise<ThreadRow | null> => {
-    const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/agent/threads', {
-      title: '全局 Agent',
-      model: 'auto',
-      contextMode: 'both',
-    });
-    await refresh();
-    return res.thread ?? null;
-  }, [refresh]);
+  const createGlobalThread = useCallback(
+    async (opts?: { model?: string; providerName?: string | null }): Promise<ThreadRow | null> => {
+      const res = await apiPost<{ ok: boolean; thread: ThreadRow }>('/api/agent/threads', {
+        title: '全局 Agent',
+        model: opts?.model ?? 'auto',
+        providerName: opts?.providerName ?? undefined,
+        contextMode: 'both',
+      });
+      await refresh();
+      return res.thread ?? null;
+    },
+    [refresh],
+  );
 
   const renameThread = useCallback(
     async (threadId: string, title: string) => {
@@ -78,6 +87,12 @@ export function useAgentThreads(_selectedCreatorId: string | null) {
     });
   }, []);
 
+  const applyThreadTitle = useCallback((threadId: string, title: string) => {
+    setThreads((prev) =>
+      prev.map((t) => (t.id === threadId ? { ...t, title } : t)),
+    );
+  }, []);
+
   return {
     threads,
     loading,
@@ -87,5 +102,6 @@ export function useAgentThreads(_selectedCreatorId: string | null) {
     renameThread,
     deleteThread,
     patchThreadSession,
+    applyThreadTitle,
   };
 }

@@ -16,6 +16,27 @@ export function createDraftTab(agentId = 'global'): AgentTabEntry {
   };
 }
 
+export function findDraftTab(entries: AgentTabEntry[]): AgentTabEntry | undefined {
+  return entries.find((e) => e.kind === 'draft');
+}
+
+/** Reuse the lone empty draft tab instead of opening duplicates. */
+export function openOrFocusDraftTab(
+  entries: AgentTabEntry[],
+  agentId = 'global',
+): { entries: AgentTabEntry[]; activeKey: string } {
+  const existing = findDraftTab(entries);
+  if (existing) {
+    const key = tabEntryKey(existing);
+    return {
+      entries: pushAgentTabEntry(entries, existing),
+      activeKey: key,
+    };
+  }
+  const entry = createDraftTab(agentId);
+  return { entries: pushAgentTabEntry(entries, entry), activeKey: tabEntryKey(entry) };
+}
+
 export function pushAgentTabEntry(entries: AgentTabEntry[], entry: AgentTabEntry): AgentTabEntry[] {
   const key = tabEntryKey(entry);
   const without = entries.filter((e) => tabEntryKey(e) !== key);

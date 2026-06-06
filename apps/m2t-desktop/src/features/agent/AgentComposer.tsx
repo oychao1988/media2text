@@ -133,6 +133,7 @@ export function AgentComposer({
               value={model}
               disabled={controlsDisabled}
               options={modelOptions}
+              preferPlacement="above"
               onChange={onModelChange}
             />
           </span>

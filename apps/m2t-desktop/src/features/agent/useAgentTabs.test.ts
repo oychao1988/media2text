@@ -3,6 +3,7 @@ import {
   activateAgentTabEntry,
   closeAgentTabEntry,
   createDraftTab,
+  openOrFocusDraftTab,
   promoteDraftTab,
   pushAgentTabEntry,
   tabEntryKey,
@@ -50,5 +51,16 @@ describe('useAgentTabs draft model', () => {
     const b: ReturnType<typeof createDraftTab> = createDraftTab();
     const entries = [a, b];
     expect(activateAgentTabEntry(entries, a, { reorder: false })).toEqual(entries);
+  });
+
+  it('openOrFocusDraftTab reuses existing draft instead of adding another', () => {
+    const first = openOrFocusDraftTab([], 'global');
+    const second = openOrFocusDraftTab(first.entries, 'c1');
+    expect(second.entries).toHaveLength(1);
+    expect(second.entries[0]?.kind).toBe('draft');
+    if (second.entries[0]?.kind === 'draft') {
+      expect(second.entries[0].agentId).toBe('global');
+    }
+    expect(second.activeKey).toBe(tabEntryKey(first.entries[0]!));
   });
 });

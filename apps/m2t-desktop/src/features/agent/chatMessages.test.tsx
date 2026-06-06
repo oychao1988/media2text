@@ -16,7 +16,8 @@ describe('ChatMessageUser', () => {
     expect(article).toBeTruthy();
     expect(container.querySelector('.chat-msg-bubble')).toBeTruthy();
     expect(container.querySelector('.chat-msg-actions')).toBeTruthy();
-    expect(container.querySelector('.chat-msg-name')?.textContent).toBe('你');
+    expect(container.querySelector('.chat-msg-name')?.textContent).toBe('本地用户');
+    expect(container.querySelector('.chat-msg-avatar.user')?.textContent).toBe('本');
     expect(screen.getByText('hello')).toBeTruthy();
   });
 });
@@ -57,6 +58,7 @@ describe('ChatMessageAgent', () => {
     const { container } = render(
       <ChatMessageAgent
         profile={AGENT_GLOBAL_PROFILE}
+        creators={[]}
         text="reply body"
         durationMs={5000}
         thinkingText="trace"
@@ -74,6 +76,7 @@ describe('ChatMessageAgent', () => {
     const { container } = render(
       <ChatMessageAgent
         profile={AGENT_GLOBAL_PROFILE}
+        creators={[]}
         text="partial…"
         activePhaseLabel="生成回复…"
       />,
@@ -82,13 +85,30 @@ describe('ChatMessageAgent', () => {
     expect(container.querySelector('.chat-msg-footer')).toBeNull();
   });
 
+  it('shows reply duration in footer after thumbs down', () => {
+    render(
+      <ChatMessageAgent
+        profile={AGENT_GLOBAL_PROFILE}
+        creators={[]}
+        text="done"
+        durationMs={5000}
+      />,
+    );
+    expect(screen.getByText('耗时 5 秒')).toBeTruthy();
+  });
+
   it('copy footer shows toast', async () => {
     const user = userEvent.setup();
     const toastSpy = vi.spyOn(toast, 'showToast');
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal('navigator', { ...navigator, clipboard: { writeText } });
     render(
-      <ChatMessageAgent profile={AGENT_GLOBAL_PROFILE} text="copy me" durationMs={1000} />,
+      <ChatMessageAgent
+        profile={AGENT_GLOBAL_PROFILE}
+        creators={[]}
+        text="copy me"
+        durationMs={1000}
+      />,
     );
     await user.click(screen.getByRole('button', { name: '复制' }));
     expect(writeText).toHaveBeenCalledWith('copy me');

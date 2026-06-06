@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { showToast, showToastWithAction } from '../../lib/toast';
 import { useCreators } from '../creators/CreatorsContext';
@@ -7,19 +7,20 @@ import { AgentChatEmpty, composerPlaceholderForAgent } from './AgentChatEmpty';
 import { AgentHistorySidebar } from './AgentHistorySidebar';
 import { AgentTabsBar } from './AgentTabsBar';
 import { AgentThreadContextMenu } from './AgentThreadContextMenu';
-import { shouldNotifyCreatorMismatch, isComposerBlocked } from './agentThreadSelect';
-import { resolveAgentProfile } from './agentProfile';
+import { shouldNotifyCreatorMismatch } from './agentThreadSelect';
+import { buildAgentModelCatalog } from './agentModelCatalog';
+import { resolveAgentProfile, sidebarAgentId } from './agentProfile';
 import { ChatMessageAgent } from './ChatMessageAgent';
 import { ChatMessageUser } from './ChatMessageUser';
 import { AgentComposer } from './AgentComposer';
 import { ToolResultCard } from './ToolResultCard';
 import { useAgentHistoryResize } from './useAgentHistoryResize';
+import { useAgentChatScroll } from './useAgentChatScroll';
 import {
   activateAgentTabEntry,
   closeAgentTabEntry,
-  createDraftTab,
+  openOrFocusDraftTab,
   promoteDraftTab,
-  pushAgentTabEntry,
   removeThreadFromTabs,
   tabEntryKey,
   type AgentTabEntry,
@@ -65,9 +66,11 @@ function AgentChatMessages({
           );
         }
         if (msg.role === 'tool') {
+          const payload = msg.result.payload;
+          if (payload.ok) return null;
           return (
             <div key={msg.id} className="chat-msg-tool">
-              <ToolResultCard result={msg.result.payload} />
+              <ToolResultCard result={payload} toolName={msg.toolName} />
             </div>
           );
         }
@@ -75,6 +78,7 @@ function AgentChatMessages({
           <ChatMessageAgent
             key={msg.id}
             profile={agentProfile}
+            creators={creators}
             text={msg.text}
             createdAt={msg.createdAt}
             thinkingText={msg.thinkingText}
@@ -85,6 +89,7 @@ function AgentChatMessages({
       {agent.activeTurn ? (
         <ChatMessageAgent
           profile={agentProfile}
+          creators={creators}
           text={agent.activeTurn.assistantText}
           activePhaseLabel={agent.activeTurn.phaseLabel}
         />
@@ -98,7 +103,7 @@ function AgentChatMessages({
 
 export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
   const { creators, setSelectedId } = useCreators();
-  const { threads, createThread, createGlobalThread, renameThread, deleteThread } =
+  const { threads, createThread, createGlobalThread, renameThread, deleteThread, refresh, applyThreadTitle } =
     useAgentThreads(creatorId);
   const [tabEntries, setTabEntries] = useState<AgentTabEntry[]>([]);
   const [activeTabKey, setActiveTabKey] = useState<string | null>(null);
@@ -115,6 +120,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     threadIds: string[];
   } | null>(null);
   const historyResize = useAgentHistoryResize();
+  const defaultAgentId = sidebarAgentId(creatorId);
 
   const activeEntry = useMemo(
     () => tabEntries.find((e) => tabEntryKey(e) === activeTabKey) ?? null,
@@ -132,25 +138,36 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
     [activeThreadId, threads],
   );
 
-  const composerBlocked = isDraftActive
-    ? false
-    : isComposerBlocked(activeThread?.creator_id, creatorId);
+  const creatorMismatch =
+    !isDraftActive && shouldNotifyCreatorMismatch(activeThread?.creator_id, creatorId);
 
   const agent = useM2tAgent({
     threadId: activeThreadId,
     creatorId,
+    threadCreatorId: activeThread?.creator_id ?? null,
     sessionContext,
+    onTurnEnd: refresh,
+    onThreadTitle: applyThreadTitle,
   });
 
-  const modelOptions = useMemo(() => {
-    const set = new Set<string>();
-    for (const p of agent.providers) {
-      for (const m of p.models ?? []) set.add(m);
-    }
-    return [...set];
-  }, [agent.providers]);
+  const { scrollRef: chatScrollRef, onScroll: onChatScroll } = useAgentChatScroll(
+    activeThreadId,
+    [
+      activeThreadId,
+      agent.messages,
+      agent.activeTurn?.assistantText,
+      agent.activeTurn?.phaseLabel,
+      agent.activeTurn?.thinkingText,
+      agent.status,
+    ],
+  );
 
-  const composerReady = agent.ready && !composerBlocked;
+  const { models: modelOptions, providerByModel } = useMemo(
+    () => buildAgentModelCatalog(agent.providers),
+    [agent.providers],
+  );
+
+  const composerReady = agent.ready;
   const composerPlaceholder = isDraftActive
     ? composerPlaceholderForAgent(draftAgentId, creators)
     : undefined;
@@ -165,6 +182,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
       ),
     );
   }, [activeTabKey]);
+
+  useEffect(() => {
+    if (tabEntries.length > 0) return;
+    const { entries, activeKey } = openOrFocusDraftTab([], defaultAgentId);
+    setTabEntries(entries);
+    setActiveTabKey(activeKey);
+  }, [defaultAgentId, tabEntries.length]);
 
   const activateThread = useCallback(
     (threadId: string, opts?: { silent?: boolean; reorder?: boolean }) => {
@@ -197,15 +221,16 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
   );
 
   const openDraftTab = useCallback((agentId = 'global') => {
-    const entry = createDraftTab(agentId);
-    const key = tabEntryKey(entry);
-    setTabEntries((prev) => pushAgentTabEntry(prev, entry));
-    setActiveTabKey(key);
+    setTabEntries((prev) => {
+      const { entries, activeKey } = openOrFocusDraftTab(prev, agentId);
+      setActiveTabKey(activeKey);
+      return entries;
+    });
   }, []);
 
   const handleNewDraft = useCallback(() => {
-    openDraftTab('global');
-  }, [openDraftTab]);
+    openDraftTab(defaultAgentId);
+  }, [defaultAgentId, openDraftTab]);
 
   const handleCloseTab = useCallback(
     (key: string) => {
@@ -225,10 +250,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
         const agentId = activeEntry.agentId;
         const draftKey = tabEntryKey(activeEntry);
         try {
+          const model = agent.threadModel;
+          const providerName = model === 'auto' ? undefined : providerByModel.get(model);
+          const threadOpts = { model, providerName };
           const thread =
             agentId === 'global'
-              ? await createGlobalThread()
-              : await createThread(agentId, sessionContext.sessionId);
+              ? await createGlobalThread(threadOpts)
+              : await createThread(agentId, sessionContext.sessionId, threadOpts);
           if (!thread) return;
           setTabEntries((prev) => promoteDraftTab(prev, draftKey, thread.id));
           setActiveTabKey(`thread:${thread.id}`);
@@ -240,7 +268,7 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
       }
       await agent.sendMessage(text);
     },
-    [activeEntry, agent, createGlobalThread, createThread, sessionContext.sessionId],
+    [activeEntry, agent, createGlobalThread, createThread, providerByModel, sessionContext.sessionId],
   );
 
   const handleToggleHistory = useCallback(() => {
@@ -376,7 +404,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
       />
       <div className="agent-body">
         <div className="agent-main">
-          <div className="chat-scroll" id="chat-scroll" aria-live="polite">
+          <div
+            className="chat-scroll"
+            id="chat-scroll"
+            ref={chatScrollRef}
+            onScroll={onChatScroll}
+            aria-live="polite"
+          >
             {isDraftActive ? (
               <AgentChatEmpty
                 agentId={draftAgentId}
@@ -413,13 +447,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
             {!activeTabKey ? (
               <p className="hint">点击 + 新建 Agent，或从历史栏选择会话</p>
             ) : null}
-            {composerBlocked ? (
+            {creatorMismatch ? (
               <div
                 className="agent-mismatch-banner"
                 id="agent-mismatch-banner"
-                role="alert"
+                role="status"
               >
-                <span>该会话属于其他博主，请先切换到对应博主后再发送。</span>
+                <span>该会话属于其他博主，与左侧当前选中的博主不同，仍可继续对话。</span>
                 {activeThread?.creator_id ? (
                   <button
                     type="button"
@@ -434,11 +468,13 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
           </div>
           <AgentComposer
             ready={composerReady}
-            blocked={composerBlocked}
+            blocked={false}
             model={agent.threadModel}
             providerModels={modelOptions}
             placeholder={composerPlaceholder}
-            onModelChange={(m) => void agent.patchThreadModel(m)}
+            onModelChange={(m) =>
+              void agent.patchThreadModel(m, m === 'auto' ? null : providerByModel.get(m))
+            }
             onSend={(t) => void handleSend(t)}
           />
         </div>
@@ -459,7 +495,6 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
               threads={threads}
               creators={creators}
               activeThreadId={activeThreadId}
-              onNewGlobalDraft={() => openDraftTab('global')}
               menuOpenThreadId={contextMenu?.threadId ?? null}
               editingThreadId={editingThreadId}
               onSelectThread={(id) => activateThread(id)}

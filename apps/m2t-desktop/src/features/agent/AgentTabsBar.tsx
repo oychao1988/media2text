@@ -1,4 +1,5 @@
 import { useLayoutEffect, useRef } from 'react';
+import { AgentAvatar } from './AgentAvatar';
 import { resolveAgentProfile } from './agentProfile';
 import {
   tabEntryKey,
@@ -9,7 +10,12 @@ import type { ThreadRow } from './types';
 type Props = {
   tabEntries: AgentTabEntry[];
   threads: ThreadRow[];
-  creators: Array<{ id: string; display_name: string | null }>;
+  creators: Array<{
+    id: string;
+    display_name: string | null;
+    avatar_url?: string | null;
+    profile_synced_at?: string | null;
+  }>;
   activeTabKey: string | null;
   historyCollapsed: boolean;
   onSelectTab: (key: string) => void;
@@ -85,12 +91,7 @@ export function AgentTabsBar({
                 title={label}
                 onClick={() => handleSelectTab(key)}
               >
-                <span
-                  className={`agent-tab-avatar${profile.isGlobal ? ' global' : ''}`}
-                  aria-hidden="true"
-                >
-                  {profile.abbr}
-                </span>
+                <AgentAvatar profile={profile} creators={creators} size="tab" />
                 <span className="agent-tab-label">{label}</span>
               </button>
               <button

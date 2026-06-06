@@ -29,7 +29,14 @@ def test_create_thread_without_creator(api_client) -> None:
     assert thread["creator_id"] is None
 
 
-def test_creator_mismatch_409(api_client, workspace) -> None:
+def test_creator_mismatch_allows_turn(api_client, workspace, monkeypatch) -> None:
+    from media2text.agent.runtime_provider import LlmCompletion, MockChatClient
+
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.build_openai_client",
+        lambda *_a, **_k: MockChatClient([LlmCompletion(content="mock reply")]),
+    )
+
     cid = _seed_creator(workspace)
     other = _seed_creator(workspace, sec_uid="sec_agent_other")
     r = api_client.post(
@@ -42,8 +49,8 @@ def test_creator_mismatch_409(api_client, workspace) -> None:
         f"/api/agent/threads/{tid}/turn",
         json={"text": "hi", "sidebarCreatorId": other},
     )
-    assert r2.status_code == 409
-    assert r2.json()["detail"]["code"] == "creator_mismatch"
+    assert r2.status_code == 200
+    assert "turnId" in r2.json()
 
 
 def test_global_thread_skips_mismatch(api_client, monkeypatch) -> None:

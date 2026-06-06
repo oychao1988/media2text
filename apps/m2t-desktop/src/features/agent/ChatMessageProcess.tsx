@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { replyDurationSeconds } from './formatReplyDuration';
 import { ChatMarkdown } from './ChatMarkdown';
 
 export type ChatMessageProcessProps = {
@@ -9,11 +10,6 @@ export type ChatMessageProcessProps = {
   thinkingText?: string;
 };
 
-function durationSeconds(durationMs: number | undefined): number | null {
-  if (durationMs == null || durationMs < 0) return null;
-  return Math.max(1, Math.round(durationMs / 1000));
-}
-
 export function ChatMessageProcess({
   mode,
   phaseLabel,
@@ -23,7 +19,7 @@ export function ChatMessageProcess({
   const [expanded, setExpanded] = useState(false);
   const hasThinking = Boolean(thinkingText?.trim());
   const canExpand = mode === 'completed' && hasThinking;
-  const seconds = durationSeconds(durationMs);
+  const seconds = replyDurationSeconds(durationMs);
 
   const label =
     mode === 'active'

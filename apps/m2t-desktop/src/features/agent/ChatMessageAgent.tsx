@@ -1,13 +1,16 @@
 import type { ReactNode } from 'react';
 import { showToast } from '../../lib/toast';
+import { AgentAvatar, type AgentCreatorRef } from './AgentAvatar';
 import type { AgentProfile } from './agentProfile';
 import { ChatMessageProcess } from './ChatMessageProcess';
 import { formatChatTime } from './formatChatTime';
+import { formatReplyDurationLabel } from './formatReplyDuration';
 import { IconCopy, IconThumbDown, IconThumbUp } from './chatMessageIcons';
 import { ChatMarkdown } from './ChatMarkdown';
 
 type ChatMessageAgentProps = {
   profile: AgentProfile;
+  creators: AgentCreatorRef[];
   text: string;
   createdAt?: string | null;
   thinkingText?: string;
@@ -28,6 +31,7 @@ async function copyText(text: string) {
 
 export function ChatMessageAgent({
   profile,
+  creators,
   text,
   createdAt,
   thinkingText,
@@ -36,21 +40,12 @@ export function ChatMessageAgent({
   children,
 }: ChatMessageAgentProps) {
   const timeLabel = formatChatTime(createdAt);
+  const durationLabel = formatReplyDurationLabel(durationMs);
   const isActive = activePhaseLabel != null;
-  const avatarClass = [
-    'chat-msg-avatar',
-    'agent',
-    profile.isGlobal ? 'global' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
   return (
     <article className="chat-msg chat-msg-agent">
       <div className="chat-msg-head">
-        <span className={avatarClass} aria-hidden="true">
-          {profile.abbr}
-        </span>
+        <AgentAvatar profile={profile} creators={creators} size="msg" />
         <span className="chat-msg-name">{profile.name}</span>
         {timeLabel ? (
           <time className="chat-msg-time" dateTime={createdAt ?? undefined}>
@@ -103,6 +98,11 @@ export function ChatMessageAgent({
           >
             <IconThumbDown />
           </button>
+          {durationLabel ? (
+            <span className="chat-msg-footer-duration" aria-label={durationLabel}>
+              {durationLabel}
+            </span>
+          ) : null}
         </div>
       ) : null}
     </article>
