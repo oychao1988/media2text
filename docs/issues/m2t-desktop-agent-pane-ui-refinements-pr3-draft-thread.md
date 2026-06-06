@@ -14,38 +14,39 @@
 
 ### Tab 模型
 
-- [ ] `AgentTabEntry`：`{ kind: 'draft', draftId, agentId }` | `{ kind: 'thread', threadId }`
-- [ ] `useAgentTabs`：`+` → push draft（默认 `agentId: 'global'`）；**不**调用 POST
-- [ ] 关闭 draft 页签：无 API；丢弃 `draftAgentId`
-- [ ] 仍遵守最多 5 tab、关 tab 不 DELETE thread
+- [x] `AgentTabEntry`：`{ kind: 'draft', draftId, agentId }` | `{ kind: 'thread', threadId }`
+- [x] `useAgentTabs`：`+` → push draft（默认 `agentId: 'global'`）；**不**调用 POST
+- [x] 关闭 draft 页签：无 API；丢弃 `draftAgentId`
+- [x] 仍遵守最多 5 tab、关 tab 不 DELETE thread
 
 ### 空态 UI `#agent-chat-empty`
 
-- [ ] 显示条件：激活 tab 为 draft
-- [ ] `.agent-identity-bar`：logo + picker（灵犀置顶，再博主 listbox）
-- [ ] 选 Agent 更新 `draftAgentId`、placeholder（全局 vs「向 {name} Agent 提问…」）
-- [ ] empty 时 `#chat-live` / `#chat-playback` hidden
+- [x] 显示条件：激活 tab 为 draft
+- [x] `.agent-identity-bar`：logo + picker（灵犀置顶，再博主 listbox）
+- [x] 选 Agent 更新 `draftAgentId`、placeholder（全局 vs「向 {name} Agent 提问…」）
+- [x] empty 时 `#chat-live` / `#chat-playback` hidden
 
 ### 首条发送
 
-- [ ] `POST /api/agent/threads`（灵犀 omit `creatorId`；博主传 picker 的 `creatorId`）
-- [ ] 紧接着 `POST .../turn`；draft tab **晋升** 为 thread tab
-- [ ] picker 与 POST `creatorId` 一致，避免假 409 mismatch
+- [x] `POST /api/agent/threads`（灵犀 omit `creatorId`；博主传 picker 的 `creatorId`）
+- [x] 紧接着 `POST .../turn`；draft tab **晋升** 为 thread tab
+- [x] picker 与 POST `creatorId` 一致，避免假 409 mismatch
 
 ### 测试
 
-- [ ] `useAgentTabs.test.ts`：draft 创建/关闭/晋升；cap 5 含 draft
-- [ ] 集成 mock：首条 send 仅一次 POST threads
+- [x] `useAgentTabs.test.ts`：draft 创建/关闭/晋升；cap 5 含 draft
+- [x] 集成 mock：首条 send 仅一次 POST threads
 
 ## 验证命令
 
 ```bash
 source .venv/bin/activate
 pnpm --filter m2t-desktop test
-pnpm --filter m2t-desktop tauri dev
-media2text serve --port 8765
-# 手工 A3：+ 无 network POST；选博主后发首条 → 建 thread + turn；关 draft 无 DELETE
-pytest tests/unit/test_api_chat.py -v -k thread
+# 手工 A3（需 sidecar + Tauri）：
+# media2text serve --port 8765
+# pnpm --filter m2t-desktop tauri dev
+# + 无 network POST；选博主后发首条 → 建 thread + turn；关 draft 无 DELETE
+# pytest tests/unit/test_api_chat.py -v -k thread
 ```
 
 ## 非目标范围

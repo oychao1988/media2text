@@ -1,26 +1,37 @@
 import { useLayoutEffect, useRef } from 'react';
-import { isGlobalThread } from './agentThreadSelect';
+import {
+  tabEntryKey,
+  type AgentTabEntry,
+} from './useAgentTabs';
 import type { ThreadRow } from './types';
 
 type Props = {
-  tabIds: string[];
+  tabEntries: AgentTabEntry[];
   threads: ThreadRow[];
-  activeThreadId: string | null;
+  creators: Array<{ id: string; display_name: string | null }>;
+  activeTabKey: string | null;
   historyCollapsed: boolean;
-  onSelectTab: (threadId: string) => void;
-  onCloseTab: (threadId: string) => void;
-  onNewThread: () => void;
+  onSelectTab: (key: string) => void;
+  onCloseTab: (key: string) => void;
+  onNewDraft: () => void;
   onToggleHistory: () => void;
 };
 
+function tabLabel(entry: AgentTabEntry, thread: ThreadRow | undefined): string {
+  if (entry.kind === 'thread') {
+    return thread?.title ?? 'Agent';
+  }
+  return '新对话';
+}
+
 export function AgentTabsBar({
-  tabIds,
+  tabEntries,
   threads,
-  activeThreadId,
+  activeTabKey,
   historyCollapsed,
   onSelectTab,
   onCloseTab,
-  onNewThread,
+  onNewDraft,
   onToggleHistory,
 }: Props) {
   const threadById = new Map(threads.map((t) => [t.id, t]));
@@ -30,11 +41,11 @@ export function AgentTabsBar({
   useLayoutEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollLeft = scrollLeftRef.current;
-  }, [activeThreadId, tabIds.length]);
+  }, [activeTabKey, tabEntries.length]);
 
-  const handleSelectTab = (threadId: string) => {
+  const handleSelectTab = (key: string) => {
     scrollLeftRef.current = scrollRef.current?.scrollLeft ?? 0;
-    onSelectTab(threadId);
+    onSelectTab(key);
   };
 
   return (
@@ -45,30 +56,26 @@ export function AgentTabsBar({
         role="tablist"
         ref={scrollRef}
       >
-        {tabIds.map((id) => {
-          const thread = threadById.get(id);
-          if (!thread) return null;
-          const active = id === activeThreadId;
+        {tabEntries.map((entry) => {
+          const key = tabEntryKey(entry);
+          const thread = entry.kind === 'thread' ? threadById.get(entry.threadId) : undefined;
+          const active = key === activeTabKey;
+          const label = tabLabel(entry, thread);
           return (
             <div
-              key={id}
+              key={key}
               className={`agent-tab-wrap${active ? ' active' : ''}`}
-              data-thread-id={id}
+              data-tab-key={key}
             >
               <button
                 type="button"
                 className="agent-tab"
                 role="tab"
                 aria-selected={active}
-                title={thread.title ?? 'Agent'}
-                onClick={() => handleSelectTab(id)}
+                title={label}
+                onClick={() => handleSelectTab(key)}
               >
-                <span className="agent-tab-label">
-                  {thread.title ?? 'Agent'}
-                  {isGlobalThread(thread.creator_id) ? (
-                    <span className="agent-thread-badge agent-thread-badge--global">全局</span>
-                  ) : null}
-                </span>
+                <span className="agent-tab-label">{label}</span>
               </button>
               <button
                 type="button"
@@ -76,7 +83,7 @@ export function AgentTabsBar({
                 aria-label="关闭页签"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onCloseTab(id);
+                  onCloseTab(key);
                 }}
               >
                 ×
@@ -92,7 +99,7 @@ export function AgentTabsBar({
           id="btn-agent-new"
           title="新建 Agent"
           aria-label="新建 Agent"
-          onClick={onNewThread}
+          onClick={onNewDraft}
         >
           +
         </button>

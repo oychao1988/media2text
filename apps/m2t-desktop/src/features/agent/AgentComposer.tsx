@@ -7,6 +7,7 @@ type AgentComposerProps = {
   blocked?: boolean;
   model: string;
   providerModels: string[];
+  placeholder?: string;
   onModelChange: (model: string) => void;
   onSend: (text: string) => void;
 };
@@ -51,6 +52,7 @@ export function AgentComposer({
   blocked = false,
   model,
   providerModels,
+  placeholder: placeholderProp,
   onModelChange,
   onSend,
 }: AgentComposerProps) {
@@ -69,11 +71,13 @@ export function AgentComposer({
     ...providerModels.map((m) => ({ value: m, label: m })),
   ];
 
-  const placeholder = blocked
-    ? '博主不一致，无法发送…'
-    : ready
-      ? '继续提问…'
-      : 'Agent 启动中…';
+  const placeholder =
+    placeholderProp ??
+    (blocked
+      ? '博主不一致，无法发送…'
+      : ready
+        ? '继续提问…'
+        : 'Agent 启动中…');
 
   const controlsDisabled = !ready || blocked;
 

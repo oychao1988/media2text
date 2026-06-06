@@ -1,5 +1,72 @@
 export const MAX_AGENT_TABS = 5;
 
+export type AgentTabEntry =
+  | { kind: 'draft'; draftId: string; agentId: string }
+  | { kind: 'thread'; threadId: string };
+
+export function tabEntryKey(entry: AgentTabEntry): string {
+  return entry.kind === 'draft' ? `draft:${entry.draftId}` : `thread:${entry.threadId}`;
+}
+
+export function createDraftTab(agentId = 'global'): AgentTabEntry {
+  return {
+    kind: 'draft',
+    draftId: `draft-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    agentId,
+  };
+}
+
+export function pushAgentTabEntry(entries: AgentTabEntry[], entry: AgentTabEntry): AgentTabEntry[] {
+  const key = tabEntryKey(entry);
+  const without = entries.filter((e) => tabEntryKey(e) !== key);
+  const next = [...without, entry];
+  if (next.length <= MAX_AGENT_TABS) return next;
+  return next.slice(next.length - MAX_AGENT_TABS);
+}
+
+/** Open or focus a tab; skip MRU reorder when clicking an existing top tab. */
+export function activateAgentTabEntry(
+  entries: AgentTabEntry[],
+  entry: AgentTabEntry,
+  opts?: { reorder?: boolean },
+): AgentTabEntry[] {
+  const key = tabEntryKey(entry);
+  if (!entries.some((e) => tabEntryKey(e) === key)) return pushAgentTabEntry(entries, entry);
+  if (opts?.reorder === false) return entries;
+  return pushAgentTabEntry(entries, entry);
+}
+
+export function closeAgentTabEntry(
+  entries: AgentTabEntry[],
+  key: string,
+  activeKey: string | null,
+): { entries: AgentTabEntry[]; activeKey: string | null } {
+  const idx = entries.findIndex((e) => tabEntryKey(e) === key);
+  if (idx < 0) return { entries, activeKey };
+  const nextEntries = entries.filter((e) => tabEntryKey(e) !== key);
+  if (activeKey !== key) {
+    return { entries: nextEntries, activeKey };
+  }
+  const fallback = nextEntries[idx] ?? nextEntries[idx - 1] ?? nextEntries[0];
+  const nextActive = fallback ? tabEntryKey(fallback) : null;
+  return { entries: nextEntries, activeKey: nextActive };
+}
+
+export function promoteDraftTab(
+  entries: AgentTabEntry[],
+  draftKey: string,
+  threadId: string,
+): AgentTabEntry[] {
+  return entries.map((e) =>
+    tabEntryKey(e) === draftKey ? { kind: 'thread' as const, threadId } : e,
+  );
+}
+
+export function removeThreadFromTabs(entries: AgentTabEntry[], threadId: string): AgentTabEntry[] {
+  return entries.filter((e) => !(e.kind === 'thread' && e.threadId === threadId));
+}
+
+/** @deprecated use pushAgentTabEntry with thread entry */
 export function pushAgentTab(tabIds: string[], threadId: string): string[] {
   const without = tabIds.filter((id) => id !== threadId);
   const next = [...without, threadId];
@@ -7,7 +74,7 @@ export function pushAgentTab(tabIds: string[], threadId: string): string[] {
   return next.slice(next.length - MAX_AGENT_TABS);
 }
 
-/** Open or focus a tab; skip MRU reorder when clicking an existing top tab. */
+/** @deprecated */
 export function activateAgentTab(
   tabIds: string[],
   threadId: string,
@@ -18,6 +85,7 @@ export function activateAgentTab(
   return pushAgentTab(tabIds, threadId);
 }
 
+/** @deprecated */
 export function closeAgentTab(
   tabIds: string[],
   threadId: string,
