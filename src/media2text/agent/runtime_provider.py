@@ -73,7 +73,7 @@ class OpenAIChatClient:
         if self._client is not None:
             return self._client
         try:
-            from openai import OpenAI
+            from openai import OpenAI  # type: ignore[reportMissingImports]
         except ImportError as exc:
             raise RuntimeError(
                 'OpenAI SDK not installed; run: pip install -e ".[transcribe-cloud]"'
