@@ -41,10 +41,11 @@
 ```bash
 source .venv/bin/activate
 pnpm --filter m2t-desktop test
-pnpm --filter m2t-desktop tauri dev
-media2text serve --port 8765
-# 手工 A5/A6：用户气泡右对齐；助手全宽；流式 phase → 完成后「已处理 N 秒」+ thinking 展开
-open docs/superpowers/designs/m2t-desktop/finalized.html
+# 手工 A5/A6（需 sidecar + Tauri）：
+# media2text serve --port 8765
+# pnpm --filter m2t-desktop tauri dev
+# open docs/superpowers/designs/m2t-desktop/finalized.html
+# 用户气泡右对齐；助手全宽；流式 phase → 完成后「已处理 N 秒」+ thinking 展开
 ```
 
 ## 非目标范围
