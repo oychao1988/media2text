@@ -5,7 +5,8 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
-from media2text.agent.creator_distill.enqueue import enqueue_bootstrap
+from media2text.agent.creator_distill.enqueue import enqueue_bootstrap, enqueue_evolve
+from media2text.agent.creator_distill.evolve_log import read_evolve_log
 from media2text.agent.creator_distill.pool import CreatorAgentJobPool, resolve_distill_workers
 from media2text.agent.memory_store import memory_usage_for_profile
 from media2text.agent.profile_resolver import resolve_profile, save_profile_yaml
@@ -20,6 +21,12 @@ router = APIRouter(prefix="/agent/profiles", tags=["agent-profiles"])
 
 class DistillBody(BaseModel):
     force: bool = False
+
+
+class EvolveBody(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    source_id: str = Field(alias="sourceId")
 
 
 class ProfilePatchBody(BaseModel):
@@ -191,4 +198,86 @@ def get_creator_distill_status(creator_id: str, cfg: AppConfig = Depends(get_cfg
         "byKind": status.get("by_kind") or {},
         "latestBootstrap": _job_dict(latest),
         "distillStatePath": cache_path,
+    }
+
+
+@router.post("/creators/{creator_id}/evolve")
+def trigger_creator_evolve(
+    creator_id: str,
+    body: EvolveBody,
+    cfg: AppConfig = Depends(get_cfg),
+) -> dict:
+    source_id = body.source_id.strip()
+    if not source_id:
+        raise HTTPException(status_code=400, detail="source_id required")
+
+    conn = open_db(cfg)
+    try:
+        if not CreatorRepo(conn).get(creator_id):
+            raise HTTPException(status_code=404, detail="creator not found")
+        active_bootstrap = CreatorAgentJobRepo(conn).find_active_bootstrap(creator_id)
+        if active_bootstrap and active_bootstrap.status == "running":
+            raise HTTPException(status_code=409, detail={"code": "distill_busy"})
+        job_id = enqueue_evolve(
+            cfg,
+            conn,
+            creator_id=creator_id,
+            source_id=source_id,
+            trigger="manual",
+        )
+    finally:
+        conn.close()
+
+    pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
+    try:
+        if job_id:
+            wconn = open_db(cfg)
+            try:
+                job = CreatorAgentJobRepo(wconn).get(job_id)
+                if job and job.status == "pending":
+                    pool.submit_evolve(cfg, job_id=job_id)
+            finally:
+                wconn.close()
+    finally:
+        pool.shutdown(wait=False)
+
+    return {
+        "ok": True,
+        "jobId": job_id,
+        "enqueued": bool(job_id),
+        "sourceId": source_id,
+    }
+
+
+@router.get("/creators/{creator_id}/evolve-log")
+def get_creator_evolve_log(
+    creator_id: str,
+    offset: int = 0,
+    limit: int = 50,
+    cfg: AppConfig = Depends(get_cfg),
+) -> dict:
+    conn = open_db(cfg)
+    try:
+        if not CreatorRepo(conn).get(creator_id):
+            raise HTTPException(status_code=404, detail="creator not found")
+    finally:
+        conn.close()
+
+    try:
+        profile = resolve_profile(creator_id=creator_id, cfg=cfg)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    page, total = read_evolve_log(
+        profile.memory_paths.profile_dir,
+        offset=max(0, offset),
+        limit=min(max(1, limit), 200),
+    )
+    return {
+        "ok": True,
+        "creatorId": creator_id,
+        "offset": offset,
+        "limit": limit,
+        "total": total,
+        "entries": page,
     }

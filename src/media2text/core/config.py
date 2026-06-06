@@ -281,6 +281,7 @@ class DistillConfig(BaseModel):
     max_concurrent_jobs: int = 1
     allow_web_research: bool = False
     nuwa_skill_path: str | None = None
+    evolve_on: list[str] = Field(default_factory=lambda: ["summarize_completed"])
 
 
 class DesktopAgentConfig(BaseModel):

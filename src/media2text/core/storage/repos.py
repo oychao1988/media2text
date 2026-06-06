@@ -1062,6 +1062,48 @@ class CreatorAgentJobRepo:
         ).fetchall()
         return [CreatorAgentJobRow(**dict(r)) for r in rows]
 
+    def find_evolve_by_source(self, creator_id: str, source_id: str) -> CreatorAgentJobRow | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM creator_agent_jobs
+            WHERE creator_id = ? AND kind = 'evolve' AND source_id = ?
+              AND status IN ('pending', 'running', 'done')
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            (creator_id, source_id),
+        ).fetchone()
+        return CreatorAgentJobRow(**dict(row)) if row else None
+
+    def enqueue_evolve(
+        self,
+        *,
+        creator_id: str,
+        source_id: str,
+        trigger: str,
+        payload: dict | None = None,
+    ) -> str | None:
+        """Enqueue evolve; returns job id or None if idempotent skip."""
+        existing = self.find_evolve_by_source(creator_id, source_id)
+        if existing:
+            return None
+
+        job_id = str(uuid.uuid4())
+        now = datetime.now(timezone.utc).isoformat()
+        payload_json = json.dumps(payload) if payload else None
+        self._conn.execute(
+            """
+            INSERT INTO creator_agent_jobs (
+              id, creator_id, kind, status, trigger, source_id,
+              payload_json, created_at, updated_at
+            )
+            VALUES (?, ?, 'evolve', 'pending', ?, ?, ?, ?, ?)
+            """,
+            (job_id, creator_id, trigger, source_id, payload_json, now, now),
+        )
+        self._conn.commit()
+        return job_id
+
     def enqueue_bootstrap(
         self,
         *,
