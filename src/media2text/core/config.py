@@ -272,6 +272,11 @@ class AgentLoopConfig(BaseModel):
     max_turns: int = 25
 
 
+class DesktopAgentConfig(BaseModel):
+    max_tool_output_chars: int = 16000
+    session_search_default_limit: int = 8
+
+
 class DesktopConfig(BaseModel):
     api_port: int = 8765
     theme: str = "light"
@@ -280,6 +285,7 @@ class DesktopConfig(BaseModel):
     runtime_http_fallback_sec: int = 60
     runtime_failed_recent_threshold: int = 10
     chat: DesktopChatConfig = Field(default_factory=DesktopChatConfig)
+    agent: DesktopAgentConfig = Field(default_factory=DesktopAgentConfig)
 
 
 class NotifyConfig(BaseModel):

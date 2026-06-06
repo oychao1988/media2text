@@ -47,6 +47,10 @@ class SessionDB:
     def __init__(self, conn: sqlite3.Connection) -> None:
         self._conn = conn
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        return self._conn
+
     def create_session(
         self,
         *,
@@ -269,13 +273,38 @@ class SessionDB:
     def get_messages_as_conversation(self, session_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
             """
-            SELECT role, content FROM messages
+            SELECT role, content, tool_call_id, tool_name, tool_calls_json
+            FROM messages
             WHERE session_id = ?
             ORDER BY seq
             """,
             (session_id,),
         ).fetchall()
-        return [{"role": row["role"], "content": row["content"] or ""} for row in rows]
+        out: list[dict[str, Any]] = []
+        for row in rows:
+            role = row["role"]
+            if role == "assistant" and row["tool_calls_json"]:
+                try:
+                    tool_calls = json.loads(row["tool_calls_json"])
+                except json.JSONDecodeError:
+                    tool_calls = []
+                msg: dict[str, Any] = {
+                    "role": "assistant",
+                    "content": row["content"],
+                    "tool_calls": tool_calls,
+                }
+                out.append(msg)
+            elif role == "tool":
+                out.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": row["tool_call_id"],
+                        "content": row["content"] or "",
+                    }
+                )
+            else:
+                out.append({"role": role, "content": row["content"] or ""})
+        return out
 
     def get_active_session_for_thread(self, display_thread_id: str) -> str:
         row = self._conn.execute(

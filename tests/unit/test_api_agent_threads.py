@@ -57,7 +57,14 @@ def test_global_thread_skips_mismatch(api_client) -> None:
     assert "turnId" in r2.json()
 
 
-def test_turn_echo_async(api_client, workspace) -> None:
+def test_turn_async_persists_messages(api_client, workspace, monkeypatch) -> None:
+    from media2text.agent.runtime_provider import LlmCompletion, MockChatClient
+
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.build_openai_client",
+        lambda *_a, **_k: MockChatClient([LlmCompletion(content="mock reply")]),
+    )
+
     cid = _seed_creator(workspace)
     r = api_client.post("/api/agent/threads", json={"creatorId": cid})
     tid = r.json()["thread"]["id"]
@@ -79,4 +86,4 @@ def test_turn_echo_async(api_client, workspace) -> None:
         time.sleep(0.05)
     msgs = chat.list_messages(tid)
     conn.close()
-    assert any(m.content == "echo: async" for m in msgs)
+    assert any(m.content == "mock reply" for m in msgs)
