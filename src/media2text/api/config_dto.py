@@ -7,6 +7,7 @@ import os
 import re
 import urllib.error
 import urllib.request
+from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict
@@ -170,14 +171,62 @@ def _probe_provider_connected(
     return _probe_http_auth(models_req)
 
 
+def _provider_fingerprint(p: SummarizeLlmProviderConfig) -> str:
+    env = _primary_api_key_env(p) if p.api_key_envs else _default_api_key_env(p.name)
+    return f"{(p.base_url or '').strip().rstrip('/')}|{env}"
+
+
+def _provider_probe_cache_path(cfg: AppConfig) -> Path:
+    return Path(cfg.workspace) / "sessions" / "llm_provider_probe.json"
+
+
+def _load_provider_probe_cache(cfg: AppConfig) -> dict[str, Any]:
+    path = _provider_probe_cache_path(cfg)
+    try:
+        raw = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _save_provider_probe_cache(cfg: AppConfig, entries: dict[str, dict[str, Any]]) -> None:
+    if not entries:
+        return
+    path = _provider_probe_cache_path(cfg)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    merged = _load_provider_probe_cache(cfg)
+    merged.update(entries)
+    path.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _cached_provider_connected(cfg: AppConfig, p: SummarizeLlmProviderConfig) -> bool | None:
+    entry = _load_provider_probe_cache(cfg).get(p.name)
+    if not isinstance(entry, dict):
+        return None
+    if entry.get("fingerprint") != _provider_fingerprint(p):
+        return None
+    connected = entry.get("connected")
+    if connected is True:
+        return True
+    if connected is False:
+        return False
+    return None
+
+
 def _llm_providers_dto(cfg: AppConfig, *, probe: bool = False) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    cache_updates: dict[str, dict[str, Any]] = {}
     for p in cfg.summarize.llm.providers:
         api_key = _provider_api_key(p)
         configured = bool(api_key)
-        connected = (
-            _probe_provider_connected(p, api_key=api_key or None) if probe else None
-        )
+        if probe:
+            connected = _probe_provider_connected(p, api_key=api_key or None)
+            cache_updates[p.name] = {
+                "connected": connected,
+                "fingerprint": _provider_fingerprint(p),
+            }
+        else:
+            connected = _cached_provider_connected(cfg, p)
         out.append(
             {
                 "name": p.name,
@@ -186,9 +235,11 @@ def _llm_providers_dto(cfg: AppConfig, *, probe: bool = False) -> list[dict[str,
                 "models": list(p.models),
                 "configured": configured,
                 "connected": connected,
-                "api_key": api_key or None,
+                "api_key": _MASKED_SECRET if api_key else None,
             }
         )
+    if probe:
+        _save_provider_probe_cache(cfg, cache_updates)
     return out
 
 
@@ -248,6 +299,10 @@ def _resolve_summarize_selection(cfg: AppConfig) -> tuple[str, str]:
     if not model and prov and prov.models:
         model = next((m.strip() for m in prov.models if m and m.strip()), "")
     return provider_id, model
+
+
+def _providers_need_probe(providers_dto: list[dict[str, Any]]) -> bool:
+    return any(p.get("configured") and p.get("connected") is None for p in providers_dto)
 
 
 def config_to_dto(cfg: AppConfig, *, probe_providers: bool = False) -> dict[str, Any]:

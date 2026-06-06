@@ -22,6 +22,7 @@ from media2text.agent.runtime_provider import (
     resolve_model,
     tool_result_text as format_tool_output,
 )
+from media2text.agent.agent_errors import user_facing_agent_error
 from media2text.agent.approval import ApprovalGate
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import openai_tools
@@ -68,6 +69,7 @@ class AIAgent:
         display_thread_id: str,
         user_text: str,
         turn_id: str | None = None,
+        retry_after_message_id: str | None = None,
         cancel_event=None,
         emit: EmitFn | None = None,
     ) -> str:
@@ -83,7 +85,16 @@ class AIAgent:
         binding = parse_binding(thread_row["active_binding_json"])
         creator_id = thread_row["creator_id"]
 
-        self._db.append_message(session_id, MessageRow(role="user", content=user_text))
+        if retry_after_message_id:
+            retry_row = self._db.get_message_by_id(retry_after_message_id)
+            if retry_row is None or retry_row["role"] != "user":
+                raise ValueError("retry target must be a user message")
+            if retry_row["session_id"] != session_id:
+                raise ValueError("retry target belongs to another session")
+            self._db.delete_messages_after(session_id, int(retry_row["seq"]))
+            user_text = (retry_row["content"] or user_text).strip()
+        else:
+            self._db.append_message(session_id, MessageRow(role="user", content=user_text))
 
         profile = resolve_profile(creator_id=creator_id, cfg=self._cfg)
         parts = build_system_prompt(
@@ -221,17 +232,27 @@ class AIAgent:
                 )
                 break
             else:
+                final_text = "抱歉，本轮对话迭代次数已达上限。"
+                duration_ms = int((time.time() - started) * 1000)
+                self._db.append_message(
+                    session_id,
+                    MessageRow(role="assistant", content=final_text, duration_ms=duration_ms),
+                )
                 self._emit(
                     emit,
                     pi_emit.agent_error("iteration budget exhausted", code="MAX_TURNS"),
                 )
-                final_text = "抱歉，本轮对话迭代次数已达上限。"
         except TurnCancelled:
             self._emit(emit, pi_emit.agent_error("turn cancelled", code="CANCELLED"))
             raise
         except Exception as exc:  # noqa: BLE001
-            self._emit(emit, pi_emit.agent_error(str(exc), code="AGENT_ERROR"))
-            raise
+            duration_ms = int((time.time() - started) * 1000)
+            final_text = user_facing_agent_error(exc)
+            self._db.append_message(
+                session_id,
+                MessageRow(role="assistant", content=final_text, duration_ms=duration_ms),
+            )
+            self._emit(emit, pi_emit.agent_error(final_text, code="AGENT_ERROR"))
         finally:
             session_id = maybe_post_turn_compress(
                 self._db,

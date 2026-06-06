@@ -139,14 +139,7 @@ export function useM2tAgent(opts: {
       }
       if (event.type === 'error') {
         setActiveTurn(null);
-        setMessages((prev) => [
-          ...prev,
-          {
-            id: nextId(),
-            role: 'assistant',
-            text: `Agent 错误：${event.payload.message}`,
-          },
-        ]);
+        showToast(event.payload.message, 'error');
         return;
       }
       if (event.type === 'turn.start') {
@@ -384,6 +377,40 @@ export function useM2tAgent(opts: {
     [creatorId, providers, status, threadId],
   );
 
+  const retryMessage = useCallback(
+    async (messageId: string, text: string) => {
+      const trimmed = text.trim();
+      const tid = threadId;
+      if (!trimmed || status !== 'ready' || !tid || messageId.startsWith('m-')) return;
+
+      setMessages((prev) => {
+        const idx = prev.findIndex((m) => m.id === messageId);
+        if (idx < 0) return prev;
+        return prev.slice(0, idx + 1);
+      });
+      setActiveTurn({ ...INITIAL_TURN });
+
+      try {
+        await apiPost(
+          `/api/agent/threads/${tid}/turn`,
+          {
+            text: trimmed,
+            sidebarCreatorId: creatorId ?? undefined,
+            retry: true,
+            afterMessageId: messageId,
+          },
+          true,
+        );
+      } catch (err) {
+        setActiveTurn(null);
+        const msg = err instanceof Error ? err.message : '重试失败';
+        showToast(msg, 'error');
+        if (threadId) void loadHistory(threadId);
+      }
+    },
+    [creatorId, loadHistory, status, threadId],
+  );
+
   return {
     ready: status === 'ready',
     status,
@@ -394,5 +421,6 @@ export function useM2tAgent(opts: {
     threadModel,
     patchThreadModel,
     sendMessage,
+    retryMessage,
   };
 }

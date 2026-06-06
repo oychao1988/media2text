@@ -200,6 +200,61 @@ describe('useM2tAgent (M2 WS + turn)', () => {
     });
   });
 
+  it('retryMessage POSTs /turn with retry flag and trims trailing messages', async () => {
+    const { result } = renderHook(() =>
+      useM2tAgent({
+        threadId: 'thread-1',
+        creatorId: 'creator-1',
+        sessionContext: { sessionId: null, contextMode: 'both' },
+      }),
+    );
+
+    await waitFor(() => expect(mockSockets.length).toBe(1));
+    act(() => emitWs({ type: 'sidecar.ready', payload: { version: 'test' } }));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    await waitFor(() => expect(result.current.messages.some((m) => m.id === 'u1')).toBe(true));
+
+    await act(async () => {
+      await result.current.retryMessage('u1', 'hello');
+    });
+
+    expect(apiPost).toHaveBeenCalledWith(
+      '/api/agent/threads/thread-1/turn',
+      {
+        text: 'hello',
+        sidebarCreatorId: 'creator-1',
+        retry: true,
+        afterMessageId: 'u1',
+      },
+      true,
+    );
+    expect(result.current.messages).toHaveLength(1);
+    expect(result.current.messages[0]?.id).toBe('u1');
+  });
+
+  it('shows toast on agent error event', async () => {
+    const { result } = renderHook(() =>
+      useM2tAgent({
+        threadId: 'thread-1',
+        creatorId: 'creator-1',
+        sessionContext: { sessionId: null, contextMode: 'both' },
+      }),
+    );
+
+    await waitFor(() => expect(mockSockets.length).toBe(1));
+    act(() => emitWs({ type: 'sidecar.ready', payload: { version: 'test' } }));
+    await waitFor(() => expect(result.current.ready).toBe(true));
+
+    act(() => {
+      emitWs({
+        type: 'error',
+        payload: { message: 'LLM API 认证失败', code: 'AGENT_ERROR' },
+      });
+    });
+
+    expect(toast.showToast).toHaveBeenCalledWith('LLM API 认证失败', 'error');
+  });
+
   it('appends tool.result messages from WS', async () => {
     const { result } = renderHook(() =>
       useM2tAgent({

@@ -314,6 +314,25 @@ class SessionDB:
         _write_with_retry(self._conn, _insert)
         return mid
 
+    def get_message_by_id(self, message_id: str) -> sqlite3.Row | None:
+        return self._conn.execute(
+            "SELECT * FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+
+    def delete_messages_after(self, session_id: str, after_seq: int) -> None:
+        def _delete() -> None:
+            self._conn.execute(
+                "DELETE FROM messages WHERE session_id = ? AND seq > ?",
+                (session_id, after_seq),
+            )
+            self._conn.execute(
+                "UPDATE sessions SET updated_at = ? WHERE id = ?",
+                (_utc_now(), session_id),
+            )
+
+        _write_with_retry(self._conn, _delete)
+
     def get_messages(self, display_thread_id: str) -> list[sqlite3.Row]:
         session_id = self.get_active_session_for_thread(display_thread_id)
         return list(

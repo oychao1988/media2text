@@ -7,6 +7,9 @@ import { ChatMarkdown } from './ChatMarkdown';
 type ChatMessageUserProps = {
   text: string;
   createdAt?: string | null;
+  messageId?: string;
+  onRetry?: (messageId: string, text: string) => void;
+  retryDisabled?: boolean;
 };
 
 async function copyText(text: string) {
@@ -18,8 +21,15 @@ async function copyText(text: string) {
   }
 }
 
-export function ChatMessageUser({ text, createdAt }: ChatMessageUserProps) {
+export function ChatMessageUser({
+  text,
+  createdAt,
+  messageId,
+  onRetry,
+  retryDisabled = false,
+}: ChatMessageUserProps) {
   const timeLabel = formatChatTime(createdAt);
+  const canRetry = Boolean(onRetry && messageId && !messageId.startsWith('m-') && !retryDisabled);
 
   return (
     <article className="chat-msg chat-msg-user">
@@ -45,7 +55,11 @@ export function ChatMessageUser({ text, createdAt }: ChatMessageUserProps) {
           className="chat-msg-action"
           title="重试"
           aria-label="重试"
-          onClick={() => showToast('重试（即将支持）', 'info')}
+          disabled={!canRetry}
+          onClick={() => {
+            if (!canRetry || !onRetry || !messageId) return;
+            onRetry(messageId, text);
+          }}
         >
           <IconRetry />
           <span>重试</span>
