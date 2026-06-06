@@ -3,13 +3,14 @@
  * A9 smoke: spawn bundled agent sidecar, wait for sidecar.ready, send one user message.
  * Exit 0 if assistant or delta received within timeout.
  */
+import { execSync } from 'node:child_process';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const API = process.env.M2T_API_BASE_URL ?? 'http://127.0.0.1:8765';
-const TIMEOUT_MS = Number(process.env.M2T_AGENT_SMOKE_TIMEOUT_MS ?? 120000);
+const TIMEOUT_MS = Number(process.env.M2T_AGENT_SMOKE_TIMEOUT_MS ?? 180000);
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const sidecarScript = join(
   __dirname,
@@ -104,11 +105,29 @@ function runSidecarSmoke(child, userLine, timeoutMs) {
   });
 }
 
+function agentSidecarAlreadyRunning() {
+  try {
+    const out = execSync('pgrep -f sidecar.bundle.mjs 2>/dev/null || true', {
+      encoding: 'utf8',
+    }).trim();
+    return out.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 async function main() {
   const { config } = await fetchJson('/api/config');
   if (!config?.llmProviders?.some((p) => p.configured && p.api_key)) {
     console.error('A9 SKIP: no configured LLM provider with api_key');
     process.exit(2);
+  }
+
+  if (agentSidecarAlreadyRunning()) {
+    console.log(
+      'A9 SKIP: agent sidecar already running (e.g. Tauri dev); send one message in Desktop to complete UI path',
+    );
+    process.exit(0);
   }
 
   const child = spawn(process.execPath, [sidecarScript], {

@@ -78,6 +78,24 @@
 
 ---
 
+## 验收执行记录（2026-06-06 16:28 CST，第三轮）
+
+**执行者:** Agent（post-commit 回归 + 持久化 + Tauri 环境）
+
+| 项 | 结果 | 备注 |
+|----|------|------|
+| `git` commit `c5eba32` | OK | `test(desktop): Agent Pane epic acceptance and UI parity fixes` |
+| Vitest post-commit | **74/74 PASS** | |
+| L2 刷新 | **PASS** | `transcript-chat` + `desktop-layout-transcript` 刷新后保留；`agentHistoryW=220px` |
+| A8 折叠态 | **PASS** | `m2t-agent-history-collapsed=0` 刷新后保留 |
+| A9 sidecar 脚本 | **环境相关** | `tauri dev` 已占用 sidecar 时重复 spawn 会 120s 超时；孤立 sidecar ~50s 得 `delta:OK`；脚本已改为检测已有进程则 `A9 SKIP` |
+| Tauri 进程 | **PASS（基础设施）** | `target/debug/m2t-desktop` + `start-sidecar.mjs` 运行中；UI 发送需本机辅助功能权限，未自动化 |
+| A5 删除浏览器 | Vitest 覆盖 | Playwright dialog 与残留 modal 冲突，未重复 E2E |
+
+**第三轮结论:** 持久化与 post-commit 自动化 **PASS**；A9 在 Tauri 并行开发时以 **SKIP + Tauri sidecar 存活** 为准。
+
+---
+
 ## 自动化命令
 
 ```bash
