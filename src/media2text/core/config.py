@@ -272,10 +272,22 @@ class AgentLoopConfig(BaseModel):
     max_turns: int = 25
 
 
+class DistillConfig(BaseModel):
+    on_creator_add: bool = False
+    max_input_chars: int = 120_000
+    defer_until_min_chars: int = 2000
+    bootstrap_priority: int = 5
+    evolve_priority: int = 10
+    max_concurrent_jobs: int = 1
+    allow_web_research: bool = False
+    nuwa_skill_path: str | None = None
+
+
 class DesktopAgentConfig(BaseModel):
     max_tool_output_chars: int = 16000
     session_search_default_limit: int = 8
     llm_timeout_sec: int = 120
+    distill: DistillConfig = Field(default_factory=DistillConfig)
 
 
 class DesktopConfig(BaseModel):

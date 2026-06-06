@@ -132,6 +132,9 @@ def run_post_process_job(
                     )
                 if meta.get("summarized") or meta.get("summary_path"):
                     refresh_manifest(wconn, sec_uid=creator.sec_uid, workspace=ws)
+                    from media2text.agent.creator_distill.deferred import maybe_promote_bootstrap
+
+                    maybe_promote_bootstrap(cfg, wconn, creator_id=creator.id)
                     label = creator_label(creator)
                     notify.emit(
                         NotifyEvent(

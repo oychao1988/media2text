@@ -107,6 +107,7 @@ class SlowTickLoop:
         watcher: MonitorWatcher,
         cfg: AppConfig,
         monitor_pool: MonitorExecutor,
+        distill_pool,
         *,
         creator_id: str | None,
         stop: threading.Event,
@@ -114,9 +115,11 @@ class SlowTickLoop:
         self._watcher = watcher
         self._cfg = cfg
         self._monitor_pool = monitor_pool
+        self._distill_pool = distill_pool
         self._creator_id = creator_id
         self._stop = stop
         self._thread: threading.Thread | None = None
+        self._last_distill = 0.0
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -155,6 +158,16 @@ class SlowTickLoop:
                 watcher=self._watcher,
                 limit=self._cfg.monitor.executor_max_parallel,
             )
+            now_distill = time.time()
+            if now_distill - self._last_distill >= 300:
+                from media2text.agent.creator_distill.pool import resolve_distill_workers
+
+                self._distill_pool.drain_pending(
+                    self._cfg,
+                    self._watcher._conn,
+                    limit=resolve_distill_workers(self._cfg),
+                )
+                self._last_distill = now_distill
             self._stop.wait(timeout=1.0)
 
 
@@ -172,6 +185,12 @@ class MonitorScheduler:
         self._stop = threading.Event()
         max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
+        from media2text.agent.creator_distill.pool import (
+            CreatorAgentJobPool,
+            resolve_distill_workers,
+        )
+
+        self._distill_pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
         self._monitor_pool = MonitorExecutor(max_workers=cfg.monitor.executor_max_parallel)
         self._live_loop: LiveTickLoop | None = None
         self._slow_loop: SlowTickLoop | None = None
@@ -201,6 +220,7 @@ class MonitorScheduler:
             self._watcher,
             self._cfg,
             self._monitor_pool,
+            self._distill_pool,
             creator_id=creator_id,
             stop=self._stop,
         )
@@ -211,6 +231,7 @@ class MonitorScheduler:
         self._stop.set()
         self._monitor_pool.shutdown(wait=False, cancel_futures=True)
         self._post_pool.shutdown(wait=False, cancel_futures=True)
+        self._distill_pool.shutdown(wait=False, cancel_futures=True)
         if self._live_loop is not None:
             self._live_loop.join(timeout=5.0)
         if self._slow_loop is not None:

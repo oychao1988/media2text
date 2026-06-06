@@ -94,6 +94,11 @@ def add(
     if platform_session_ready(cfg, plat):
         profile_result = sync_creator_profile(cfg, creator_id)
 
+    if cfg.desktop.agent.distill.on_creator_add:
+        from media2text.agent.creator_distill.enqueue import enqueue_bootstrap
+
+        enqueue_bootstrap(cfg, conn, creator_id=creator_id, trigger="creator_add")
+
     row = repo.get(creator_id)
     emit(
         {
