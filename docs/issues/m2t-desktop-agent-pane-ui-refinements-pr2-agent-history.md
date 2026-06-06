@@ -44,9 +44,10 @@
 ```bash
 source .venv/bin/activate
 pnpm --filter m2t-desktop test
-pnpm --filter m2t-desktop tauri dev
-media2text serve --port 8765
-# 手工 A1/A2：多博主 thread 分组；空库「暂无会话」；组头 ⌫ 确认后清除；模拟 409/5xx 部分失败
+# 手工 A1/A2（需 sidecar + Tauri）：
+# media2text serve --port 8765
+# pnpm --filter m2t-desktop tauri dev
+# 多博主 thread 分组；空库「暂无会话」；组头 ⌫ 确认后清除；模拟 409/5xx 部分失败
 ```
 
 ## 非目标范围
