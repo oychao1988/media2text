@@ -149,6 +149,19 @@
 |------|--------|-----|------|------|
 | 1 | [#168](https://github.com/oychao1988/media2text/issues/168) | [#169](https://github.com/oychao1988/media2text/pull/169) | [douyin-gallery-desktop-vod-ux.md](./douyin-gallery-desktop-vod-ux.md) | `issue-168-douyin-gallery-desktop-vod` |
 
+### m2t-desktop Agent Pane + 布局预设（2026-06-06）
+
+规格：[2026-06-06-m2t-desktop-agent-pane-design.md](../superpowers/specs/2026-06-06-m2t-desktop-agent-pane-design.md) · 计划：[2026-06-06-m2t-desktop-agent-pane.md](../superpowers/plans/2026-06-06-m2t-desktop-agent-pane.md)
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| 1 | [#170](https://github.com/oychao1988/media2text/issues/170) | （待开） | [m2t-desktop-agent-pane-pr1-history-api.md](./m2t-desktop-agent-pane-pr1-history-api.md) | `issue-170-desktop-history-api` |
+| 2 | [#171](https://github.com/oychao1988/media2text/issues/171) | （待开） | [m2t-desktop-agent-pane-pr2-sidecar-context.md](./m2t-desktop-agent-pane-pr2-sidecar-context.md) | `issue-171-agent-sidecar-context` |
+| 3 | [#172](https://github.com/oychao1988/media2text/issues/172) | （待开） | [m2t-desktop-agent-pane-pr3-layout-presets.md](./m2t-desktop-agent-pane-pr3-layout-presets.md) | `issue-172-desktop-layout-presets` |
+| 4 | [#173](https://github.com/oychao1988/media2text/issues/173) | （待开） | [m2t-desktop-agent-pane-pr4-agent-ui.md](./m2t-desktop-agent-pane-pr4-agent-ui.md) | `issue-173-agent-multi-thread-ui` |
+
+**合并顺序**：#170 → #171 / #172（可并行）→ #173。
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)
