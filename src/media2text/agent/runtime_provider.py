@@ -91,7 +91,10 @@ class OpenAIChatClient:
                     endpoint = ep
                     break
 
-        kwargs: dict[str, Any] = {"api_key": endpoint.api_key}
+        kwargs: dict[str, Any] = {
+            "api_key": endpoint.api_key,
+            "timeout": float(self._cfg.desktop.agent.llm_timeout_sec),
+        }
         if endpoint.base_url:
             kwargs["base_url"] = endpoint.base_url
         self._client = OpenAI(**kwargs)
@@ -111,6 +114,7 @@ class OpenAIChatClient:
                 "model": model,
                 "messages": messages,
                 "temperature": self._cfg.summarize.llm.temperature,
+                "max_tokens": self._cfg.summarize.llm.max_output_tokens,
             }
             if tools:
                 kwargs["tools"] = tools

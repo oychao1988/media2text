@@ -43,7 +43,9 @@ source .venv/bin/activate
 pip install -e ".[desktop,dev]"
 pnpm --filter m2t-desktop test
 pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop
-# 手工：media2text serve --port 8765 & + pnpm tauri dev — 发消息、tool 卡片、切换 thread replay、重启 API 续聊（H2）
+pytest tests/unit/test_api_agent_m2_smoke.py -v -m desktop   # H2 重启续聊 + thread replay + tool WS
+python scripts/agent_m2_verify.py                             # M2 全量验证（含 live serve + WS ready）
+# 可选手工：pnpm tauri dev — GUI 发消息、tool 卡片视觉确认
 ```
 
 ## 非目标范围

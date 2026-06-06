@@ -67,10 +67,9 @@ export async function creatorAvatarUrl(
 
 export async function buildWsUrl(path: string): Promise<string> {
   const base = await getApiBaseUrl();
-  const u = new URL(base);
+  const relative = path.startsWith('/') ? path : `/${path}`;
+  const u = new URL(relative, base.endsWith('/') ? base : `${base}/`);
   u.protocol = u.protocol === 'https:' ? 'wss:' : 'ws:';
-  u.pathname = path.startsWith('/') ? path : `/${path}`;
-  u.search = '';
   return u.toString();
 }
 
