@@ -168,20 +168,26 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
     ),
     ToolDef(
         name="skills_list",
-        description="List available skills (M1 stub)",
+        description="List available skills (Level 0: name + description only)",
         parameters={"type": "object", "properties": {}},
-        handler=lambda _ctx, **_params: {"ok": True, "stub": "skills_list", "skills": []},
+        handler=lambda _ctx, **_params: {"ok": False, "error": "use model_tools dispatch"},
         kind="hermes",
     ),
     ToolDef(
         name="skill_view",
-        description="View one skill document (M1 stub)",
+        description="Load full SKILL.md or a references/ file on demand",
         parameters={
             "type": "object",
-            "properties": {"name": {"type": "string"}},
+            "properties": {
+                "name": {"type": "string", "description": "Skill slug, e.g. media2text"},
+                "path": {
+                    "type": "string",
+                    "description": "Optional path under references/, e.g. cli-cheatsheet.md",
+                },
+            },
             "required": ["name"],
         },
-        handler=lambda _ctx, **params: {"ok": True, "stub": "skill_view", "content": "", **params},
+        handler=lambda _ctx, **_params: {"ok": False, "error": "use model_tools dispatch"},
         kind="hermes",
     ),
 ]

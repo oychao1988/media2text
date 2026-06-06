@@ -1,7 +1,12 @@
 import typer
 import uvicorn
 
-app_cli = typer.Typer(help="Desktop API sidecar (loopback only)")
+app_cli = typer.Typer(
+    help=(
+        "Desktop API sidecar (loopback only). "
+        "Agent REST lives at /api/agent/*; /api/chat/* is a deprecated alias."
+    )
+)
 
 
 @app_cli.callback(invoke_without_command=True)

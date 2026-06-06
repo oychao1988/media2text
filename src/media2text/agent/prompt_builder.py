@@ -8,6 +8,7 @@ from typing import Any
 
 from media2text.agent.memory_store import format_memory_block, load_volatile_snapshot
 from media2text.agent.profile_resolver import resolve_profile
+from media2text.agent.skills_index import build_skills_index, format_skills_index_block
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
 
@@ -65,11 +66,15 @@ def build_system_prompt(
     binding = thread.get("binding") or {}
     context_mode = binding.get("context_mode") or thread.get("context_mode") or "both"
 
-    stable = (
+    skills_block = format_skills_index_block(build_skills_index(profile))
+    stable_parts = [
         "You are the media2text desktop agent. "
         "Use m2t_* tools for monitoring, recording, transcripts, and pipelines. "
-        "Hermes tools (memory, session_search, skills_*) are available for context."
-    )
+        "Hermes tools (memory, session_search, skills_list, skill_view) are available for context.",
+    ]
+    if skills_block:
+        stable_parts.append(skills_block)
+    stable = "\n\n".join(stable_parts)
     context_lines = [
         f"Profile dir: {profile.get('profile_dir')}",
         f"Context mode: {context_mode}",

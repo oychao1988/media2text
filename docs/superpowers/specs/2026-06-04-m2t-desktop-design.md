@@ -318,19 +318,20 @@ def effective_auto_record(creator, config) -> bool:
 
 **Success criteria 增补：** D9 — 选中离线博主 → 历史 Tab ≤ 2s 列出最近 20 场；D10 — 点击场次 ≤ 3s 右栏出现 final 转写首屏。
 
-### 4.6 AI Agent（pi-sidecar + Skills，对齐 scmclaw-v2）
+### 4.6 AI Agent（Hermes Python 内核 + Skills 渐进披露）
 
-**模式：Agent（非纯 Chat SSE）。** v1 即采用 `@earendil-works/pi-coding-agent` 工具循环，便于后续挂载 **SKILL.md**。
+> **v2 架构**：Agent 推理与工具循环在 **Python sidecar** 内完成（`AIAgent` + `POST /api/agent/threads/{id}/turn` + `WS /api/agent/stream`）。完整规格见 [m2t-desktop-agent-hermes-refactor-design](2026-06-06-m2t-desktop-agent-hermes-refactor-design.md)（§11 Skills、§12 API）。  
+> 历史 **pi-sidecar + Node** 路径已废弃；下文 scmclaw 对照表仅作迁移参考。
 
-**参考项目：** `/Users/Oychao/Documents/Projects/scmclaw-v2` — 直接复用其 IPC / 事件 / sidecar 生命周期模式。
+**模式：Agent（非纯 Chat SSE）。** Skills 采用 [agentskills.io](https://agentskills.io) 三级披露：`skills_list`（Level 0 索引进 stable prompt）→ `skill_view`（按需全文 / references）。
 
-| scmclaw-v2 | media2text desktop |
+| scmclaw-v2（历史） | media2text desktop（Hermes v2） |
 |------------|-------------------|
-| `packages/pi-sidecar` | `packages/m2t-agent-sidecar`（fork 适配） |
+| `packages/pi-sidecar` | **已移除** — Python `media2text.agent` |
 | `packages/agent-skills/{ozon,erp}` | `packages/agent-skills/media2text/`（+ 后续子 skill） |
 | `scmclaw_*` tools → Nest API | `m2t_*` tools → **Python API :8765** |
-| `buildSystemPrompt()` org/shop | `buildSystemPrompt()` creator/session/transcript 路径 |
-| Tauri `pi_sidecar.rs` NDJSON | Tauri `agent_sidecar.rs`（同构） |
+| startup 注入完整 SKILL.md | **禁止** — 仅 Level-0 索引；全文经 `skill_view` |
+| Tauri `pi_sidecar.rs` NDJSON | Tauri spawn Python `media2text serve` + WS stream |
 | `usePiSidecar` + `PiEvent` | `useM2tAgent` + 共享 `PiEvent` schema |
 | UI 消息 localStorage | **SQLite** `desktop_chat_*`（经 Python API 同步） |
 
@@ -346,7 +347,8 @@ packages/agent-skills/
   transcript/SKILL.md     # 读转写/摘要、merge、suggested_groups
 ```
 
-- 加载：`DefaultResourceLoader` + `agent.json` → `defaultSkills: ["media2text"]`（与 scmclaw `config.ts` 同模式）  
+- 加载：`build_skills_index()` 扫描 `packages/agent-skills/`；stable tier 仅 name + description（Hermes §11）  
+- 按需：`skill_view(name)` / `skill_view(name, path)` 读 SKILL.md 或 `references/`  
 - 打包：Tauri `resources/agent-skills/` 随 app 分发（对齐 scmclaw desktop resources）  
 - **Skill 只描述能力与 tool 用法**；执行一律走 `m2t_*` tools，不在 skill 内复制业务规则  
 
@@ -404,7 +406,7 @@ Thread CRUD 仅走 **Python API**（Agent 不直接写 chat 表）。
 
 - LLM 配置：**系统配置 · AI 段**编辑 `summarize.llm.providers`（`PATCH /api/config` 落盘）→ Tauri 在保存成功后 **reload Agent sidecar env**（`M2T_LLM_PROFILES`、`M2T_LLM_KEYS`，对齐 `SCMCLAW_LLM_*`）  
 - Agent 默认模型 / 上下文上限：`desktop.chat.default_model`、`desktop.chat.max_context_chars`（与 `#cfg-agent-model`、`#cfg-max-context` 对应）  
-- Per-thread / Composer：`#agent-model-select` 覆盖当前 thread（`PATCH /api/chat/threads/{id}`）；`auto` 时用 scmclaw `resolveAutoModel`  
+- Per-thread / Composer：`#agent-model-select` 覆盖当前 thread（`PATCH /api/agent/threads/{id}`；`/api/chat/*` 为 deprecated alias）；`auto` 时用 scmclaw `resolveAutoModel`  
 - v1 API key：`.env` / `api_key_envs`；表单密码框**留空表示不修改**；v2 可选 Tauri keyring  
 
 #### 4.6.7 前端 UI

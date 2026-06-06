@@ -8,6 +8,8 @@ from typing import Any
 
 from media2text.agent.hermes_state import SessionDB
 from media2text.agent.memory_store import MemorySafetyError, MemoryTarget, read_file, write_file
+from media2text.agent.profile_resolver import resolve_profile
+from media2text.agent.skills_index import handle_skill_view, handle_skills_list
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
 
@@ -51,6 +53,10 @@ def handle_function_call(
             return _handle_memory(params, ctx)
         if tool.kind == "hermes" and name == "session_search":
             return _handle_session_search(params, ctx)
+        if tool.kind == "hermes" and name == "skills_list":
+            return handle_skills_list(resolve_profile(ctx.cfg))
+        if tool.kind == "hermes" and name == "skill_view":
+            return handle_skill_view(params, profile_ctx=resolve_profile(ctx.cfg))
         result = tool.handler(ctx, **params)
     except AgentToolError as exc:
         return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}

@@ -9,7 +9,11 @@ from media2text.api.deps import get_cfg, get_db
 from media2text.api.routes import agent as agent_routes
 from media2text.core.config import AppConfig
 
-router = APIRouter(prefix="/chat", tags=["chat"])
+router = APIRouter(
+    prefix="/chat",
+    tags=["chat"],
+    deprecated=True,
+)
 
 
 @router.get("/providers")

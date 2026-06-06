@@ -27,6 +27,37 @@ def test_chat_providers(api_client) -> None:
     assert isinstance(body["providers"], list)
 
 
+def test_chat_thread_routes_mark_deprecated(api_client, workspace) -> None:
+    cid = _seed_creator(workspace)
+    r = api_client.post("/api/chat/threads", json={"creatorId": cid, "title": "dep"})
+    assert r.status_code == 200
+    assert r.headers.get("Deprecation") == "true"
+    assert "successor-version" in (r.headers.get("Link") or "")
+    tid = r.json()["thread"]["id"]
+
+    r = api_client.get(f"/api/chat/threads/{tid}")
+    assert r.status_code == 200
+    assert r.headers.get("Deprecation") == "true"
+
+    r = api_client.get("/api/chat/threads", params={"creatorId": cid})
+    assert r.headers.get("Deprecation") == "true"
+
+    r = api_client.patch(f"/api/chat/threads/{tid}", json={"title": "renamed"})
+    assert r.headers.get("Deprecation") == "true"
+
+    r = api_client.get(f"/api/chat/threads/{tid}/messages")
+    assert r.headers.get("Deprecation") == "true"
+
+    r = api_client.post(
+        f"/api/chat/threads/{tid}/messages",
+        json={"role": "user", "content": "hello"},
+    )
+    assert r.headers.get("Deprecation") == "true"
+
+    r = api_client.delete(f"/api/chat/threads/{tid}")
+    assert r.headers.get("Deprecation") == "true"
+
+
 def test_chat_thread_crud(api_client, workspace) -> None:
     cid = _seed_creator(workspace)
     r = api_client.post(
