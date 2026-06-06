@@ -2,11 +2,6 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from media2text.api.app import FastAPI as _FastAPI
-
 __all__ = ["create_app"]
 
 
