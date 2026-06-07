@@ -1,0 +1,27 @@
+# Epic verification — m2t Agent self-evolution (Hermes closed learning loop)
+# Run: python scripts/epic_verify.py agent-self-evolution
+name: agent-self-evolution
+spec: docs/superpowers/specs/2026-06-07-m2t-agent-self-evolution-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-07-m2t-agent-self-evolution-acceptance.md
+readme_section: m2t Agent 自进化闭环
+issues: [215, 216, 217]
+spec_ids_automated: [S1, S2, S3, S4, S5, S6, S7, S8, S9, S11, S12, S13, S14]
+spec_ids_manual: [S10, S15]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: ruff-agent
+    run: ruff check src/media2text/agent/
+
+  - name: pyright-agent
+    run: pyright src/media2text/agent/
+    optional: true
+
+  - name: agent-self-evolution-pytest
+    run: pytest tests/unit/test_memory_store_entries.py tests/unit/test_agent_state_persistence.py tests/unit/test_agent_nudge_counters.py tests/unit/test_background_review.py tests/unit/test_review_snapshot_order.py tests/unit/test_skill_manage.py tests/unit/test_skill_provenance.py tests/unit/test_curator_transitions.py -v -m agent --tb=short -q
+
+  - name: curator-dry-run
+    run: media2text agent curator run --dry-run
+    optional: true
