@@ -82,3 +82,38 @@ def test_mid_turn_write_not_in_same_turn_prompt(tmp_path) -> None:
     assert "mid-turn secret" not in frozen_volatile
     assert read_file(cfg, "memory") == "mid-turn secret"
     conn.close()
+
+
+def test_memory_add_replace_remove(tmp_path) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
+    conn = connect(tmp_path / "media2text.db")
+    ctx = ToolContext(cfg=cfg, conn=conn)
+    out = handle_function_call(
+        "memory",
+        {"action": "add", "target": "memory", "content": "fact A"},
+        ctx,
+    )
+    assert out["ok"] is True
+    out2 = handle_function_call(
+        "memory",
+        {"action": "replace", "target": "memory", "old_text": "fact A", "content": "fact A2"},
+        ctx,
+    )
+    assert out2["ok"] is True
+    read = handle_function_call("memory", {"action": "read", "target": "memory"}, ctx)
+    assert "fact A2" in read["data"]["content"]
+    conn.close()
+
+
+def test_memory_write_append_deprecated(tmp_path) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
+    conn = connect(tmp_path / "media2text.db")
+    ctx = ToolContext(cfg=cfg, conn=conn)
+    out = handle_function_call(
+        "memory",
+        {"action": "write", "target": "memory", "content": "legacy whole file"},
+        ctx,
+    )
+    assert out["ok"] is True
+    assert out["data"].get("deprecated") is True
+    conn.close()

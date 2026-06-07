@@ -200,9 +200,13 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["read", "write", "append"]},
+                "action": {
+                    "type": "string",
+                    "enum": ["read", "add", "replace", "remove", "write", "append"],
+                },
                 "target": {"type": "string", "enum": ["memory", "user", "soul"]},
                 "content": {"type": "string"},
+                "old_text": {"type": "string"},
                 "key": {"type": "string"},
                 "value": {"type": "string"},
             },
@@ -252,6 +256,35 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
                 },
             },
             "required": ["name"],
+        },
+        handler=lambda _ctx, **_params: {"ok": False, "error": "use model_tools dispatch"},
+        kind="hermes",
+    ),
+    ToolDef(
+        name="skill_manage",
+        description="Create, patch, edit, or delete agent skills under the active profile",
+        parameters={
+            "type": "object",
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "create",
+                        "patch",
+                        "edit",
+                        "delete",
+                        "write_file",
+                        "remove_file",
+                    ],
+                },
+                "name": {"type": "string", "description": "Skill slug, e.g. my-workflow"},
+                "content": {"type": "string", "description": "Body or file content"},
+                "description": {"type": "string", "description": "Short skill description (create)"},
+                "old_string": {"type": "string", "description": "Exact text to replace (patch)"},
+                "new_string": {"type": "string", "description": "Replacement text (patch)"},
+                "path": {"type": "string", "description": "Relative path under skill dir (write_file/remove_file)"},
+            },
+            "required": ["action"],
         },
         handler=lambda _ctx, **_params: {"ok": False, "error": "use model_tools dispatch"},
         kind="hermes",

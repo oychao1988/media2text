@@ -136,6 +136,7 @@ def apply_fork_compression(
 
     tokens = estimate_tokens(db.get_messages_as_conversation(child_id))
     db.update_token_estimate(child_id, tokens)
+    db.copy_agent_state(parent_session_id, child_id)
     return child_id
 
 

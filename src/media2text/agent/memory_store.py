@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from pathlib import Path
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 from media2text.core.config import AppConfig
 
@@ -216,3 +216,89 @@ def format_memory_block(snapshot: dict[str, str]) -> str:
     if not parts:
         return ""
     return "\n\n".join(parts)
+
+
+_SECTION = "§"
+
+
+def _split_entries(text: str) -> list[str]:
+    if not text.strip():
+        return []
+    if _SECTION not in text:
+        return [text.strip()]
+    parts = [p.strip() for p in text.split(_SECTION) if p.strip()]
+    return parts
+
+
+def _join_entries(entries: list[str]) -> str:
+    if not entries:
+        return ""
+    return "\n\n".join(f"{_SECTION}\n{e.strip()}" for e in entries if e.strip())
+
+
+def _normalize_legacy_on_read(raw: str) -> str:
+    """Legacy whole-file MEMORY.md becomes a single § entry on first structured write."""
+    if not raw.strip():
+        return raw
+    if _SECTION in raw:
+        return raw
+    return _join_entries([raw.strip()])
+
+
+class MemoryStore:
+    def __init__(
+        self,
+        cfg: AppConfig,
+        profile: AgentProfileContext | None = None,
+    ) -> None:
+        self._cfg = cfg
+        self._profile = profile
+
+    def _read_raw(self, target: MemoryTarget) -> str:
+        if self._profile:
+            return read_file_for_profile(self._profile, target)
+        return read_file(self._cfg, target)
+
+    def _write_raw(self, target: MemoryTarget, content: str) -> None:
+        if self._profile:
+            write_file_for_profile(self._cfg, self._profile, target, content, mode="replace")
+        else:
+            write_file(self._cfg, target, content, mode="replace")
+
+    def list_entries(self, target: MemoryTarget) -> list[str]:
+        raw = _normalize_legacy_on_read(self._read_raw(target))
+        return _split_entries(raw)
+
+    def add(self, target: MemoryTarget, content: str) -> dict[str, Any]:
+        entries = self.list_entries(target)
+        entries.append(content.strip())
+        joined = _join_entries(entries)
+        self._write_raw(target, joined)
+        return {"target": target, "entries": len(entries), "chars": len(joined)}
+
+    def replace(
+        self,
+        target: MemoryTarget,
+        *,
+        old_text: str,
+        content: str,
+    ) -> dict[str, Any]:
+        entries = self.list_entries(target)
+        matches = [i for i, e in enumerate(entries) if old_text in e]
+        if len(matches) != 1:
+            raise ValueError(f"old_text must match exactly one entry, got {len(matches)}")
+        idx = matches[0]
+        entries[idx] = entries[idx].replace(old_text, content, 1)
+        joined = _join_entries(entries)
+        self._write_raw(target, joined)
+        return {"target": target, "entries": len(entries), "chars": len(joined)}
+
+    def remove(self, target: MemoryTarget, *, old_text: str) -> dict[str, Any]:
+        entries = self.list_entries(target)
+        matches = [i for i, e in enumerate(entries) if old_text in e]
+        if len(matches) != 1:
+            raise ValueError(f"old_text must match exactly one entry, got {len(matches)}")
+        del entries[matches[0]]
+        joined = _join_entries(entries)
+        self._write_raw(target, joined)
+        return {"target": target, "entries": len(entries), "chars": len(joined)}

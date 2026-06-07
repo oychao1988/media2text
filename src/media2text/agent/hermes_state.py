@@ -549,6 +549,50 @@ class SessionDB:
                 break
         return hits
 
+    def update_agent_state_json(self, session_id: str, payload: str) -> None:
+        now = _utc_now()
+
+        def _update() -> None:
+            self._conn.execute(
+                """
+                UPDATE sessions SET agent_state_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (payload, now, session_id),
+            )
+
+        _write_with_retry(self._conn, _update)
+
+    def count_user_messages(self, session_id: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT COUNT(*) AS n FROM messages
+            WHERE session_id = ? AND role = 'user' AND message_kind = 'normal'
+            """,
+            (session_id,),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
+    def copy_agent_state(self, parent_id: str, child_id: str) -> None:
+        parent = self.get_session_row(parent_id)
+        if parent is None:
+            return
+        raw = parent["agent_state_json"]
+        if not raw:
+            return
+        now = _utc_now()
+
+        def _update() -> None:
+            self._conn.execute(
+                """
+                UPDATE sessions SET agent_state_json = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (raw, now, child_id),
+            )
+
+        _write_with_retry(self._conn, _update)
+
 
 def parse_binding(raw: str | None) -> dict[str, Any]:
     if not raw:

@@ -9,11 +9,14 @@ from typing import Any
 from media2text.agent.hermes_state import SessionDB
 from media2text.agent.memory_store import (
     MemorySafetyError,
+    MemoryStore,
     MemoryTarget,
     read_file_for_profile,
     write_file_for_profile,
 )
 from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
+from media2text.agent.skill_manage import SkillManageError, handle_skill_manage
+from media2text.agent.skill_usage import record_view
 from media2text.agent.skills_index import handle_skill_view, handle_skills_list
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
@@ -54,6 +57,14 @@ def handle_function_call(
         }
     try:
         params = _parse_args(arguments)
+        if ctx.allowed_tools is not None and name not in ctx.allowed_tools:
+            return {
+                "ok": False,
+                "error": {
+                    "code": "TOOL_DENIED",
+                    "message": f"tool not allowed in review context: {name}",
+                },
+            }
         if tool.kind == "hermes" and name == "memory":
             return _handle_memory(params, ctx)
         if tool.kind == "hermes" and name == "session_search":
@@ -63,7 +74,18 @@ def handle_function_call(
             return handle_skills_list(profile)
         if tool.kind == "hermes" and name == "skill_view":
             profile = ctx.profile or resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
-            return handle_skill_view(params, profile_ctx=profile)
+            result = handle_skill_view(params, profile_ctx=profile)
+            if result.get("ok") and isinstance(profile, AgentProfileContext):
+                skill_name = str(params.get("name") or "").strip()
+                if skill_name:
+                    record_view(profile, skill_name)
+            return result
+        if tool.kind == "hermes" and name == "skill_manage":
+            profile = _active_profile(ctx)
+            try:
+                return handle_skill_manage(params, profile)
+            except SkillManageError as exc:
+                return {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
         result = tool.handler(ctx, **params)
     except AgentToolError as exc:
         return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}
@@ -104,10 +126,37 @@ def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
     action = str(params.get("action") or "").lower()
     target = _resolve_target(params)
     profile = _active_profile(ctx)
+    store = MemoryStore(ctx.cfg, profile=profile)
 
     if action == "read":
         content = read_file_for_profile(profile, target)
         return {"ok": True, "data": {"target": target, "content": content}}
+
+    if action == "add":
+        text = str(params.get("content") or "")
+        meta = store.add(target, text)
+        return {
+            "ok": True,
+            "data": {**meta, "content": read_file_for_profile(profile, target)},
+        }
+
+    if action == "replace":
+        meta = store.replace(
+            target,
+            old_text=str(params.get("old_text") or ""),
+            content=str(params.get("content") or ""),
+        )
+        return {
+            "ok": True,
+            "data": {**meta, "content": read_file_for_profile(profile, target)},
+        }
+
+    if action == "remove":
+        meta = store.remove(target, old_text=str(params.get("old_text") or ""))
+        return {
+            "ok": True,
+            "data": {**meta, "content": read_file_for_profile(profile, target)},
+        }
 
     if action in ("write", "append"):
         content = params.get("content")
@@ -122,10 +171,14 @@ def _handle_memory(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:
         meta = write_file_for_profile(ctx.cfg, profile, target, text, mode=mode)
         return {
             "ok": True,
-            "data": {**meta, "content": read_file_for_profile(profile, target)},
+            "data": {
+                **meta,
+                "content": read_file_for_profile(profile, target),
+                "deprecated": True,
+            },
         }
 
-    raise AgentToolError("action must be read, write, or append")
+    raise AgentToolError("action must be read, add, replace, remove, write, or append")
 
 
 def _handle_session_search(params: dict[str, Any], ctx: ToolContext) -> dict[str, Any]:

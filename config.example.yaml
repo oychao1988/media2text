@@ -98,6 +98,19 @@ delegation:
 memory:
   max_chars: 2200
   user_max_chars: 1375
+  soul_max_chars: 4000
+  memory_enabled: true
+  user_profile_enabled: true
+  soul_enabled: true
+  nudge_interval: 10
+skills:
+  creation_nudge_interval: 10
+  agent_skills_subdir: skills
+curator:
+  enabled: false
+  interval_hours: 168
+  min_idle_hours: 2
+  backup_keep: 5
 compression:
   enabled: true
   preflight_ratio: 0.5
@@ -105,6 +118,8 @@ compression:
   protect_last_n: 20
 agent:
   max_turns: 25
+  review_enabled: true
+  review_max_iterations: 16
 
 # 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
 aliyundrive:
