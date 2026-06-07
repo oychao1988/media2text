@@ -107,10 +107,7 @@ def test_doctor_summarize_llm_when_bootstrap_web_without_summarize_enabled(
     monkeypatch.chdir(tmp_path)
     env_path = tmp_path / ".env"
     env_path.write_text("NVIDIA_API_KEY=test-key\n", encoding="utf-8")
-    monkeypatch.setattr(
-        "media2text.agent.creator_distill.tavily_client.env_file_path",
-        lambda: env_path,
-    )
+    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
 
     cfg = AppConfig.model_validate(

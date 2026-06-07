@@ -307,7 +307,10 @@ def test_patch_restart_hints() -> None:
 def test_config_to_dto_includes_tavily_and_bootstrap_fields(tmp_path, monkeypatch) -> None:
     env_path = tmp_path / ".env"
     env_path.write_text("TAVILY_API_KEY=tvly-secret\n", encoding="utf-8")
-    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
 
     cfg = AppConfig.model_validate(
         {
@@ -325,6 +328,10 @@ def test_config_to_dto_includes_tavily_and_bootstrap_fields(tmp_path, monkeypatc
 def test_patch_tavily_api_key_writes_env(tmp_path, monkeypatch) -> None:
     env_path = tmp_path / ".env"
     monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
     monkeypatch.setattr("media2text.core.env_file.load_dotenv_file", lambda: None)
 
     cfg = AppConfig.model_validate({"desktop": {"agent": {"distill": {}}}})
