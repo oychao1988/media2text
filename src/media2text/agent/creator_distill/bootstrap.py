@@ -111,6 +111,10 @@ def run_bootstrap_job(
         atomic_write_text(profile.memory_paths.soul, soul_md)
         atomic_write_text(refs_dir / "00-local-corpus.md", corpus_md)
 
+        from media2text.agent.skill_usage import pin
+
+        pin(profile, slug)
+
         skill_ref = slug
         merged_yaml = save_profile_yaml(
             profile,
