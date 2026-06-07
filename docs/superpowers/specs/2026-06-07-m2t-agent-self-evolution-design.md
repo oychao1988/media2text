@@ -573,7 +573,7 @@ pytest tests/unit/test_memory_store_entries.py \
 
 - [CLAUDE.md](../../../CLAUDE.md) Desktop Agent 小节（自进化 + CLI）
 - [config.example.yaml](../../../config.example.yaml) `memory.nudge_interval`、`skills.*`、`curator.*`
-- [2026-06-06-m2t-desktop-agent-hermes-refactor-design.md](./2026-06-06-m2t-desktop-agent-hermes-refactor-design.md) §4.2 非目标 Curator 一行 → 指向本规格
+- [x] [2026-06-06-m2t-desktop-agent-hermes-refactor-design.md](./2026-06-06-m2t-desktop-agent-hermes-refactor-design.md) §4.2 Curator 非目标一行 → 指向本规格 §9（父规格合入 main 时同步）
 - 新 epic manifest `docs/issues/epic-manifests/agent-self-evolution.yaml`
 
 ---

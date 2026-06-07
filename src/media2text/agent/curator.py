@@ -166,6 +166,38 @@ def phase1_auto_transitions(
     return result
 
 
+def _write_curator_report(
+    profile: AgentProfileContext,
+    *,
+    run_id: str,
+    dry_run: bool,
+    transitions: TransitionResult,
+    llm_result: dict[str, Any] | None,
+) -> Path:
+    report_dir = profile.memory_paths.profile_dir / "logs" / "curator" / run_id
+    report_dir.mkdir(parents=True, exist_ok=True)
+    lines = [
+        f"# Curator run {run_id}",
+        "",
+        f"- dry_run: {dry_run}",
+        f"- profile: {profile.profile_id}",
+        "",
+        "## Phase 1 — auto transitions",
+        f"- stale: {', '.join(transitions.stale) or '(none)'}",
+        f"- archived: {', '.join(transitions.archived) or '(none)'}",
+        f"- skipped: {', '.join(transitions.skipped) or '(none)'}",
+        "",
+        "## Phase 2 — LLM review",
+    ]
+    if llm_result is None:
+        lines.append("- skipped")
+    else:
+        lines.append(f"- result: {json.dumps(llm_result, ensure_ascii=False)}")
+    path = report_dir / "REPORT.md"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def run_phase2_llm_review(
     cfg: AppConfig,
     profile: AgentProfileContext,
@@ -184,8 +216,14 @@ def run_phase2_llm_review(
 
     from media2text.agent.ai_agent import AIAgent
     from media2text.agent.hermes_state import SessionDB
+    from media2text.agent.runtime_provider import resolve_auxiliary_slot
     from media2text.agent.skill_provenance import BACKGROUND_REVIEW, write_origin_ctx
     from media2text.core.storage.db import connect
+
+    curator_provider, curator_model = resolve_auxiliary_slot(
+        cfg.auxiliary.curator,
+        cfg=cfg,
+    )
 
     prompt = (
         "You are the skill curator. Review stale agent-created skills and improve or "
@@ -205,8 +243,8 @@ def run_phase2_llm_review(
                 conversation_history=[],
                 binding={},
                 creator_id=profile.creator_id,
-                provider_name="auto",
-                model="auto",
+                provider_name=curator_provider,
+                model=curator_model,
                 cached_volatile=None,
                 max_iterations=CURATOR_MAX_ITERATIONS,
             )
@@ -223,12 +261,14 @@ def run_curator(
     run_llm: bool = True,
 ) -> dict[str, Any]:
     profile = profile or resolve_profile(creator_id=None, cfg=cfg)
-    report: dict[str, Any] = {"dry_run": dry_run, "profiles": []}
+    run_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    report: dict[str, Any] = {"dry_run": dry_run, "profiles": [], "run_id": run_id}
 
     if not dry_run:
         create_backup(profile, keep=cfg.curator.backup_keep)
 
     transitions = phase1_auto_transitions(profile, dry_run=dry_run)
+    llm_result: dict[str, Any] | None = None
     profile_report: dict[str, Any] = {
         "profile_id": profile.profile_id,
         "stale": transitions.stale,
@@ -236,7 +276,16 @@ def run_curator(
         "skipped": transitions.skipped,
     }
     if run_llm and cfg.curator.enabled:
-        profile_report["llm"] = run_phase2_llm_review(cfg, profile, dry_run=dry_run)
+        llm_result = run_phase2_llm_review(cfg, profile, dry_run=dry_run)
+        profile_report["llm"] = llm_result
+    report_path = _write_curator_report(
+        profile,
+        run_id=run_id,
+        dry_run=dry_run,
+        transitions=transitions,
+        llm_result=llm_result,
+    )
+    profile_report["report_path"] = str(report_path)
     report["profiles"].append(profile_report)
 
     if not dry_run:

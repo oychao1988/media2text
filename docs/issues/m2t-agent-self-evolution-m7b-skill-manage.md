@@ -54,7 +54,7 @@ M7a 交付 memory review fork 与 nudge 基础设施；Agent 仍无法把 workfl
 - [x] `creator_distill` bootstrap（或 evolve 落盘）完成时：`skill_usage.pin("{slug}-perspective")` + frontmatter `metadata.hermes.protected: distill`
 - [x] M7b 起：`compute_review_flags` 在 `"skill_manage" in valid_tool_names` 且达 `skills.creation_nudge_interval` 时 `review_skills=True`
 - [x] `skill_manage` 成功执行后 `_iters_since_skill` 归零
-- [ ] S10（manual_ac）：mock 集成 — 用户纠正口吻后 review patch `{slug}-perspective` 的 pitfall 段（非 `references/research/*`）
+- [x] S10（manual_ac）：mock 集成 — 用户纠正口吻后 review patch `{slug}-perspective` 的 pitfall 段（非 `references/research/*`）（`test_agent_self_evolution_manual_acceptance.py`）
 
 ### Task 5 — 兼容与文档
 

@@ -80,6 +80,15 @@ def maybe_spawn_background_review(
     if agent_state.review_in_flight:
         return
 
+    from media2text.agent.runtime_provider import resolve_auxiliary_slot
+
+    review_provider, review_model = resolve_auxiliary_slot(
+        cfg.auxiliary.review,
+        cfg=cfg,
+        fallback_provider=provider_name,
+        fallback_model=model,
+    )
+
     agent_state.review_in_flight = True
     save_agent_state(db, session_id, agent_state)
 
@@ -91,8 +100,8 @@ def maybe_spawn_background_review(
         messages_snapshot=messages_snapshot,
         review_memory=flags.review_memory,
         review_skills=flags.review_skills,
-        provider_name=provider_name,
-        model=model,
+        provider_name=review_provider,
+        model=review_model,
         binding=binding,
         cached_system_prompt=agent_state.cached_system_prompt,
         llm=getattr(foreground_agent, "_llm", None),

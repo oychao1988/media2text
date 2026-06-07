@@ -22,3 +22,10 @@ def test_skills_and_curator_defaults() -> None:
     cfg = AppConfig.model_validate({"workspace": "/tmp/ws"})
     assert cfg.skills.creation_nudge_interval == 10
     assert cfg.curator.enabled is False
+
+
+def test_auxiliary_defaults() -> None:
+    cfg = AppConfig.model_validate({"workspace": "/tmp/ws"})
+    assert cfg.auxiliary.review.provider == "auto"
+    assert cfg.auxiliary.review.model == "auto"
+    assert cfg.auxiliary.curator.provider == "auto"

@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
@@ -9,6 +10,7 @@ from media2text.agent.skill_usage import (
     is_pinned,
     load_usage,
     pin,
+    record_default_skills_use,
     record_patch,
     record_view,
 )
@@ -49,6 +51,26 @@ def test_bundled_skill_skips_telemetry(tmp_path, monkeypatch) -> None:
 
     usage_path = profile.memory_paths.profile_dir / "skills" / ".usage.json"
     assert not usage_path.is_file() or "media2text" not in load_usage(profile)
+
+
+def test_record_default_skills_use(tmp_path) -> None:
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate({"workspace": str(ws)})
+    profile = resolve_profile(creator_id=None, cfg=cfg)
+    skills_root = profile.memory_paths.profile_dir / "skills"
+    skill_dir = skills_root / "default-flow"
+    skill_dir.mkdir(parents=True)
+    (skill_dir / "SKILL.md").write_text(
+        "---\nname: default-flow\ndescription: default\n---\n# Default Flow\n",
+        encoding="utf-8",
+    )
+    profile = replace(profile, default_skills=["default-flow"])
+
+    record_default_skills_use(profile)
+
+    data = load_usage(profile)
+    assert data["default-flow"]["use_count"] == 1
+    assert data["default-flow"]["last_used_at"]
 
 
 def test_pin_sets_flag(tmp_path) -> None:

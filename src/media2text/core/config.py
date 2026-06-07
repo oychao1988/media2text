@@ -291,6 +291,17 @@ class AgentLoopConfig(BaseModel):
     review_max_iterations: int = 16
 
 
+class AuxiliarySlotConfig(BaseModel):
+    provider: str = "auto"
+    model: str = "auto"
+    timeout: int = 300
+
+
+class AuxiliaryConfig(BaseModel):
+    review: AuxiliarySlotConfig = Field(default_factory=AuxiliarySlotConfig)
+    curator: AuxiliarySlotConfig = Field(default_factory=AuxiliarySlotConfig)
+
+
 class TerminalConfig(BaseModel):
     backend: str = "local"
     cwd: str = "./data"
@@ -377,6 +388,7 @@ class AppConfig(BaseSettings):
     curator: CuratorConfig = Field(default_factory=CuratorConfig)
     compression: CompressionConfig = Field(default_factory=CompressionConfig)
     agent: AgentLoopConfig = Field(default_factory=AgentLoopConfig)
+    auxiliary: AuxiliaryConfig = Field(default_factory=AuxiliaryConfig)
     terminal: TerminalConfig = Field(default_factory=TerminalConfig)
     security: SecurityConfig = Field(default_factory=SecurityConfig)
     delegation: DelegationConfig = Field(default_factory=DelegationConfig)

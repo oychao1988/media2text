@@ -23,10 +23,12 @@
 
 ## 人工 (S10, S15)
 
-| ID | 项 | 状态 |
-|----|-----|------|
-| S10 | review patch distill perspective pitfall 段 | 待人工 |
-| S15 | curator rollback 恢复备份 | 待人工 |
+| ID | 项 | 状态 | 证据 |
+|----|-----|------|------|
+| S10 | review patch distill perspective pitfall 段 | PASS | `tests/unit/test_agent_self_evolution_manual_acceptance.py::test_s10_*` |
+| S15 | curator rollback 恢复备份 | PASS | `tests/unit/test_agent_self_evolution_manual_acceptance.py::test_s15_*` |
+
+报告：`.tmp/agent-self-evolution-manual-acceptance.json`（`scripts/agent_self_evolution_manual_acceptance.py`）
 
 ## 验证命令
 
@@ -43,4 +45,5 @@ pytest tests/unit/test_memory_store_entries.py \
        tests/unit/test_cli_agent_curator.py -v -m agent
 media2text agent curator run --dry-run
 python scripts/epic_verify.py agent-self-evolution
+python scripts/agent_self_evolution_manual_acceptance.py
 ```

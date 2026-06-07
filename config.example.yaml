@@ -120,6 +120,15 @@ agent:
   max_turns: 25
   review_enabled: true
   review_max_iterations: 16
+auxiliary:
+  review:
+    provider: auto
+    model: auto
+    timeout: 300
+  curator:
+    provider: auto
+    model: auto
+    timeout: 300
 
 # 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
 aliyundrive:

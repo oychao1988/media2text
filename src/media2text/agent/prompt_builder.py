@@ -12,6 +12,7 @@ from media2text.agent.memory_store import (
     load_volatile_snapshot_for_profile,
 )
 from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
+from media2text.agent.skill_usage import record_default_skills_use
 from media2text.agent.skills_index import build_skills_index, format_skills_index_block
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
@@ -73,6 +74,8 @@ def build_system_prompt(
         )
     else:
         profile = profile_ctx
+    if isinstance(profile, AgentProfileContext):
+        record_default_skills_use(profile)
     binding = thread.get("binding") or {}
     context_mode = binding.get("context_mode") or thread.get("context_mode") or "both"
 
