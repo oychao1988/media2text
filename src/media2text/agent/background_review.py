@@ -83,57 +83,55 @@ def spawn_background_review_thread(
     llm: Any | None = None,
 ) -> threading.Thread:
     def _run() -> None:
-        from media2text.agent.skill_provenance import BACKGROUND_REVIEW, write_origin_ctx
         from media2text.core.storage.db import connect
 
-        with write_origin_ctx(BACKGROUND_REVIEW):
-            conn = connect(cfg.ensure_workspace() / "media2text.db")
-            db: SessionDB | None = None
-            try:
-                db = SessionDB(conn)
-                scope_hint = build_scope_hint(cfg, creator_id=creator_id)
-                prompt = build_review_prompt(
-                    review_memory=review_memory,
-                    review_skills=review_skills,
-                    scope_hint=scope_hint,
-                )
-                from media2text.agent.ai_agent import AIAgent
+        conn = connect(cfg.ensure_workspace() / "media2text.db")
+        db: SessionDB | None = None
+        try:
+            db = SessionDB(conn)
+            scope_hint = build_scope_hint(cfg, creator_id=creator_id)
+            prompt = build_review_prompt(
+                review_memory=review_memory,
+                review_skills=review_skills,
+                scope_hint=scope_hint,
+            )
+            from media2text.agent.ai_agent import AIAgent
 
-                agent = AIAgent(
-                    db,
-                    cfg,
-                    llm=llm,
-                    toolset="review",
-                    quiet=True,
-                )
-                agent.run_review_conversation(
-                    display_thread_id=display_thread_id,
-                    session_id=session_id,
-                    user_text=prompt,
-                    conversation_history=messages_snapshot,
-                    binding=binding,
-                    creator_id=creator_id,
-                    provider_name=provider_name,
-                    model=model,
-                    cached_volatile=cached_system_prompt,
-                )
-                logger.info(
-                    "background review completed session=%s memory=%s skills=%s",
-                    session_id[:8],
-                    review_memory,
-                    review_skills,
-                )
-            except Exception as exc:  # noqa: BLE001
-                logger.warning("background review failed session=%s: %s", session_id[:8], exc)
-            finally:
-                try:
-                    if db is not None:
-                        st = load_agent_state(db, session_id)
-                        st.review_in_flight = False
-                        save_agent_state(db, session_id, st)
-                except Exception:  # noqa: BLE001
-                    pass
-                conn.close()
+            agent = AIAgent(
+                db,
+                cfg,
+                llm=llm,
+                toolset="review",
+                quiet=True,
+            )
+            agent.run_review_conversation(
+                display_thread_id=display_thread_id,
+                session_id=session_id,
+                user_text=prompt,
+                conversation_history=messages_snapshot,
+                binding=binding,
+                creator_id=creator_id,
+                provider_name=provider_name,
+                model=model,
+                cached_volatile=cached_system_prompt,
+            )
+            logger.info(
+                "background review completed session=%s memory=%s skills=%s",
+                session_id[:8],
+                review_memory,
+                review_skills,
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("background review failed session=%s: %s", session_id[:8], exc)
+        finally:
+            try:
+                if db is not None:
+                    st = load_agent_state(db, session_id)
+                    st.review_in_flight = False
+                    save_agent_state(db, session_id, st)
+            except Exception:  # noqa: BLE001
+                pass
+            conn.close()
 
     thread = threading.Thread(
         target=_run,

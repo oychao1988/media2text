@@ -15,8 +15,6 @@ from media2text.agent.memory_store import (
     write_file_for_profile,
 )
 from media2text.agent.profile_resolver import AgentProfileContext, resolve_profile
-from media2text.agent.skill_manage import SkillManageError, handle_skill_manage
-from media2text.agent.skill_usage import record_view
 from media2text.agent.skills_index import handle_skill_view, handle_skills_list
 from media2text.agent.tools.m2t_handlers import ToolContext
 from media2text.agent.tools.registry import get_tool
@@ -74,18 +72,7 @@ def handle_function_call(
             return handle_skills_list(profile)
         if tool.kind == "hermes" and name == "skill_view":
             profile = ctx.profile or resolve_profile(creator_id=ctx.creator_id, cfg=ctx.cfg)
-            result = handle_skill_view(params, profile_ctx=profile)
-            if result.get("ok") and isinstance(profile, AgentProfileContext):
-                skill_name = str(params.get("name") or "").strip()
-                if skill_name:
-                    record_view(profile, skill_name)
-            return result
-        if tool.kind == "hermes" and name == "skill_manage":
-            profile = _active_profile(ctx)
-            try:
-                return handle_skill_manage(params, profile)
-            except SkillManageError as exc:
-                return {"ok": False, "error": {"code": exc.code, "message": str(exc)}}
+            return handle_skill_view(params, profile_ctx=profile)
         result = tool.handler(ctx, **params)
     except AgentToolError as exc:
         return {"ok": False, "error": {"code": "INVALID_ARGS", "message": str(exc)}}

@@ -480,10 +480,6 @@ class AIAgent:
             duration_ms = int((time.time() - started) * 1000)
             self._emit(emit, pi_emit.turn_end(duration_ms))
 
-            from media2text.agent.curator import touch_agent_activity
-
-            touch_agent_activity(self._cfg)
-
             if messages_snapshot and not is_retry:
                 maybe_spawn_background_review(
                     self,

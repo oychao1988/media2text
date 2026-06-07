@@ -83,14 +83,7 @@ Hermes M0–M6 已交付 `AIAgent`、文件型 `memory` tool（`read`/`write`/`a
 ```bash
 source .venv/bin/activate
 pip install -e ".[desktop,dev]"
-pytest tests/unit/test_agent_config_self_evolution.py \
-       tests/unit/test_memory_store_entries.py \
-       tests/unit/test_agent_state_persistence.py \
-       tests/unit/test_agent_nudge_counters.py \
-       tests/unit/test_background_review.py \
-       tests/unit/test_review_snapshot_order.py \
-       tests/unit/test_agent_memory.py \
-       tests/unit/test_api_agent_review_e2e.py -v -m agent
+pytest tests/unit/test_agent_config_self_evolution.py tests/unit/test_memory_store_entries.py tests/unit/test_agent_state_persistence.py tests/unit/test_agent_nudge_counters.py tests/unit/test_background_review.py tests/unit/test_review_snapshot_order.py tests/unit/test_agent_memory.py tests/unit/test_api_agent_review_e2e.py -v -m agent
 ruff check src/media2text/agent/
 ```
 

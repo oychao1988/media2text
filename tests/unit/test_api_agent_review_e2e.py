@@ -20,7 +20,6 @@ pytestmark = pytest.mark.agent
 
 
 def _seed_creator(workspace, *, sec_uid: str, nickname: str) -> str:
-    cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = connect(workspace / "media2text.db")
     cid = CreatorRepo(conn).add(
         sec_uid=sec_uid,
