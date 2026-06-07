@@ -14,8 +14,8 @@ DEFAULT_TOOLSET = "m2t-core"
 REVIEW_TOOLSET = "review"
 
 _M2T_NAMES = [t.name for t in M2T_TOOLS]
-_HERMES_NAMES = ["memory", "session_search", "skills_list", "skill_view"]
-_REVIEW_NAMES = ["memory", "skills_list", "skill_view"]
+_HERMES_NAMES = ["memory", "session_search", "skills_list", "skill_view", "skill_manage"]
+_REVIEW_NAMES = ["memory", "skills_list", "skill_view", "skill_manage"]
 _TERMINAL_NAMES = [t.name for t in TERMINAL_TOOLS]
 _DELEGATION_NAMES = [t.name for t in DELEGATION_TOOLS]
 
