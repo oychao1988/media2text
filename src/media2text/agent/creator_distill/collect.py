@@ -6,6 +6,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from media2text.agent.creator_distill.collect_local import scan_local_files
+from media2text.core.config import LocalScanConfig
+
 
 @dataclass(frozen=True)
 class CorpusSlice:
@@ -63,6 +66,7 @@ def collect_corpus(
     profile_url: str | None,
     max_input_chars: int,
     max_items: int = 20,
+    local_scan: LocalScanConfig | None = None,
 ) -> CollectedCorpus:
     """Merge manifest metadata + local summary/transcript/content bodies."""
     creator_dir = workspace / "creators" / sec_uid
@@ -95,20 +99,39 @@ def collect_corpus(
         if budget <= 0:
             break
         for kind, path in _paths_for_item(workspace, sec_uid, item):
-            key = str(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            text = _read_text(path, budget=budget)
-            if not text:
-                continue
             rel = (
                 str(path.relative_to(workspace))
                 if path.is_relative_to(workspace)
                 else str(path)
             )
+            if rel in seen:
+                continue
+            seen.add(rel)
+            text = _read_text(path, budget=budget)
+            if not text:
+                continue
             slices.append(CorpusSlice(path=rel, kind=kind, chars=len(text), text=text))
             budget -= len(text)
+
+    if local_scan is not None and local_scan.enabled:
+        for hit in scan_local_files(
+            workspace=workspace,
+            sec_uid=sec_uid,
+            local_scan=local_scan,
+            budget=budget,
+        ):
+            if hit.rel_path in seen:
+                continue
+            seen.add(hit.rel_path)
+            slices.append(
+                CorpusSlice(
+                    path=hit.rel_path,
+                    kind=hit.kind,
+                    chars=hit.chars,
+                    text=hit.text,
+                )
+            )
+            budget -= hit.chars
 
     total = sum(s.chars for s in slices)
     return CollectedCorpus(
