@@ -68,7 +68,7 @@ def maybe_spawn_background_review(
     binding: dict[str, Any],
     creator_id: str | None,
     display_thread_id: str,
-    provider_name: str,
+    provider_name: str | None,
     model: str,
 ) -> None:
     if not cfg.agent.review_enabled:

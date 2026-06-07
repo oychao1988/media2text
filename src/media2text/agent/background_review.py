@@ -76,7 +76,7 @@ def spawn_background_review_thread(
     messages_snapshot: list[dict[str, Any]],
     review_memory: bool,
     review_skills: bool,
-    provider_name: str,
+    provider_name: str | None,
     model: str,
     binding: dict[str, Any],
     cached_system_prompt: str | None,

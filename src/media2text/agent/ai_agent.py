@@ -151,7 +151,7 @@ class AIAgent:
         conversation_history: list[dict[str, Any]],
         binding: dict[str, Any],
         creator_id: str | None,
-        provider_name: str,
+        provider_name: str | None,
         model: str,
         cached_volatile: str | None = None,
         cancel_event=None,
