@@ -83,3 +83,16 @@ def test_dry_run_does_not_mutate(tmp_path) -> None:
     run_curator(cfg, dry_run=True, profile=profile, run_llm=False)
     usage = load_usage(profile)
     assert usage["dry-skill"]["state"] == "active"
+
+
+def test_run_curator_writes_report(tmp_path) -> None:
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate({"workspace": str(ws)})
+    profile = resolve_profile(creator_id=None, cfg=cfg)
+
+    report = run_curator(cfg, dry_run=True, profile=profile, run_llm=False)
+    report_path = report["profiles"][0]["report_path"]
+    path = profile.memory_paths.profile_dir / "logs" / "curator" / report["run_id"] / "REPORT.md"
+    assert path.is_file()
+    assert str(path) == report_path
+    assert "Phase 1" in path.read_text(encoding="utf-8")

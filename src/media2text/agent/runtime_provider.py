@@ -6,7 +6,7 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, AuxiliarySlotConfig
 from media2text.core.summarize.openai_backend import (
     primary_model,
     resolve_api_key_envs,
@@ -77,6 +77,32 @@ def resolve_agent_provider(
                 return prov.name
     default = (llm.default_provider or "").strip()
     return default or None
+
+
+def resolve_auxiliary_slot(
+    slot: AuxiliarySlotConfig,
+    *,
+    cfg: AppConfig,
+    fallback_provider: str | None = None,
+    fallback_model: str | None = None,
+) -> tuple[str | None, str]:
+    """Resolve auxiliary.review / auxiliary.curator; auto falls back to main turn model."""
+    model_raw = (slot.model or "auto").strip()
+    if model_raw == "auto":
+        model = resolve_model(cfg, fallback_model)
+    else:
+        model = model_raw
+
+    provider_raw = (slot.provider or "auto").strip()
+    if provider_raw == "auto":
+        provider_name = resolve_agent_provider(
+            cfg,
+            model=model,
+            provider_name=fallback_provider,
+        )
+    else:
+        provider_name = provider_raw
+    return provider_name, model
 
 
 def build_openai_client(cfg: AppConfig, *, provider_name: str | None = None) -> ChatClient:

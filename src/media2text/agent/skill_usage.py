@@ -94,6 +94,17 @@ def record_use(profile: AgentProfileContext, name: str) -> None:
     save_usage(profile, data)
 
 
+def record_default_skills_use(profile: AgentProfileContext) -> None:
+    """Increment use_count for profile default_skills loaded into the system prompt."""
+    from media2text.agent.skills_index import _find_skill
+
+    for name in profile.default_skills:
+        slug = str(name).strip().strip("/")
+        if not slug or _find_skill(slug, profile) is None:
+            continue
+        record_use(profile, slug)
+
+
 def record_patch(profile: AgentProfileContext, name: str) -> None:
     if _is_bundled_skill(profile, name):
         return

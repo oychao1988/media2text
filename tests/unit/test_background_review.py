@@ -25,6 +25,26 @@ def test_build_review_prompt_memory_only() -> None:
     assert "creator:abc" in prompt
 
 
+def test_build_scope_hint_includes_distill_perspective(tmp_path) -> None:
+    from media2text.agent.background_review import build_scope_hint
+    from media2text.agent.profile_resolver import save_profile_yaml, resolve_profile
+
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate({"workspace": str(ws)})
+    profile = resolve_profile(creator_id=None, cfg=cfg)
+    save_profile_yaml(
+        profile,
+        {
+            "distill": {
+                "skill_slug": "creator-x-perspective",
+            },
+        },
+    )
+    hint = build_scope_hint(cfg, creator_id=None)
+    assert "creator-x-perspective" in hint
+    assert "references/research" in hint
+
+
 @patch("media2text.agent.agent_turn_hooks.spawn_background_review_thread")
 def test_spawn_skips_when_review_in_flight(mock_spawn, tmp_path) -> None:
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})

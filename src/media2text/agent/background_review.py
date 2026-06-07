@@ -60,11 +60,23 @@ def build_scope_hint(cfg: AppConfig, *, creator_id: str | None) -> str:
     profile = resolve_profile(creator_id=creator_id, cfg=cfg)
     slug = profile.profile_id
     if creator_id:
-        return (
+        base = (
             f"creator:{creator_id} (profile {slug}). "
-            f"All memory writes target {profile.memory_paths.profile_dir}."
+            f"All memory and skill writes target {profile.memory_paths.profile_dir} only."
         )
-    return f"workspace profile ({slug}). All memory writes target {profile.memory_paths.profile_dir}."
+    else:
+        base = (
+            f"workspace profile ({slug}). "
+            f"All memory and skill writes target {profile.memory_paths.profile_dir} only."
+        )
+    distill = profile.profile_yaml.get("distill") or {}
+    perspective_slug = distill.get("skill_slug")
+    if isinstance(perspective_slug, str) and perspective_slug.strip():
+        base += (
+            f' The distilled perspective skill "{perspective_slug.strip()}" may be patched '
+            "but do not delete or replace references/research/*."
+        )
+    return base
 
 
 def spawn_background_review_thread(
