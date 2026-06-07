@@ -24,59 +24,59 @@ Hermes M0–M6 已交付 `AIAgent`、文件型 `memory` tool（`read`/`write`/`a
 
 ### Task 1 — 配置项
 
-- [ ] `MemoryConfig` 增加 `nudge_interval`（默认 10，0=禁用 memory review）、`soul_max_chars`、`memory_enabled` 等（spec §5.4）
-- [ ] `AgentLoopConfig` 增加 `review_enabled`（默认 true）、`review_max_iterations`（默认 16）
-- [ ] `SkillsConfig` / `CuratorConfig` 骨架字段写入 `config.py`（Curator 行为 M7c 才实现）
-- [ ] `config.example.yaml` 同步上述键
-- [ ] `tests/unit/test_agent_config_self_evolution.py` 通过
+- [x] `MemoryConfig` 增加 `nudge_interval`（默认 10，0=禁用 memory review）、`soul_max_chars`、`memory_enabled` 等（spec §5.4）
+- [x] `AgentLoopConfig` 增加 `review_enabled`（默认 true）、`review_max_iterations`（默认 16）
+- [x] `SkillsConfig` / `CuratorConfig` 骨架字段写入 `config.py`（Curator 行为 M7c 才实现）
+- [x] `config.example.yaml` 同步上述键
+- [x] `tests/unit/test_agent_config_self_evolution.py` 通过
 
 ### Task 2 — `sessions.agent_state_json`
 
-- [ ] `_migrate_hermes_v4`：`ALTER TABLE sessions ADD COLUMN agent_state_json TEXT`
-- [ ] `agent_state.py`：`AgentState`（`turns_since_memory`、`review_in_flight`、`cached_system_prompt`）；`load`/`save`/`hydrate_turns_since_memory`
-- [ ] `SessionDB`：`update_agent_state_json`、`count_user_messages`、`copy_agent_state`（compression fork 复制计数，spec O1/ER1）
-- [ ] `review_in_flight` spawn 前置 true、线程 `finally` 清 false（ER8）
-- [ ] S2：续聊 hydrate 使用 `prior_user_turns % nudge_interval`
+- [x] `_migrate_hermes_v4`：`ALTER TABLE sessions ADD COLUMN agent_state_json TEXT`
+- [x] `agent_state.py`：`AgentState`（`turns_since_memory`、`review_in_flight`、`cached_system_prompt`）；`load`/`save`/`hydrate_turns_since_memory`
+- [x] `SessionDB`：`update_agent_state_json`、`count_user_messages`、`copy_agent_state`（compression fork 复制计数，spec O1/ER1）
+- [x] `review_in_flight` spawn 前置 true、线程 `finally` 清 false（ER8）
+- [x] S2：续聊 hydrate 使用 `prior_user_turns % nudge_interval`
 
 ### Task 3 — MemoryStore § 条目
 
-- [ ] `MemoryStore.add/replace/remove/list_entries`；磁盘格式 `§` 分隔条目（S1）
-- [ ] 无 `§` 的 legacy `MEMORY.md`（含 evolve bullet）在首次 `add`/`replace`/`read` 时惰性归一化为 `§` 前缀整文件一条
-- [ ] 保留 `scan_content` 与 profile 级 char limit
-- [ ] `tests/unit/test_memory_store_entries.py` 通过
+- [x] `MemoryStore.add/replace/remove/list_entries`；磁盘格式 `§` 分隔条目（S1）
+- [x] 无 `§` 的 legacy `MEMORY.md`（含 evolve bullet）在首次 `add`/`replace`/`read` 时惰性归一化为 `§` 前缀整文件一条
+- [x] 保留 `scan_content` 与 profile 级 char limit
+- [x] `tests/unit/test_memory_store_entries.py` 通过
 
 ### Task 4 — memory tool Hermes 契约
 
-- [ ] `model_tools._handle_memory` 支持 `add` / `replace` / `remove` / `read`
-- [ ] `write` / `append` **保留 6 个月**；返回 `deprecated: true`（S11 部分，M7b 不重复）
-- [ ] `tools/registry.py` 更新 `memory` tool schema 的 `action` enum
-- [ ] 扩展 `tests/unit/test_agent_memory.py`（add/replace/remove + deprecation）
+- [x] `model_tools._handle_memory` 支持 `add` / `replace` / `remove` / `read`
+- [x] `write` / `append` **保留 6 个月**；返回 `deprecated: true`（S11 部分，M7b 不重复）
+- [x] `tools/registry.py` 更新 `memory` tool schema 的 `action` enum
+- [x] 扩展 `tests/unit/test_agent_memory.py`（add/replace/remove + deprecation）
 
 ### Task 5 — Background review 模块
 
-- [ ] `background_review.py`：vendored `_MEMORY_REVIEW_PROMPT`（+ scope hint）；`REVIEW_TOOL_NAMES = {memory, skill_manage, skills_list, skill_view}`
-- [ ] `agent_turn_hooks.py`：`ReviewFlags`、`compute_review_flags`、`maybe_spawn_background_review`
-- [ ] M7a：`skill_manage` 不在 valid tools 时 **永不** `review_skills=True`（ER5）
-- [ ] Review 线程 `open_db()` 独立连接；禁止复用 foreground 已 close 的 `SessionDB`（ER3）
-- [ ] `review` toolset 仅注册 whitelist 工具；非 whitelist 返回 deny
-- [ ] `tests/unit/test_background_review.py` 通过
+- [x] `background_review.py`：vendored `_MEMORY_REVIEW_PROMPT`（+ scope hint）；`REVIEW_TOOL_NAMES = {memory, skill_manage, skills_list, skill_view}`
+- [x] `agent_turn_hooks.py`：`ReviewFlags`、`compute_review_flags`、`maybe_spawn_background_review`
+- [x] M7a：`skill_manage` 不在 valid tools 时 **永不** `review_skills=True`（ER5）
+- [x] Review 线程 `open_db()` 独立连接；禁止复用 foreground 已 close 的 `SessionDB`（ER3）
+- [x] `review` toolset 仅注册 whitelist 工具；非 whitelist 返回 deny
+- [x] `tests/unit/test_background_review.py` 通过
 
 ### Task 6 — AIAgent 挂钩
 
-- [ ] Turn 开始 hydrate + user message 后 `turns_since_memory += 1`
-- [ ] 每次 LLM 返回 `tool_calls`：`iters_since_skill += 1`（本 turn 内存计数，不持久化）
-- [ ] **压缩前** `copy.deepcopy(messages)` 作为 review 快照（ER2）；`finally` 顺序：compress → title → `turn_end` → spawn review
-- [ ] `context_compressor` fork 时 `copy_agent_state(parent, child)`
-- [ ] Prompt cache：binding/profile 未变时复用 `cached_system_prompt`（ER4）
-- [ ] S3：review fork 拒绝 `m2t_*` 工具
-- [ ] S4：review 使用与主 turn 相同 provider/model（mock 断言）
-- [ ] S5：主 turn `TurnCancelled` 或无 final assistant 文本 → 不 spawn review
-- [ ] `tests/unit/test_agent_nudge_counters.py`、`tests/unit/test_review_snapshot_order.py` 通过
+- [x] Turn 开始 hydrate + user message 后 `turns_since_memory += 1`
+- [x] 每次 LLM 返回 `tool_calls`：`iters_since_skill += 1`（本 turn 内存计数，不持久化）
+- [x] **压缩前** `copy.deepcopy(messages)` 作为 review 快照（ER2）；`finally` 顺序：compress → title → `turn_end` → spawn review
+- [x] `context_compressor` fork 时 `copy_agent_state(parent, child)`
+- [x] Prompt cache：binding/profile 未变时复用 `cached_system_prompt`（ER4）
+- [x] S3：review fork 拒绝 `m2t_*` 工具
+- [x] S4：review 使用与主 turn 相同 provider/model（mock 断言）
+- [x] S5：主 turn `TurnCancelled` 或无 final assistant 文本 → 不 spawn review
+- [x] `tests/unit/test_agent_nudge_counters.py`、`tests/unit/test_review_snapshot_order.py` 通过
 
 ### Task 7 — Profile 隔离集成
 
-- [ ] S6：review 写入 creator A 的 `.agent/MEMORY.md`；creator B profile 不可见
-- [ ] `tests/unit/test_api_agent_review_e2e.py`（mock LLM + thread join）通过
+- [x] S6：review 写入 creator A 的 `.agent/MEMORY.md`；creator B profile 不可见
+- [x] `tests/unit/test_api_agent_review_e2e.py`（mock LLM + thread join）通过
 
 ## 验证命令
 
@@ -100,3 +100,4 @@ ruff check src/media2text/agent/
 
 - 分支：`issue-215-agent-m7a-memory-review`
 - GitHub Issue: [#215](https://github.com/oychao1988/media2text/issues/215)
+- PR: [#218](https://github.com/oychao1988/media2text/pull/218) merged 2026-06-07

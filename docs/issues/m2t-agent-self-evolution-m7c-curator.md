@@ -24,33 +24,33 @@ M7a/M7b 交付 memory/skill background review 与 agent 自写 skill 库；长�
 
 ### Task 1 — curator 核心
 
-- [ ] `curator.py`：Phase 1 auto transition — 30d 未用 → `stale`；90d → 移至 `skills/.archive/`（S13）
-- [ ] **仅** `agent_created: true` skills 参与；不 touch bundled / distill pinned / foreground-created（S14）
-- [ ] Phase 2 LLM review fork：`skill_view` + `skill_manage` + archive terminal；`max_iterations=8`；`auxiliary.curator` 配置槽（可选，默认同主模型）
-- [ ] mutating run 前备份 `skills/.curator_backups/{ts}/`；`curator.backup.keep`（默认 5）
-- [ ] S12：`curator run --dry-run` 不修改磁盘
-- [ ] `tests/unit/test_curator_transitions.py` 通过
+- [x] `curator.py`：Phase 1 auto transition — 30d 未用 → `stale`；90d → 移至 `skills/.archive/`（S13）
+- [x] **仅** `agent_created: true` skills 参与；不 touch bundled / distill pinned / foreground-created（S14）
+- [x] Phase 2 LLM review fork：`skill_view` + `skill_manage` + archive terminal；`max_iterations=8`；`auxiliary.curator` 配置槽（可选，默认同主模型）
+- [x] mutating run 前备份 `skills/.curator_backups/{ts}/`；`curator.backup.keep`（默认 5）
+- [x] S12：`curator run --dry-run` 不修改磁盘
+- [x] `tests/unit/test_curator_transitions.py` 通过
 
 ### Task 2 — Idle tick + CLI
 
-- [ ] `curator.enabled` 默认 **false**（O5）；`interval_hours`（168）、`min_idle_hours`（2）
-- [ ] API / `MonitorSupervisor` idle tick：无 in-flight agent turn ≥ `min_idle_hours` 且距上次 curator ≥ `interval` 时触发
-- [ ] 首次启用 seed `last_run_at=now`，defer 一整 interval
-- [ ] CLI（`media2text agent curator`）：
+- [x] `curator.enabled` 默认 **false**（O5）；`interval_hours`（168）、`min_idle_hours`（2）
+- [x] API / `MonitorSupervisor` idle tick：无 in-flight agent turn ≥ `min_idle_hours` 且距上次 curator ≥ `interval` 时触发
+- [x] 首次启用 seed `last_run_at=now`，defer 一整 interval
+- [x] CLI（`media2text agent curator`）：
   - `status`
   - `run [--dry-run] [--background]`
   - `pin` / `unpin` / `restore`
   - `rollback [--list]`（S15 manual_ac：恢复备份）
-- [ ] `tests/unit/test_cli_agent_curator.py` 通过
+- [x] `tests/unit/test_cli_agent_curator.py` 通过
 
 ### Task 3 — Epic 与文档
 
-- [ ] `docs/issues/epic-manifests/agent-self-evolution.yaml` 指向 #215–#217 与 spec S1–S15
-- [ ] 起草 `docs/superpowers/verification/2026-06-07-m2t-agent-self-evolution-acceptance.md` 并勾选 S1–S15
-- [ ] 更新 `CLAUDE.md` Desktop Agent（自进化 + curator CLI）
-- [ ] 更新 `config.example.yaml` `curator.*` 段
-- [ ] Hermes 父规格 §4.2 Curator 非目标一行 → 指向本规格（spec §18）
-- [ ] `python scripts/epic_verify.py agent-self-evolution` 通过（manifest 落地后）
+- [x] `docs/issues/epic-manifests/agent-self-evolution.yaml` 指向 #215–#217 与 spec S1–S15
+- [x] 起草 `docs/superpowers/verification/2026-06-07-m2t-agent-self-evolution-acceptance.md`（S1–S14 自动化 PASS；S10/S15 待人工）
+- [x] 更新 `CLAUDE.md` Desktop Agent（自进化 + curator CLI）
+- [x] 更新 `config.example.yaml` `curator.*` 段
+- [ ] Hermes 父规格 §4.2 Curator 非目标一行 → 指向本规格（spec §18）（follow-up）
+- [x] `python scripts/epic_verify.py agent-self-evolution` 通过（manifest 落地后）
 
 ## 验证命令
 
@@ -76,3 +76,4 @@ ruff check src/media2text/agent/ src/media2text/cli/
 
 - 分支：`issue-217-agent-m7c-curator`
 - GitHub Issue: [#217](https://github.com/oychao1988/media2text/issues/217)
+- PR: [#220](https://github.com/oychao1988/media2text/pull/220) merged 2026-06-07
