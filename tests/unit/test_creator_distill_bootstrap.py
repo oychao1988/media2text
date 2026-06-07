@@ -44,7 +44,14 @@ def test_bootstrap_deferred_low_corpus(tmp_path) -> None:
     cfg = AppConfig.model_validate(
         {
             "workspace": str(ws),
-            "desktop": {"agent": {"distill": {"defer_until_min_chars": 2000}}},
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 2000,
+                        "bootstrap_web_research": False,
+                    }
+                }
+            },
         }
     )
     cid = _seed_creator(ws)
@@ -70,7 +77,14 @@ def test_bootstrap_writes_skill(tmp_path) -> None:
     cfg = AppConfig.model_validate(
         {
             "workspace": str(ws),
-            "desktop": {"agent": {"distill": {"defer_until_min_chars": 100}}},
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 100,
+                        "bootstrap_web_research": False,
+                    }
+                }
+            },
         }
     )
     cid = _seed_creator(ws, sec_uid="sec_writes")
@@ -121,7 +135,14 @@ def test_deferred_watcher_promotes(tmp_path) -> None:
     cfg = AppConfig.model_validate(
         {
             "workspace": str(ws),
-            "desktop": {"agent": {"distill": {"defer_until_min_chars": 200}}},
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 200,
+                        "bootstrap_web_research": False,
+                    }
+                }
+            },
         }
     )
     cid = _seed_creator(ws, sec_uid="sec_promote")
@@ -149,7 +170,14 @@ def test_distill_atomic_write(tmp_path) -> None:
     cfg = AppConfig.model_validate(
         {
             "workspace": str(ws),
-            "desktop": {"agent": {"distill": {"defer_until_min_chars": 50}}},
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 50,
+                        "bootstrap_web_research": False,
+                    }
+                }
+            },
         }
     )
     cid = _seed_creator(ws, sec_uid="sec_atomic")
@@ -187,4 +215,155 @@ def test_distill_atomic_write(tmp_path) -> None:
     job = CreatorAgentJobRepo(conn).get(job_id)
     assert job is not None
     assert job.status == "failed"
+    conn.close()
+
+
+def test_bootstrap_failed_missing_tavily_key(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.bootstrap.resolve_tavily_api_key",
+        lambda **_: None,
+    )
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate(
+        {
+            "workspace": str(ws),
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "bootstrap_web_research": True,
+                        "web_search_provider": "tavily",
+                    }
+                }
+            },
+        }
+    )
+    cid = _seed_creator(ws, sec_uid="sec_no_tavily")
+    conn = open_db(cfg)
+    job_id = enqueue_bootstrap(cfg, conn, creator_id=cid, trigger="manual")
+    result = run_bootstrap_job(cfg, conn, job_id=job_id)
+    assert result["ok"] is False
+    assert result["error"] == "tavily_api_key_missing"
+    job = CreatorAgentJobRepo(conn).get(job_id)
+    assert job is not None
+    assert job.status == "failed"
+    conn.close()
+
+
+def test_bootstrap_proceeds_when_web_ok_local_empty(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.bootstrap.resolve_tavily_api_key",
+        lambda **_: "tvly-test",
+    )
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate(
+        {
+            "workspace": str(ws),
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "bootstrap_web_research": True,
+                        "defer_until_min_chars": 5000,
+                    }
+                }
+            },
+        }
+    )
+    cid = _seed_creator(ws, sec_uid="sec_web_only")
+
+    from media2text.agent.creator_distill.web_research import WebResearchResult
+
+    def fake_web(**_kwargs):
+        refs_dir = _kwargs["refs_dir"]
+        for name in (
+            "01-writings.md",
+            "02-conversations.md",
+            "03-expression-dna.md",
+            "04-external-views.md",
+            "05-decisions.md",
+            "06-timeline.md",
+        ):
+            (refs_dir / name).write_text(f"# {name}\n\ncontent", encoding="utf-8")
+        return WebResearchResult(channels_ok=2, channel_status={}, total_chars=100)
+
+    conn = open_db(cfg)
+    job_id = enqueue_bootstrap(cfg, conn, creator_id=cid, trigger="manual")
+
+    def fake_llm(_cfg, *, display_name, corpus_text):
+        assert "Web research" in corpus_text
+        return _fake_distill()
+
+    result = run_bootstrap_job(
+        cfg,
+        conn,
+        job_id=job_id,
+        llm_fn=fake_llm,
+        web_research_fn=fake_web,
+    )
+    assert result["ok"] is True
+    assert result.get("deferred") is not True
+    assert result.get("web_channels_ok") == 2
+
+    job = CreatorAgentJobRepo(conn).get(job_id)
+    assert job is not None
+    assert job.status == "done"
+    payload = json.loads(job.payload_json or "{}")
+    assert payload.get("web_channels_ok") == 2
+    assert payload.get("local_chars") == 0
+
+    profile = resolve_profile(creator_id=cid, cfg=cfg)
+    research = (
+        profile.memory_paths.profile_dir
+        / "skills"
+        / result["skill_slug"]
+        / "references"
+        / "research"
+    )
+    assert (research / "01-writings.md").is_file()
+    conn.close()
+
+
+def test_deferred_promote_when_web_ok_in_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.bootstrap.resolve_tavily_api_key",
+        lambda **_: "tvly-test",
+    )
+    ws = tmp_path / "data"
+    cfg = AppConfig.model_validate(
+        {
+            "workspace": str(ws),
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 5000,
+                        "bootstrap_web_research": True,
+                    }
+                }
+            },
+        }
+    )
+    cid = _seed_creator(ws, sec_uid="sec_web_promote")
+    conn = open_db(cfg)
+    job_id = enqueue_bootstrap(cfg, conn, creator_id=cid, trigger="manual")
+
+    from media2text.agent.creator_distill.web_research import WebResearchResult
+
+    def empty_web(**_kwargs):
+        return WebResearchResult(channels_ok=0, channel_status={}, total_chars=0)
+
+    run_bootstrap_job(cfg, conn, job_id=job_id, web_research_fn=empty_web)
+    job = CreatorAgentJobRepo(conn).get(job_id)
+    assert job.status == "deferred"
+
+    CreatorAgentJobRepo(conn).mark_deferred(
+        job_id,
+        payload={
+            "web_channels_ok": 2,
+            "local_chars": 0,
+            "total_chars": 0,
+            "deferred_reason": "web_and_local_insufficient",
+        },
+    )
+    assert maybe_promote_bootstrap(cfg, conn, creator_id=cid) is True
+    job = CreatorAgentJobRepo(conn).get(job_id)
+    assert job.status == "pending"
     conn.close()
