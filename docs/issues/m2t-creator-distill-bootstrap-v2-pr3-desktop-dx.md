@@ -48,7 +48,6 @@ source .venv/bin/activate
 pip install -e ".[desktop,dev]"
 pytest tests/unit/test_api_config_dto.py tests/unit/test_doctor_distill_web.py -v -m desktop
 pnpm --filter m2t-desktop test
-media2text doctor --json
 ```
 
 ## 非目标范围
