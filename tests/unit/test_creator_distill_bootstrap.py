@@ -322,7 +322,11 @@ def test_bootstrap_proceeds_when_web_ok_local_empty(tmp_path, monkeypatch) -> No
     conn.close()
 
 
-def test_deferred_promote_when_web_ok_in_payload(tmp_path) -> None:
+def test_deferred_promote_when_web_ok_in_payload(tmp_path, monkeypatch) -> None:
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.bootstrap.resolve_tavily_api_key",
+        lambda **_: "tvly-test",
+    )
     ws = tmp_path / "data"
     cfg = AppConfig.model_validate(
         {
