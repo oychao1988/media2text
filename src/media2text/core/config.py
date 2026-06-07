@@ -259,6 +259,23 @@ class DesktopChatConfig(BaseModel):
 class MemoryConfig(BaseModel):
     max_chars: int = 2200
     user_max_chars: int = 1375
+    soul_max_chars: int = 4000
+    memory_enabled: bool = True
+    user_profile_enabled: bool = True
+    soul_enabled: bool = True
+    nudge_interval: int = 10  # 0 = disable memory review
+
+
+class SkillsConfig(BaseModel):
+    creation_nudge_interval: int = 10
+    agent_skills_subdir: str = "skills"
+
+
+class CuratorConfig(BaseModel):
+    enabled: bool = False
+    interval_hours: int = 168
+    min_idle_hours: int = 2
+    backup_keep: int = 5
 
 
 class CompressionConfig(BaseModel):
@@ -270,6 +287,8 @@ class CompressionConfig(BaseModel):
 
 class AgentLoopConfig(BaseModel):
     max_turns: int = 25
+    review_enabled: bool = True
+    review_max_iterations: int = 16
 
 
 class TerminalConfig(BaseModel):
@@ -354,6 +373,8 @@ class AppConfig(BaseSettings):
     monitor: MonitorConfig = Field(default_factory=MonitorConfig)
     desktop: DesktopConfig = Field(default_factory=DesktopConfig)
     memory: MemoryConfig = Field(default_factory=MemoryConfig)
+    skills: SkillsConfig = Field(default_factory=SkillsConfig)
+    curator: CuratorConfig = Field(default_factory=CuratorConfig)
     compression: CompressionConfig = Field(default_factory=CompressionConfig)
     agent: AgentLoopConfig = Field(default_factory=AgentLoopConfig)
     terminal: TerminalConfig = Field(default_factory=TerminalConfig)

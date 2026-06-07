@@ -200,9 +200,13 @@ HERMES_STUB_TOOLS: list[ToolDef] = [
         parameters={
             "type": "object",
             "properties": {
-                "action": {"type": "string", "enum": ["read", "write", "append"]},
+                "action": {
+                    "type": "string",
+                    "enum": ["read", "add", "replace", "remove", "write", "append"],
+                },
                 "target": {"type": "string", "enum": ["memory", "user", "soul"]},
                 "content": {"type": "string"},
+                "old_text": {"type": "string"},
                 "key": {"type": "string"},
                 "value": {"type": "string"},
             },

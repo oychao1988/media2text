@@ -37,6 +37,7 @@ class ToolContext:
     display_thread_id: str | None = None
     profile: AgentProfileContext | dict[str, Any] | None = None
     approval_gate: ApprovalGate | None = None
+    allowed_tools: frozenset[str] | None = None
 
 
 def _ok(data: Any = None) -> dict[str, Any]:

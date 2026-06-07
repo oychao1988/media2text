@@ -11,14 +11,17 @@ if TYPE_CHECKING:
     from media2text.core.config import AppConfig
 
 DEFAULT_TOOLSET = "m2t-core"
+REVIEW_TOOLSET = "review"
 
 _M2T_NAMES = [t.name for t in M2T_TOOLS]
 _HERMES_NAMES = ["memory", "session_search", "skills_list", "skill_view"]
+_REVIEW_NAMES = ["memory", "skills_list", "skill_view"]
 _TERMINAL_NAMES = [t.name for t in TERMINAL_TOOLS]
 _DELEGATION_NAMES = [t.name for t in DELEGATION_TOOLS]
 
 TOOLSETS: dict[str, list[str]] = {
     DEFAULT_TOOLSET: _M2T_NAMES + _HERMES_NAMES,
+    REVIEW_TOOLSET: _REVIEW_NAMES,
     "m2t-terminal": _TERMINAL_NAMES,
     "m2t-delegation": _DELEGATION_NAMES,
 }

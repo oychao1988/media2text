@@ -628,6 +628,14 @@ def _migrate_hermes_v3(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _migrate_hermes_v4(conn: sqlite3.Connection) -> None:
+    """Agent self-evolution: nudge counters + prompt cache (M7a)."""
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(sessions)").fetchall()}
+    if "agent_state_json" not in cols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN agent_state_json TEXT")
+        conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -646,6 +654,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_hermes_v1(conn)
         _migrate_hermes_v2(conn)
         _migrate_hermes_v3(conn)
+        _migrate_hermes_v4(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)
