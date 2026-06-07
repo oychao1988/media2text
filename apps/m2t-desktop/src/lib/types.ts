@@ -188,6 +188,10 @@ export type ConfigDto = {
   activeProviderId: string;
   agentModel: string;
   maxContextChars: number;
+  tavilyConfigured: boolean;
+  tavilyApiKey: string | null;
+  tavilyApiKeyEnv: string;
+  bootstrapWebResearch: boolean;
 };
 
 export type AuthPlatformStatus = {

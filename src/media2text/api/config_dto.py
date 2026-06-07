@@ -54,10 +54,33 @@ class ConfigPatchDto(BaseModel):
     activeProviderId: str | None = None
     agentModel: str | None = None
     maxContextChars: int | None = None
+    tavilyApiKey: str | None = None
+    bootstrapWebResearch: bool | None = None
 
 
 def _env_configured(env_name: str) -> bool:
     return bool(os.environ.get(env_name, "").strip())
+
+
+def _tavily_api_key(cfg: AppConfig) -> str:
+    from media2text.agent.creator_distill.tavily_client import resolve_tavily_api_key
+
+    return resolve_tavily_api_key(env_key=cfg.desktop.agent.distill.tavily_api_key_env)
+
+
+def _tavily_configured(cfg: AppConfig) -> bool:
+    return bool(_tavily_api_key(cfg))
+
+
+def _apply_tavily_api_key(cfg: AppConfig, api_key: Any) -> None:
+    if api_key is None or not isinstance(api_key, str):
+        return
+    trimmed = api_key.strip()
+    if not trimmed or trimmed == _MASKED_SECRET:
+        return
+    env_name = cfg.desktop.agent.distill.tavily_api_key_env
+    upsert_env_var(env_name, trimmed)
+    reload_dotenv(override=True)
 
 
 def _feishu_configured(cfg: AppConfig) -> bool:
@@ -351,6 +374,10 @@ def config_to_dto(cfg: AppConfig, *, probe_providers: bool = False) -> dict[str,
         "activeProviderId": summarize_provider_id,
         "agentModel": cfg.desktop.chat.default_model,
         "maxContextChars": cfg.desktop.chat.max_context_chars,
+        "tavilyConfigured": _tavily_configured(cfg),
+        "tavilyApiKey": _MASKED_SECRET if _tavily_configured(cfg) else None,
+        "tavilyApiKeyEnv": cfg.desktop.agent.distill.tavily_api_key_env,
+        "bootstrapWebResearch": cfg.desktop.agent.distill.bootstrap_web_research,
     }
 
 
@@ -464,6 +491,10 @@ def apply_dto_patch(cfg: AppConfig, patch: ConfigPatchDto) -> tuple[list[str], l
         cfg.desktop.chat.default_model = patch.agentModel
     if patch.maxContextChars is not None:
         cfg.desktop.chat.max_context_chars = patch.maxContextChars
+    if patch.bootstrapWebResearch is not None:
+        cfg.desktop.agent.distill.bootstrap_web_research = patch.bootstrapWebResearch
+    if patch.tavilyApiKey is not None:
+        _apply_tavily_api_key(cfg, patch.tavilyApiKey)
 
     try:
         AppConfig.model_validate(cfg.model_dump())
