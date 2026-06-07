@@ -78,6 +78,23 @@ desktop:
     distill:
       on_creator_add: false
       defer_until_min_chars: 2000
+      bootstrap_web_research: true
+      evolve_web_research: false
+      web_search_provider: tavily
+      tavily_api_key_env: TAVILY_API_KEY
+      web_research_channels: 6
+      web_research_max_parallel: 2
+      local_scan:
+        enabled: true
+        include_manifest: true
+        max_files: 50
+        globs:
+          - live/**/*.summary.md
+          - live/**/*.transcript.md
+          - videos/**/*.summary.md
+          - videos/**/*.transcript.md
+          - dynamics/**/content.md
+        user_sources_dir: .agent/sources
 
 terminal:
   backend: local

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from typing import Any
 
 import yaml
 from pydantic import BaseModel, Field, model_validator
@@ -320,6 +321,22 @@ class DelegationConfig(BaseModel):
     orchestrator_enabled: bool = False
 
 
+class LocalScanConfig(BaseModel):
+    enabled: bool = True
+    include_manifest: bool = True
+    max_files: int = 50
+    globs: list[str] = Field(
+        default_factory=lambda: [
+            "live/**/*.summary.md",
+            "live/**/*.transcript.md",
+            "videos/**/*.summary.md",
+            "videos/**/*.transcript.md",
+            "dynamics/**/content.md",
+        ]
+    )
+    user_sources_dir: str = ".agent/sources"
+
+
 class DistillConfig(BaseModel):
     on_creator_add: bool = False
     max_input_chars: int = 120_000
@@ -327,9 +344,37 @@ class DistillConfig(BaseModel):
     bootstrap_priority: int = 5
     evolve_priority: int = 10
     max_concurrent_jobs: int = 1
+    bootstrap_web_research: bool = True
+    evolve_web_research: bool = False
+    web_research_channels: int = 6
+    web_research_max_parallel: int = 2
+    web_search_provider: str = "tavily"
+    tavily_api_key_env: str = "TAVILY_API_KEY"
+    web_search_smoke: bool = True
+    tavily_search_depth: str = "basic"
+    tavily_include_answer: bool = True
+    tavily_extract_top_urls: int = 0
+    web_search_timeout_sec: int = 60
+    web_search_max_results: int = 5
+    web_source_denylist: list[str] = Field(
+        default_factory=lambda: [
+            "zhihu.com",
+            "mp.weixin.qq.com",
+            "baike.baidu.com",
+        ]
+    )
+    local_scan: LocalScanConfig = Field(default_factory=LocalScanConfig)
     allow_web_research: bool = False
     nuwa_skill_path: str | None = None
     evolve_on: list[str] = Field(default_factory=lambda: ["summarize_completed"])
+
+    @model_validator(mode="before")
+    @classmethod
+    def _compat_allow_web_research(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if data.get("allow_web_research") is True and "bootstrap_web_research" not in data:
+                data = {**data, "bootstrap_web_research": True}
+        return data
 
 
 class DesktopAgentConfig(BaseModel):
@@ -408,6 +453,7 @@ class AppConfig(BaseSettings):
         if Path(path).is_file():
             data = yaml.safe_load(Path(path).read_text()) or {}
             _resolve_transcribe_engine_env(data)
+            _resolve_distill_compat(data)
             return cls.model_validate(data)
         return cls()
 
@@ -432,6 +478,21 @@ class AppConfig(BaseSettings):
             encoding="utf-8",
         )
         return target
+
+
+def _resolve_distill_compat(data: dict) -> None:
+    """Map deprecated allow_web_research → bootstrap_web_research when loading YAML."""
+    desktop = data.get("desktop")
+    if not isinstance(desktop, dict):
+        return
+    agent = desktop.get("agent")
+    if not isinstance(agent, dict):
+        return
+    distill = agent.get("distill")
+    if not isinstance(distill, dict):
+        return
+    if "bootstrap_web_research" not in distill and distill.get("allow_web_research") is True:
+        distill["bootstrap_web_research"] = True
 
 
 def _resolve_transcribe_engine_env(data: dict) -> None:
