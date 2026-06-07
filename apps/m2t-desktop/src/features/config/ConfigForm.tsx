@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { M2tSelect } from '../../components/M2tSelect';
 import { ConfigAiPanel, type ConfigAiPanelHandle, llmProvidersForPatch } from './ConfigAiPanel';
+import { tavilyApiKeyForPatch } from './distillConfigPatch';
 import { apiGet, apiPatch, apiPost, ApiError } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { AuthPlatformStatus, ConfigDto, LlmProvider } from '../../lib/types';
@@ -242,6 +243,14 @@ export function ConfigForm() {
       body.llmProviders = llmProvidersForPatch(body.llmProviders as LlmProvider[]) as ConfigDto['llmProviders'];
     } else if (segment === 'ai' && draft.llmProviders.length) {
       body.llmProviders = llmProvidersForPatch(draft.llmProviders) as ConfigDto['llmProviders'];
+    }
+    if ('tavilyApiKey' in body) {
+      const key = tavilyApiKeyForPatch(body.tavilyApiKey as string | null | undefined);
+      if (key) {
+        body.tavilyApiKey = key;
+      } else {
+        delete body.tavilyApiKey;
+      }
     }
     try {
       const res = await apiPatch<{
@@ -869,6 +878,52 @@ export function ConfigForm() {
                   }
                 }}
               />
+              <div className="setting-card" id="cfg-distill-card" hidden={aiProviderEditing}>
+                <div className="setting-card-head">
+                  <h3>创作者蒸馏 Bootstrap</h3>
+                </div>
+                <div className="toggle-row">
+                  <span>启用 Web 调研（Bootstrap）</span>
+                  <Toggle
+                    id="cfg-bootstrap-web-research"
+                    label="启用 Web 调研"
+                    pressed={draft.bootstrapWebResearch}
+                    onToggle={() =>
+                      patchDraft('bootstrapWebResearch', !draft.bootstrapWebResearch)
+                    }
+                  />
+                </div>
+                <p className="hint">
+                  登记新博主时可用 Tavily 补充公开资料；关闭后仅使用本地语料。
+                </p>
+                <div className={`field-row${errCls('tavilyApiKey')}`}>
+                  <label htmlFor="cfg-tavily-api-key">Tavily API Key</label>
+                  <div className="field-control">
+                    <input
+                      type="password"
+                      className="config-input wide"
+                      id="cfg-tavily-api-key"
+                      placeholder={draft.tavilyConfigured ? '留空表示不修改' : '填写以启用 Web 调研'}
+                      autoComplete="off"
+                      onChange={(e) =>
+                        patchDraft('tavilyApiKey', e.target.value || draft.tavilyApiKey)
+                      }
+                    />
+                  </div>
+                </div>
+                <div className="field-row">
+                  <span className="field-label">Tavily API</span>
+                  {readonlyStatus(
+                    draft.tavilyConfigured,
+                    '已配置',
+                    '未配置',
+                    'cfg-tavily-status',
+                  )}
+                </div>
+                <p className="hint">
+                  密钥写入项目 `.env`（{draft.tavilyApiKeyEnv}），保存后无需重启 sidecar。
+                </p>
+              </div>
               <div className="setting-card" id="config-ai-agent-card" hidden={aiProviderEditing}>
                   <div className="setting-card-head">
                     <h3>Agent 对话默认</h3>

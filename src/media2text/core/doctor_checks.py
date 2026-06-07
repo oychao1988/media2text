@@ -14,8 +14,13 @@ from media2text.core.platform.bilibili.auth import session_exists as bilibili_se
 from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
 from media2text.core.cloud.aliyundrive import load_token
 from media2text.core.summarize.factory import summarize_engine_available
-from media2text.core.summarize.openai_backend import resolve_api_key_envs
+from media2text.core import env_file as _env_file
+from media2text.core.summarize.openai_backend import (
+    resolve_api_key_envs,
+    resolve_llm_endpoints,
+)
 from media2text.core.storage.repos import CreatorRepo
+from media2text.core.tavily_client import resolve_tavily_api_key
 
 
 def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
@@ -35,6 +40,23 @@ def _playwright_import_ok() -> bool:
 def _playwright_browser_ok() -> bool:
     ok, _hint = smoke_launch_chromium()
     return ok
+
+
+def _distill_llm_available(cfg: AppConfig) -> tuple[bool, str | None]:
+    """LLM keys for creator distill bootstrap (independent of summarize.enabled)."""
+    try:
+        import openai  # noqa: F401
+    except ImportError:
+        return False, 'openai SDK not installed; pip install -e ".[transcribe-cloud]"'
+    for prov in cfg.summarize.llm.providers:
+        for env_name in prov.api_key_envs:
+            if _env_file.read_env_var(env_name).strip() or os.environ.get(env_name, "").strip():
+                if prov.base_url and prov.models:
+                    return True, None
+    if resolve_llm_endpoints(cfg.summarize.llm):
+        return True, None
+    envs = ", ".join(resolve_api_key_envs(cfg.summarize.llm))
+    return False, f"Distill bootstrap needs LLM; set one of: {envs}"
 
 
 def build_doctor_report(cfg: AppConfig, conn) -> dict:
@@ -82,8 +104,13 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         )
 
     ad = cfg.aliyundrive
-    if cfg.summarize.enabled:
-        sum_ok, sum_hint = summarize_engine_available(cfg)
+    distill = cfg.desktop.agent.distill
+    needs_distill_llm = cfg.summarize.enabled or distill.bootstrap_web_research
+    if needs_distill_llm:
+        if cfg.summarize.enabled:
+            sum_ok, sum_hint = summarize_engine_available(cfg)
+        else:
+            sum_ok, sum_hint = _distill_llm_available(cfg)
         checks.append(
             {
                 "name": "summarize_llm",
@@ -91,6 +118,22 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
                 "relevant": True,
                 "hint": sum_hint
                 or f"export one of: {', '.join(resolve_api_key_envs(cfg.summarize.llm))}",
+            }
+        )
+
+    if distill.bootstrap_web_research:
+        tavily_env = distill.tavily_api_key_env
+        tavily_ok = bool(resolve_tavily_api_key(env_key=tavily_env))
+        checks.append(
+            {
+                "name": "web_search_tavily",
+                "ok": tavily_ok,
+                "relevant": True,
+                "hint": (
+                    f"Set {tavily_env} in project .env (Desktop AI settings)"
+                    if not tavily_ok
+                    else None
+                ),
             }
         )
 
@@ -153,8 +196,10 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         ok = ok and bilibili_session_ok
     if ad.enabled:
         ok = ok and any(c["ok"] for c in checks if c["name"] == "session_aliyundrive")
-    if cfg.summarize.enabled:
+    if needs_distill_llm:
         ok = ok and any(c["ok"] for c in checks if c["name"] == "summarize_llm")
+    if distill.bootstrap_web_research:
+        ok = ok and any(c["ok"] for c in checks if c["name"] == "web_search_tavily")
     if cfg.live.is_streaming_pipeline():
         ok = ok and any(c["ok"] for c in checks if c["name"] == "streaming_stt_deepgram")
 

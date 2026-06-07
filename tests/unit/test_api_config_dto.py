@@ -302,3 +302,52 @@ def test_patch_restart_hints() -> None:
     )
     assert "pipelineMode" in daemon
     assert "agentModel" in agent
+
+
+def test_config_to_dto_includes_tavily_and_bootstrap_fields(tmp_path, monkeypatch) -> None:
+    env_path = tmp_path / ".env"
+    env_path.write_text("TAVILY_API_KEY=tvly-secret\n", encoding="utf-8")
+    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+
+    cfg = AppConfig.model_validate(
+        {
+            "workspace": str(tmp_path / "data"),
+            "desktop": {"agent": {"distill": {"bootstrap_web_research": False}}},
+        }
+    )
+    dto = config_to_dto(cfg)
+    assert dto["tavilyConfigured"] is True
+    assert dto["tavilyApiKey"] == "***"
+    assert dto["tavilyApiKeyEnv"] == "TAVILY_API_KEY"
+    assert dto["bootstrapWebResearch"] is False
+
+
+def test_patch_tavily_api_key_writes_env(tmp_path, monkeypatch) -> None:
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr("media2text.core.env_file.load_dotenv_file", lambda: None)
+
+    cfg = AppConfig.model_validate({"desktop": {"agent": {"distill": {}}}})
+    apply_dto_patch(cfg, ConfigPatchDto(tavilyApiKey="tvly-new-key"))
+    assert env_path.read_text(encoding="utf-8").strip() == "TAVILY_API_KEY=tvly-new-key"
+    dto = config_to_dto(cfg)
+    assert dto["tavilyConfigured"] is True
+
+
+def test_patch_tavily_api_key_ignores_masked(tmp_path, monkeypatch) -> None:
+    env_path = tmp_path / ".env"
+    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+
+    cfg = AppConfig.model_validate({"desktop": {"agent": {"distill": {}}}})
+    apply_dto_patch(cfg, ConfigPatchDto(tavilyApiKey="***"))
+    assert not env_path.exists()
+
+
+def test_patch_bootstrap_web_research() -> None:
+    cfg = AppConfig.model_validate(
+        {"desktop": {"agent": {"distill": {"bootstrap_web_research": True}}}}
+    )
+    apply_dto_patch(cfg, ConfigPatchDto(bootstrapWebResearch=False))
+    assert cfg.desktop.agent.distill.bootstrap_web_research is False
+    dto = config_to_dto(cfg)
+    assert dto["bootstrapWebResearch"] is False
