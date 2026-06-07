@@ -21,7 +21,7 @@ decision_heuristics (array of strings),
 expression_dna (string),
 honest_boundaries (string),
 anti_patterns (array of strings),
-sources (array of strings, local paths only).
+sources (array of strings: local paths, references/research/0X-*.md, or public URLs).
 Do not invent quotes. Mark uncertainty when corpus is thin."""
 
 
@@ -39,15 +39,18 @@ def distill_bootstrap_json(
     *,
     display_name: str,
     corpus_text: str,
+    max_input_chars: int | None = None,
     llm_fn: Callable[[list[dict[str, str]]], str] | None = None,
 ) -> dict[str, Any]:
+    cap = max_input_chars if max_input_chars is not None else cfg.desktop.agent.distill.max_input_chars
+    clipped = corpus_text[:cap]
     messages = [
         {"role": "system", "content": _BOOTSTRAP_SYSTEM},
         {
             "role": "user",
             "content": (
                 f"Creator: {display_name}\n\n"
-                f"Corpus ({len(corpus_text)} chars):\n\n{corpus_text[:100_000]}"
+                f"Corpus ({len(corpus_text)} chars, using {len(clipped)}):\n\n{clipped}"
             ),
         },
     ]

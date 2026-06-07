@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -117,10 +118,23 @@ def patch_creator_profile(
     return {"ok": True, "profile": _profile_response(cfg, refreshed)}
 
 
+_JOB_PAYLOAD_KEYS: tuple[tuple[str, str], ...] = (
+    ("web_channels_ok", "webChannelsOk"),
+    ("webChannelsOk", "webChannelsOk"),
+    ("local_chars", "localChars"),
+    ("localChars", "localChars"),
+    ("total_chars", "totalChars"),
+    ("truncated", "truncated"),
+    ("deferred_reason", "deferredReason"),
+    ("skill_slug", "skillSlug"),
+    ("error", "error"),
+)
+
+
 def _job_dict(job) -> dict[str, Any]:
     if job is None:
         return {}
-    return {
+    out: dict[str, Any] = {
         "id": job.id,
         "kind": job.kind,
         "status": job.status,
@@ -128,6 +142,18 @@ def _job_dict(job) -> dict[str, Any]:
         "sourceId": job.source_id,
         "updatedAt": job.updated_at,
     }
+    if not job.payload_json:
+        return out
+    try:
+        payload = json.loads(job.payload_json)
+    except json.JSONDecodeError:
+        return out
+    if not isinstance(payload, dict):
+        return out
+    for src, dst in _JOB_PAYLOAD_KEYS:
+        if src in payload and dst not in out:
+            out[dst] = payload[src]
+    return out
 
 
 @router.post("/creators/{creator_id}/distill")

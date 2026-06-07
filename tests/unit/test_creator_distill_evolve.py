@@ -47,7 +47,14 @@ def _bootstrap_skill(tmp_path: Path, sec_uid: str, cid: str) -> AppConfig:
     cfg = AppConfig.model_validate(
         {
             "workspace": str(ws),
-            "desktop": {"agent": {"distill": {"defer_until_min_chars": 50}}},
+            "desktop": {
+                "agent": {
+                    "distill": {
+                        "defer_until_min_chars": 50,
+                        "bootstrap_web_research": False,
+                    }
+                }
+            },
         }
     )
     creator_dir = ws / "creators" / sec_uid
@@ -190,4 +197,31 @@ def test_evolve_memory_bound(tmp_path) -> None:
     after = memory_path.read_text(encoding="utf-8")
     assert len(after) <= 120
     assert session_id in after
+    conn.close()
+
+
+def test_evolve_does_not_touch_research(tmp_path) -> None:
+    cfg, cid, session_id = _session_setup(
+        tmp_path,
+        sec_uid="sec_research",
+        session_id="sess-research-1",
+        summary_text="本场补充一条可写入启发式的观点。",
+    )
+    profile = resolve_profile(creator_id=cid, cfg=cfg)
+    research = (
+        profile.memory_paths.profile_dir
+        / "skills"
+        / "evolve-creator-perspective"
+        / "references"
+        / "research"
+    )
+    writings = research / "01-writings.md"
+    writings.parent.mkdir(parents=True, exist_ok=True)
+    writings.write_text("# writings\n\nseed", encoding="utf-8")
+    mtime_before = writings.stat().st_mtime_ns
+
+    conn = open_db(cfg)
+    job_id = enqueue_evolve(cfg, conn, creator_id=cid, source_id=session_id, trigger="manual")
+    run_evolve_job(cfg, conn, job_id=job_id)
+    assert writings.stat().st_mtime_ns == mtime_before
     conn.close()
