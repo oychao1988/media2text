@@ -48,6 +48,8 @@ pytest tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop
 
 桌面端与 CLI 共用 `config.yaml`、`./data`；写操作经 API 复用 core，不绕过 `monitor watch` 语义。
 
+Agent 自进化（M7）：turn 结束后 background review 整理 memory；`skill_manage` 可写 profile skills；`media2text agent curator status|run|pin|restore|rollback` 治理 stale/archive（`curator.enabled` 默认 false）。
+
 ## 常用流程
 
 ### 1. 首次使用

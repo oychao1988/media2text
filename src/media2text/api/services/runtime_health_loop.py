@@ -18,6 +18,8 @@ from media2text.core.runtime.supervisor import MonitorSupervisor
 logger = logging.getLogger(__name__)
 
 _LOOP_INTERVAL_SEC = 1.5
+_CURATOR_IDLE_TICK_EVERY = 60
+_curator_tick_counter = 0
 
 
 def runtime_ws_payload(full: dict[str, Any]) -> dict[str, Any]:
@@ -112,6 +114,7 @@ def drain_runtime_health_once(
 
 
 async def run_runtime_health_loop(app: FastAPI, cfg: AppConfig, stop: asyncio.Event) -> None:
+    global _curator_tick_counter
     prev: dict[str, Any] | None = None
     last_publish_at = 0.0
     heartbeat_sec = float(cfg.desktop.runtime_ws_interval_sec)
@@ -124,6 +127,13 @@ async def run_runtime_health_loop(app: FastAPI, cfg: AppConfig, stop: asyncio.Ev
                 last_publish_at=last_publish_at,
                 heartbeat_sec=heartbeat_sec,
             )
+            _curator_tick_counter += 1
+            if _curator_tick_counter >= _CURATOR_IDLE_TICK_EVERY:
+                _curator_tick_counter = 0
+                from media2text.agent.curator import maybe_run_curator_idle
+                from media2text.agent.turn_registry import turn_registry
+
+                maybe_run_curator_idle(cfg, active_turns=turn_registry.active_count())
         except Exception:
             logger.exception("runtime health loop iteration failed")
         try:

@@ -52,5 +52,9 @@ class TurnRegistry:
         with self._lock:
             self._turns.pop(turn_id, None)
 
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._turns)
+
 
 turn_registry = TurnRegistry()
