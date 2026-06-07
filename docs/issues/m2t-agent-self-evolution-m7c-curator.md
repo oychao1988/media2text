@@ -41,12 +41,13 @@ M7a/M7b 交付 memory/skill background review 与 agent 自写 skill 库；长�
   - `run [--dry-run] [--background]`
   - `pin` / `unpin` / `restore`
   - `rollback [--list]`（S15 manual_ac：恢复备份）
+- [x] S15（manual_ac）：mutating run 备份 → 破坏 skill → `rollback` 恢复（`test_agent_self_evolution_manual_acceptance.py`）
 - [x] `tests/unit/test_cli_agent_curator.py` 通过
 
 ### Task 3 — Epic 与文档
 
 - [x] `docs/issues/epic-manifests/agent-self-evolution.yaml` 指向 #215–#217 与 spec S1–S15
-- [x] 起草 `docs/superpowers/verification/2026-06-07-m2t-agent-self-evolution-acceptance.md`（S1–S14 自动化 PASS；S10/S15 待人工）
+- [x] 起草 `docs/superpowers/verification/2026-06-07-m2t-agent-self-evolution-acceptance.md`（S1–S15 全部 PASS）
 - [x] 更新 `CLAUDE.md` Desktop Agent（自进化 + curator CLI）
 - [x] 更新 `config.example.yaml` `curator.*` 段
 - [ ] Hermes 父规格 §4.2 Curator 非目标一行 → 指向本规格（spec §18）（follow-up）
@@ -57,7 +58,8 @@ M7a/M7b 交付 memory/skill background review 与 agent 自写 skill 库；长�
 ```bash
 source .venv/bin/activate
 pip install -e ".[desktop,dev]"
-pytest tests/unit/test_curator_transitions.py tests/unit/test_cli_agent_curator.py -v -m agent
+pytest tests/unit/test_curator_transitions.py tests/unit/test_cli_agent_curator.py tests/unit/test_agent_self_evolution_manual_acceptance.py -v -m agent
+python scripts/agent_self_evolution_manual_acceptance.py
 media2text agent curator status
 media2text agent curator run --dry-run
 python scripts/epic_verify.py agent-self-evolution
