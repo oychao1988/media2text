@@ -11,7 +11,10 @@ def test_doctor_web_search_tavily_when_bootstrap_web_enabled(tmp_path, monkeypat
     monkeypatch.chdir(tmp_path)
     env_path = tmp_path / ".env"
     env_path.write_text("TAVILY_API_KEY=tvly-test\n", encoding="utf-8")
-    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
     cfg = AppConfig.model_validate(
@@ -35,7 +38,10 @@ def test_doctor_web_search_tavily_reads_env_file_not_stale_environ(
     monkeypatch.chdir(tmp_path)
     env_path = tmp_path / ".env"
     env_path.write_text("TAVILY_API_KEY=from-file\n", encoding="utf-8")
-    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
     monkeypatch.setenv("TAVILY_API_KEY", "stale-process")
 
     cfg = AppConfig.model_validate(
@@ -55,7 +61,10 @@ def test_doctor_web_search_tavily_reads_env_file_not_stale_environ(
 def test_doctor_web_search_tavily_missing_key(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     env_path = tmp_path / ".env"
-    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
     monkeypatch.delenv("TAVILY_API_KEY", raising=False)
 
     cfg = AppConfig.model_validate(
@@ -91,10 +100,17 @@ def test_doctor_skips_web_search_when_bootstrap_disabled(tmp_path, monkeypatch) 
 def test_doctor_summarize_llm_when_bootstrap_web_without_summarize_enabled(
     tmp_path, monkeypatch
 ) -> None:
+    import sys
+    import types
+
+    monkeypatch.setitem(sys.modules, "openai", types.ModuleType("openai"))
     monkeypatch.chdir(tmp_path)
     env_path = tmp_path / ".env"
     env_path.write_text("NVIDIA_API_KEY=test-key\n", encoding="utf-8")
-    monkeypatch.setattr("media2text.core.env_file.env_file_path", lambda: env_path)
+    monkeypatch.setattr(
+        "media2text.agent.creator_distill.tavily_client.env_file_path",
+        lambda: env_path,
+    )
     monkeypatch.delenv("NVIDIA_API_KEY", raising=False)
 
     cfg = AppConfig.model_validate(

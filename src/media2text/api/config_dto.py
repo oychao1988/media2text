@@ -63,7 +63,7 @@ def _env_configured(env_name: str) -> bool:
 
 
 def _tavily_api_key(cfg: AppConfig) -> str:
-    from media2text.core.tavily_client import resolve_tavily_api_key
+    from media2text.agent.creator_distill.tavily_client import resolve_tavily_api_key
 
     return resolve_tavily_api_key(env_key=cfg.desktop.agent.distill.tavily_api_key_env)
 

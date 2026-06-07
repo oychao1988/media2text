@@ -20,7 +20,7 @@ from media2text.core.summarize.openai_backend import (
     resolve_llm_endpoints,
 )
 from media2text.core.storage.repos import CreatorRepo
-from media2text.core.tavily_client import resolve_tavily_api_key
+from media2text.agent.creator_distill.tavily_client import resolve_tavily_api_key
 
 
 def _disk_ok(path: Path, min_gb: float = 5.0) -> bool:
