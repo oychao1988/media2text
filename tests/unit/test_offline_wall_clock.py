@@ -8,6 +8,17 @@ from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 
 
+def _pending_live_ended_count(conn, session_id: str) -> int:
+    row = conn.execute(
+        """
+        SELECT COUNT(*) AS c FROM notify_events
+        WHERE session_id = ? AND kind = ? AND delivered_at IS NULL
+        """,
+        (session_id, EventKind.LIVE_ENDED.value),
+    ).fetchone()
+    return int(row["c"]) if row else 0
+
+
 def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
@@ -53,7 +64,7 @@ def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
 
 
 def test_first_offline_emits_live_ended_without_finalize(tmp_path, monkeypatch) -> None:
-    cfg, _, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
+    cfg, conn, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
 
     with (
         patch.object(core, "_process_alive", return_value=True),
@@ -64,8 +75,8 @@ def test_first_offline_emits_live_ended_without_finalize(tmp_path, monkeypatch) 
     row = sessions.get(sid)
     assert row is not None
     assert row.offline_since_at is not None
-    notify.emit.assert_called_once()
-    assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
+    notify.emit.assert_not_called()
+    assert _pending_live_ended_count(conn, sid) == 1
 
 
 def test_finalize_after_offline_confirm_sec(tmp_path, monkeypatch) -> None:
@@ -123,7 +134,7 @@ def test_live_resume_clears_offline_since(tmp_path, monkeypatch) -> None:
 
 
 def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
-    _, _, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
+    _, conn, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
 
     with (
         patch.object(core, "_process_alive", return_value=True),
@@ -132,7 +143,8 @@ def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
         core.poll_active_recordings()
         core.poll_active_recordings()
 
-    assert notify.emit.call_count == 1
+    notify.emit.assert_not_called()
+    assert _pending_live_ended_count(conn, sid) == 1
     row = sessions.get(sid)
     assert row is not None
     assert row.offline_since_at is not None
