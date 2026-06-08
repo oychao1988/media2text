@@ -1,3 +1,19 @@
+export type ContextAttachmentDocType = 'transcript' | 'summary';
+
+export type ContextAttachment = {
+  id: string;
+  docType: ContextAttachmentDocType;
+  path: string;
+  label: string;
+  creatorId: string;
+  creatorName: string;
+  sessionKind: 'live' | 'vod';
+  itemId: string;
+  source?: 'session' | 'mention';
+};
+
+export type ContextMode = 'transcript' | 'summary' | 'both';
+
 export type RuntimeContext = {
   apiBaseUrl: string;
   workspace: string;
@@ -9,6 +25,8 @@ export type RuntimeContext = {
   sessionStartedAt: string | null;
   transcriptPath: string | null;
   summaryPath: string | null;
+  contextMode: ContextMode;
+  attachments: ContextAttachment[];
 };
 
 export type ContextRefreshPayload = {
@@ -18,7 +36,8 @@ export type ContextRefreshPayload = {
   sessionKind?: 'live' | 'vod' | null;
   transcriptPath?: string | null;
   summaryPath?: string | null;
-  contextMode?: 'transcript' | 'summary' | 'both' | null;
+  contextMode?: ContextMode | null;
+  attachments?: ContextAttachment[] | null;
 };
 
 export function readEnvContext(): Pick<
@@ -47,6 +66,7 @@ ${COMPLIANCE}
 - 场次：{session_id}（开始: {session_started}）
 - 转写路径：{transcript_path}
 - 摘要路径：{summary_path}
+{attachments_block}
 
 ## 行为准则
 1. 涉及具体场次正文时，优先调用 m2t_read_transcript / m2t_read_summary / m2t_read_manifest，不要编造转写内容。
@@ -55,7 +75,35 @@ ${COMPLIANCE}
 4. 出错时用简体中文说明原因与可操作建议。
 5. 所有业务操作仅通过 m2t_* 工具访问本地 API（{api_base_url}），不要假设可直接读写磁盘业务文件。`;
 
+function docTypeOf(item: ContextAttachment): string {
+  return item.docType;
+}
+
+export function filterAttachmentsByContextMode(
+  attachments: ContextAttachment[],
+  contextMode: ContextMode,
+): ContextAttachment[] {
+  if (contextMode === 'both') return attachments;
+  return attachments.filter((a) => docTypeOf(a) === contextMode);
+}
+
+export function formatAttachmentsBlock(
+  attachments: ContextAttachment[],
+  contextMode: ContextMode,
+): string {
+  const filtered = filterAttachmentsByContextMode(attachments, contextMode);
+  if (filtered.length === 0) return '';
+  const lines = ['', '## 附加文档'];
+  for (const item of filtered) {
+    const docLabel = item.docType === 'transcript' ? '转写' : '摘要';
+    const prefix = item.creatorName ? `${item.creatorName} · ` : '';
+    lines.push(`- [${docLabel}] ${prefix}${item.label} (${item.path})`);
+  }
+  return lines.join('\n');
+}
+
 export function buildSystemPrompt(ctx: RuntimeContext): string {
+  const attachmentsBlock = formatAttachmentsBlock(ctx.attachments, ctx.contextMode);
   return SYSTEM_PROMPT_TEMPLATE.replace('{workspace}', ctx.workspace || '—')
     .replace('{creator_name}', ctx.creatorName ?? '（未选择）')
     .replace('{creator_id}', ctx.creatorId || '—')
@@ -64,6 +112,7 @@ export function buildSystemPrompt(ctx: RuntimeContext): string {
     .replace('{session_started}', ctx.sessionStartedAt ?? '—')
     .replace('{transcript_path}', ctx.transcriptPath ?? '（未知，请用工具读取）')
     .replace('{summary_path}', ctx.summaryPath ?? '（未知，请用工具读取）')
+    .replace('{attachments_block}', attachmentsBlock)
     .replace('{api_base_url}', ctx.apiBaseUrl);
 }
 
@@ -71,10 +120,38 @@ export function createInitialContext(): RuntimeContext {
   return {
     ...readEnvContext(),
     ...readRefreshPathsFromEnv(),
+    ...readRefreshAttachmentsFromEnv(),
     creatorName: null,
     creatorPlatform: null,
     sessionStartedAt: null,
+    contextMode: readContextModeFromEnv(),
   };
+}
+
+export function readContextModeFromEnv(): ContextMode {
+  const raw = process.env.M2T_CONTEXT_MODE?.trim();
+  if (raw === 'transcript' || raw === 'summary' || raw === 'both') return raw;
+  return 'both';
+}
+
+export function readRefreshAttachmentsFromEnv(): Pick<RuntimeContext, 'attachments'> {
+  const raw = process.env.M2T_ATTACHMENTS?.trim();
+  if (!raw) return { attachments: [] };
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return { attachments: [] };
+    const attachments = parsed.filter(
+      (item): item is ContextAttachment =>
+        item != null &&
+        typeof item === 'object' &&
+        typeof (item as ContextAttachment).path === 'string' &&
+        ((item as ContextAttachment).docType === 'transcript' ||
+          (item as ContextAttachment).docType === 'summary'),
+    );
+    return { attachments };
+  } catch {
+    return { attachments: [] };
+  }
 }
 
 export function readRefreshPathsFromEnv(): Pick<RuntimeContext, 'transcriptPath' | 'summaryPath'> {
@@ -109,8 +186,10 @@ export function applyRefreshPayload(ctx: RuntimeContext, payload: ContextRefresh
   if ('contextMode' in payload) {
     if (payload.contextMode != null) {
       process.env.M2T_CONTEXT_MODE = String(payload.contextMode);
+      ctx.contextMode = payload.contextMode;
     } else {
       delete process.env.M2T_CONTEXT_MODE;
+      ctx.contextMode = 'both';
     }
   }
   if ('transcriptPath' in payload) {
@@ -131,6 +210,18 @@ export function applyRefreshPayload(ctx: RuntimeContext, payload: ContextRefresh
     } else {
       delete process.env.M2T_SUMMARY_PATH;
       ctx.summaryPath = null;
+    }
+  }
+  if ('attachments' in payload) {
+    if (payload.attachments == null) {
+      // omit / null — do not modify attachments
+    } else if (Array.isArray(payload.attachments)) {
+      const json = JSON.stringify(payload.attachments);
+      process.env.M2T_ATTACHMENTS = json;
+      ctx.attachments = payload.attachments;
+    } else {
+      delete process.env.M2T_ATTACHMENTS;
+      ctx.attachments = [];
     }
   }
 }

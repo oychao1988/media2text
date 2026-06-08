@@ -24,7 +24,9 @@ import {
   buildSystemPrompt,
   createInitialContext,
   hydrateContextFromApi,
+  readContextModeFromEnv,
   readEnvContext,
+  readRefreshAttachmentsFromEnv,
   readRefreshPathsFromEnv,
   type RuntimeContext,
 } from './context.js';
@@ -209,7 +211,13 @@ export async function createM2tAgentSession(
   });
 
   async function reloadContext(): Promise<void> {
-    Object.assign(runtimeCtx, readEnvContext(), readRefreshPathsFromEnv());
+    Object.assign(
+      runtimeCtx,
+      readEnvContext(),
+      readRefreshPathsFromEnv(),
+      readRefreshAttachmentsFromEnv(),
+    );
+    runtimeCtx.contextMode = readContextModeFromEnv();
     await hydrateContextFromApi(runtimeCtx);
     await loader.reload();
   }
