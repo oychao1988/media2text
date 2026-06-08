@@ -7,8 +7,8 @@ from media2text.core.live.scheduler import LiveTickLoop, MonitorScheduler, SlowT
 from media2text.core.monitor.watcher import MonitorWatcher
 
 
-def test_live_tick_records_before_finalize_drain(tmp_path, monkeypatch) -> None:
-    """Poll heartbeat must not wait for inline finalize drain."""
+def test_live_tick_not_blocked_by_finalize_drain(tmp_path, monkeypatch) -> None:
+    """Live probe thread never invokes monitor_pool drain (TaskScheduler owns p0)."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -16,21 +16,12 @@ def test_live_tick_records_before_finalize_drain(tmp_path, monkeypatch) -> None:
     )
     watcher = MonitorWatcher(cfg)
     stop = threading.Event()
-    post_pool = MagicMock()
-    monitor_pool = MagicMock()
-    monitor_pool.drain_priority_zero.return_value = [{"finalized": True}]
     order: list[str] = []
     tick_cb = MagicMock(side_effect=lambda: order.append("tick"))
 
     def slow_run_once(**_kwargs) -> dict:
         order.append("run_once")
         return {}
-
-    def slow_finalize(*_args, **_kwargs) -> list:
-        order.append("finalize")
-        return [{"finalized": True}]
-
-    monitor_pool.drain_priority_zero.side_effect = slow_finalize
 
     with (
         patch.object(watcher._douyin_live, "run_once", side_effect=slow_run_once),
@@ -39,8 +30,6 @@ def test_live_tick_records_before_finalize_drain(tmp_path, monkeypatch) -> None:
         live_loop = LiveTickLoop(
             watcher,
             cfg,
-            post_pool,
-            monitor_pool,
             creator_id=None,
             stop=stop,
             on_tick=tick_cb,
@@ -52,9 +41,7 @@ def test_live_tick_records_before_finalize_drain(tmp_path, monkeypatch) -> None:
 
     assert order[0] == "tick"
     assert "run_once" in order
-    tick_idx = order.index("tick", 1)
-    finalize_idx = order.index("finalize")
-    assert tick_idx < finalize_idx
+    assert "finalize" not in order
 
 
 def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
@@ -66,8 +53,6 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
     )
     watcher = MonitorWatcher(cfg)
     stop = threading.Event()
-    post_pool = MagicMock()
-    monitor_pool = MagicMock()
     run_counts: list[int] = []
 
     def count_run_once(**_kwargs) -> dict:
@@ -82,15 +67,12 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
         live_loop = LiveTickLoop(
             watcher,
             cfg,
-            post_pool,
-            monitor_pool,
             creator_id=None,
             stop=stop,
         )
         slow_loop = SlowTickLoop(
             watcher,
             cfg,
-            monitor_pool,
             MagicMock(),
             creator_id=None,
             stop=stop,
@@ -115,8 +97,7 @@ def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
     scheduler = MonitorScheduler(watcher, cfg)
 
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={}),
+        patch("media2text.core.live.probe.run_live_probe_tick", return_value={}),
         patch.object(watcher, "_run_vod_tick", return_value={}),
         patch.object(watcher, "_run_archive_tick", return_value={}),
         patch.object(watcher, "_run_dynamic_tick", return_value={}),
@@ -126,11 +107,10 @@ def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
         scheduler.stop()
 
 
-def test_finalize_enqueued_once_and_drained_inline(tmp_path, monkeypatch) -> None:
-    """Offline timeline: poll enqueues finalize; LiveTick drain runs it once."""
+def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
+    """Offline timeline: poll enqueues finalize; drain is TaskScheduler responsibility."""
     from datetime import datetime, timedelta, timezone
 
-    from media2text.core.live.monitor_executor import MonitorExecutor
     from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
 
     monkeypatch.chdir(tmp_path)
@@ -165,36 +145,18 @@ def test_finalize_enqueued_once_and_drained_inline(tmp_path, monkeypatch) -> Non
 
     watcher = MonitorWatcher(cfg)
     core = watcher._douyin_live._core
-    pool = MonitorExecutor(max_workers=1)
-    finalize_calls: list[str] = []
-
-    def fake_finalize(session_id, temp_path, pid):
-        finalize_calls.append(session_id)
-        LiveSessionRepo(conn).update_status(session_id, status="completed")
-        return {"session_id": session_id}
-
-    core._finalize_recording = fake_finalize
 
     with (
         patch.object(core, "_process_alive", return_value=True),
         patch.object(core, "_recording_still_live", return_value=False),
     ):
         core.poll_active_recordings()
-        pool.drain_priority_zero(
-            cfg,
-            conn,
-            notify=watcher._notify,
-            watcher=watcher,
-        )
         core.poll_active_recordings()
-        pool.drain_priority_zero(
-            cfg,
-            conn,
-            notify=watcher._notify,
-            watcher=watcher,
-        )
 
     tasks = MonitorTaskRepo(conn).count_by_status()
-    assert finalize_calls == [sid]
-    assert tasks.get("done", 0) == 1
-    pool.shutdown(wait=False)
+    assert tasks.get("pending", 0) == 1
+    row = conn.execute(
+        "SELECT task_type FROM monitor_tasks WHERE status = 'pending' LIMIT 1"
+    ).fetchone()
+    assert row is not None
+    assert row["task_type"] == "finalize"

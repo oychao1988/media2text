@@ -9,6 +9,8 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import run_monitor_task
+from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.notify import EventKind, NotifyService
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
@@ -54,9 +56,17 @@ class MonitorWatcher:
         self._ws = cfg.ensure_workspace()
         self._conn = open_db(cfg)
         self._creators = CreatorRepo(self._conn)
-        self._douyin_live = DouyinLiveWatcher(cfg)
-        self._bilibili_live = BilibiliLiveWatcher(cfg)
+        self._session_runtime = SessionRuntime()
+        self._douyin_live = DouyinLiveWatcher(cfg, runtime=self._session_runtime)
+        self._bilibili_live = BilibiliLiveWatcher(cfg, runtime=self._session_runtime)
         self._notify = NotifyService(cfg)
+
+    def core_for_platform(self, conn, platform: str) -> LiveRecordingCore:
+        if platform == "douyin":
+            return self._douyin_live.core_for_conn(conn)
+        if platform == "bilibili":
+            return self._bilibili_live.core_for_conn(conn)
+        raise ValueError(f"unsupported_platform:{platform}")
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
         douyin_live = self._douyin_live.run_once(creator_id=creator_id)

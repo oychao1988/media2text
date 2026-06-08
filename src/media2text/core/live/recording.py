@@ -33,6 +33,7 @@ from media2text.core.ffmpeg import (
 )
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.partial_notify import PartialTranscriptNotifier
+from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.live.streaming_stt import StreamingSttSession
 from media2text.core.live.transcript_writer import (
     list_segment_checkpoints,
@@ -58,8 +59,9 @@ class LiveRecordingCore:
         conn,
         adapter: LivePlatformAdapter,
         platform: str,
-        processes: dict[str, Popen],
         notify: NotifyService,
+        processes: dict[str, Popen] | None = None,
+        runtime: SessionRuntime | None = None,
     ) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
@@ -69,15 +71,28 @@ class LiveRecordingCore:
         self._jobs = PostProcessJobRepo(conn)
         self._adapter = adapter
         self._platform = platform
-        self._processes = processes
+        if runtime is None:
+            runtime = SessionRuntime()
+            if processes is not None:
+                runtime.processes = processes
+        elif processes is not None and not runtime.processes:
+            runtime.processes = processes
+        self._runtime = runtime
         self._notify = notify
         self._flv_size_snapshots: dict[str, int] = {}
-        self._stt_sessions: dict[str, StreamingSttSession] = {}
         self._stream_urls: dict[str, str] = {}
         self._streaming_legacy_finalize: set[str] = set()
         self._streaming_transcript_anchor: dict[str, Path] = {}
         self._stt_checkpoint_counter: dict[str, int] = {}
         self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
+
+    @property
+    def _processes(self) -> dict[str, Popen]:
+        return self._runtime.processes
+
+    @property
+    def _stt_sessions(self) -> dict[str, StreamingSttSession]:
+        return self._runtime.stt_sessions
 
     def scan_and_start(
         self, *, creator_id: str | None = None
