@@ -43,6 +43,18 @@ class DesktopEventRow:
 
 
 @dataclass
+class NotifyEventRow:
+    id: str
+    kind: str
+    dedupe_key: str | None
+    creator_id: str | None
+    session_id: str | None
+    payload_json: str
+    created_at: str
+    delivered_at: str | None
+
+
+@dataclass
 class DesktopChatThreadRow:
     id: str
     creator_id: str | None

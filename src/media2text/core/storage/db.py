@@ -667,6 +667,29 @@ def _migrate_hermes_v4(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_notify_v1(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS notify_events (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL,
+          dedupe_key TEXT,
+          creator_id TEXT,
+          session_id TEXT,
+          payload_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          delivered_at TEXT
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_notify_events_dedupe_active
+          ON notify_events(dedupe_key) WHERE delivered_at IS NULL AND dedupe_key IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_notify_events_pending
+          ON notify_events(delivered_at, created_at)
+          WHERE delivered_at IS NULL;
+        """
+    )
+    conn.commit()
+
+
 def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
@@ -688,6 +711,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_hermes_v2(conn)
         _migrate_hermes_v3(conn)
         _migrate_hermes_v4(conn)
+        _migrate_notify_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

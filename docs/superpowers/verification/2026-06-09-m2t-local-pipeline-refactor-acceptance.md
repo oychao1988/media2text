@@ -11,7 +11,7 @@
 | G1′ | 开录 P95 ≤30s | `media2text live stats --days 1 --json` + pipeline_events | [ ] 人工/生产 | |
 | G3/G4 | offline→live_ended；confirm+finalize ≤60s | unit + `tests/e2e/test_live_pipeline_reconciler.py` | [x] unit/E2E mock | |
 | G5 | Content 不拖 Probe | `test_live_tick_runs_while_slow_tick_blocks` | [x] | |
-| L6 | notify outbox only | `pytest tests/unit/test_notify_outbox.py -v` | | [ ] |
+| L6 | notify outbox only | `pytest tests/unit/test_notify_outbox.py -v` | | [x] |
 
 ## E2E（R2c-3 闸门）
 

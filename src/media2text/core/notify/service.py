@@ -8,6 +8,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.notify.events import EventKind, NotifyEvent
 from media2text.core.notify.feishu import send_feishu_text
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.notify.sound import play_sound
 
 log = structlog.get_logger()
@@ -40,6 +41,13 @@ class NotifyService:
 
     def emit(self, event: NotifyEvent) -> None:
         if not self._notify.enabled:
+            return
+        if self._notify.outbox_only and NotifyDaemonGuard.is_active():
+            log.debug(
+                "notify_sync_skipped_outbox_only",
+                kind=event.kind,
+                title=event.title,
+            )
             return
         if not self._event_enabled(event.kind):
             return

@@ -7,8 +7,9 @@ from pathlib import Path
 
 from media2text.core.config import AppConfig
 from media2text.core.manifest import refresh_manifest
-from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify import EventKind, NotifyService
 from media2text.core.notify.labels import creator_label
+from media2text.core.notify.outbox import enqueue_notify_event_no_commit
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 
 
@@ -175,7 +176,6 @@ class StateWriter:
         except Exception:
             self._conn.rollback()
             raise
-        self._emit_live_ended(creator_id, session_id)
 
     def clear_offline_since(self, session_id: str, *, creator_id: str) -> None:
         now = _now_iso()
@@ -256,20 +256,19 @@ class StateWriter:
         session_id: str,
         kind: EventKind,
     ) -> None:
-        """Placeholder for #237 notify_events outbox; sync notify remains in _emit_live_ended."""
-
-    def _emit_live_ended(self, creator_id: str, session_id: str) -> None:
         creator = self._creators.get(creator_id)
         if creator is None:
             return
         label = creator_label(creator)
-        self._notify.emit(
-            NotifyEvent(
-                kind=EventKind.LIVE_ENDED,
-                title=label,
-                body=(
-                    f"检测到下播，等待 {self._cfg.live.offline_confirm_sec}s 确认后停录\n"
-                    f"session: {session_id[:8]}…"
-                ),
-            )
+        enqueue_notify_event_no_commit(
+            self._conn,
+            kind=kind.value,
+            creator_id=creator_id,
+            session_id=session_id,
+            title=label,
+            body=(
+                f"检测到下播，等待 {self._cfg.live.offline_confirm_sec}s 确认后停录\n"
+                f"session: {session_id[:8]}…"
+            ),
+            dedupe_key=f"{kind.value}:{session_id}",
         )

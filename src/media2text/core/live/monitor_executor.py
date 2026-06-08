@@ -12,6 +12,7 @@ from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.config import AppConfig
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.platform.bilibili.dynamic import sync_creator_dynamics
 from media2text.core.platform.vod import download_pending, sync_creator
@@ -353,6 +354,7 @@ class MonitorExecutor:
         watcher: MonitorWatcher | None = None,
     ) -> None:
         def _run() -> None:
+            NotifyDaemonGuard.enter()
             conn = open_db(cfg)
             try:
                 run_monitor_task(

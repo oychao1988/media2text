@@ -410,6 +410,7 @@ class NotifyConfig(BaseModel):
     enabled: bool = False
     sound: bool = True
     sound_path: str = ""
+    outbox_only: bool = False
     events: NotifyEventsConfig = Field(default_factory=NotifyEventsConfig)
     feishu: NotifyFeishuConfig = Field(default_factory=NotifyFeishuConfig)
 
