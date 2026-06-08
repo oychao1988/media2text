@@ -551,7 +551,12 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
             attachments={attachmentsState.activeAttachments}
             contextMode={sessionContext.contextMode ?? 'both'}
             sidebarCreatorId={creatorId}
+            mentionCreators={creators.map((c) => ({
+              id: c.id,
+              display_name: c.display_name,
+            }))}
             onRemoveAttachment={attachmentsState.removeAttachment}
+            onAppendMentionAttachment={attachmentsState.appendMentionAttachment}
             onModelChange={(m) =>
               void agent.patchThreadModel(m, m === 'auto' ? null : providerByModel.get(m))
             }

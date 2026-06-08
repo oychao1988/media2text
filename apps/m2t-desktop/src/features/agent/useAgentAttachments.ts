@@ -104,6 +104,18 @@ export function useAgentAttachments(opts: {
     [opts.activeTabKey],
   );
 
+  const appendMentionAttachment = useCallback(
+    (attachment: ContextAttachment) => {
+      if (!opts.activeTabKey) return;
+      setByTab((prev) => {
+        const current = prev[opts.activeTabKey!] ?? [];
+        const merged = dedupeByPath([...current, attachment]);
+        return { ...prev, [opts.activeTabKey!]: merged };
+      });
+    },
+    [opts.activeTabKey],
+  );
+
   const clearTab = useCallback((tabKey: string) => {
     setByTab((prev) => {
       if (!(tabKey in prev)) return prev;
@@ -127,6 +139,7 @@ export function useAgentAttachments(opts: {
   return {
     activeAttachments,
     appendSessionAttachments,
+    appendMentionAttachment,
     removeAttachment,
     clearTab,
     migrateTabAttachments,
