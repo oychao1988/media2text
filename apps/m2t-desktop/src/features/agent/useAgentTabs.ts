@@ -20,6 +20,31 @@ export function findDraftTab(entries: AgentTabEntry[]): AgentTabEntry | undefine
   return entries.find((e) => e.kind === 'draft');
 }
 
+/** Empty draft tab for a specific agent (drafts hold no messages until promoted). */
+export function findEmptyDraftForAgent(
+  entries: AgentTabEntry[],
+  agentId: string,
+): AgentTabEntry | undefined {
+  return entries.find((e) => e.kind === 'draft' && e.agentId === agentId);
+}
+
+/** Focus or create a draft for the given agent; does not reuse unrelated empty drafts. */
+export function openNewDraftForAgent(
+  entries: AgentTabEntry[],
+  agentId: string,
+): { entries: AgentTabEntry[]; activeKey: string } {
+  const existing = findEmptyDraftForAgent(entries, agentId);
+  if (existing) {
+    const key = tabEntryKey(existing);
+    return {
+      entries: pushAgentTabEntry(entries, existing),
+      activeKey: key,
+    };
+  }
+  const entry = createDraftTab(agentId);
+  return { entries: pushAgentTabEntry(entries, entry), activeKey: tabEntryKey(entry) };
+}
+
 /** Reuse the lone empty draft tab instead of opening duplicates. */
 export function openOrFocusDraftTab(
   entries: AgentTabEntry[],

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
 import { showToast, showToastWithAction } from '../../lib/toast';
 import { useCreators } from '../creators/CreatorsContext';
@@ -19,6 +19,7 @@ import { useAgentChatScroll } from './useAgentChatScroll';
 import {
   activateAgentTabEntry,
   closeAgentTabEntry,
+  openNewDraftForAgent,
   openOrFocusDraftTab,
   promoteDraftTab,
   removeThreadFromTabs,
@@ -34,6 +35,10 @@ type AgentPanelProps = {
   creatorId: string | null;
   sessionContext: SessionContext;
   playbackMode?: boolean;
+};
+
+export type AgentPanelHandle = {
+  openNewDraftForAgent: (agentId: string) => void;
 };
 
 function readHistoryCollapsed(): boolean {
@@ -108,7 +113,10 @@ function AgentChatMessages({
   );
 }
 
-export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: AgentPanelProps) {
+export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function AgentPanel(
+  { creatorId, sessionContext, playbackMode = false },
+  ref,
+) {
   const { creators, setSelectedId } = useCreators();
   const { threads, createThread, createGlobalThread, renameThread, deleteThread, refresh, applyThreadTitle } =
     useAgentThreads(creatorId);
@@ -234,6 +242,22 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
       return entries;
     });
   }, []);
+
+  const openNewDraftForAgentTab = useCallback((agentId: string) => {
+    setTabEntries((prev) => {
+      const { entries, activeKey } = openNewDraftForAgent(prev, agentId);
+      setActiveTabKey(activeKey);
+      return entries;
+    });
+  }, []);
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      openNewDraftForAgent: openNewDraftForAgentTab,
+    }),
+    [openNewDraftForAgentTab],
+  );
 
   const handleNewDraft = useCallback(() => {
     openDraftTab(defaultAgentId);
@@ -549,4 +573,4 @@ export function AgentPanel({ creatorId, sessionContext, playbackMode = false }: 
       />
     </section>
   );
-}
+});
