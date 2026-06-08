@@ -133,9 +133,13 @@ class SlowTickLoop:
     def _run(self) -> None:
         NotifyDaemonGuard.enter()
         while not self._stop.is_set():
-            self._watcher._run_vod_tick(creator_id=self._creator_id)
-            self._watcher._run_archive_tick(creator_id=self._creator_id)
-            self._watcher._run_dynamic_tick(creator_id=self._creator_id)
+            conn = open_db(self._cfg)
+            try:
+                self._watcher._run_vod_tick(conn=conn, creator_id=self._creator_id)
+                self._watcher._run_archive_tick(conn=conn, creator_id=self._creator_id)
+                self._watcher._run_dynamic_tick(conn=conn, creator_id=self._creator_id)
+            finally:
+                conn.close()
             now_distill = time.time()
             if now_distill - self._last_distill >= 300:
                 from media2text.agent.creator_distill.pool import resolve_distill_workers

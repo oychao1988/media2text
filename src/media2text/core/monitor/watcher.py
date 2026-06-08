@@ -72,9 +72,10 @@ class MonitorWatcher:
         bilibili_live = self._bilibili_live.run_once(creator_id=creator_id)
         live_result = _merge_live_results(douyin_live, bilibili_live)
 
-        vod_result = self._run_vod_tick(creator_id=creator_id)
-        archive_result = self._run_archive_tick(creator_id=creator_id)
+        vod_result = self._run_vod_tick(conn=self._conn, creator_id=creator_id)
+        archive_result = self._run_archive_tick(conn=self._conn, creator_id=creator_id)
         dynamic_result = self._run_dynamic_tick(
+            conn=self._conn,
             creator_id=creator_id,
         )
         self._drain_monitor_tasks_sync()
@@ -133,26 +134,29 @@ class MonitorWatcher:
             log.error("monitor_watch_lock_held")
             raise
 
-    def _run_vod_tick(self, *, creator_id: str | None = None) -> dict:
+    def _run_vod_tick(self, *, conn, creator_id: str | None = None) -> dict:
         return self._run_pipeline_tick(
+            conn=conn,
             creator_id=creator_id,
             platform="douyin",
             new_content_kind=EventKind.NEW_AWEME,
         )
 
-    def _run_archive_tick(self, *, creator_id: str | None = None) -> dict:
+    def _run_archive_tick(self, *, conn, creator_id: str | None = None) -> dict:
         return self._run_pipeline_tick(
+            conn=conn,
             creator_id=creator_id,
             platform="bilibili",
             new_content_kind=EventKind.NEW_ARCHIVE,
         )
 
-    def _run_dynamic_tick(self, *, creator_id: str | None = None) -> dict:
+    def _run_dynamic_tick(self, *, conn, creator_id: str | None = None) -> dict:
+        creators = CreatorRepo(conn)
         targets = [
-            c for c in self._creators.list_monitored() if c.platform == "bilibili"
+            c for c in creators.list_monitored() if c.platform == "bilibili"
         ]
         if creator_id:
-            row = self._creators.get(creator_id)
+            row = creators.get(creator_id)
             targets = (
                 [row]
                 if row and row.monitor_enabled and row.platform == "bilibili"
@@ -163,7 +167,7 @@ class MonitorWatcher:
         for creator in targets:
             if creator.dynamic_due_at is not None:
                 continue
-            self._creators.set_dynamic_due(creator.id, now)
+            creators.set_dynamic_due(creator.id, now)
             marked += 1
         return {
             "platform": "bilibili",
@@ -203,16 +207,18 @@ class MonitorWatcher:
     def _run_pipeline_tick(
         self,
         *,
+        conn,
         creator_id: str | None,
         platform: str,
         new_content_kind: EventKind,
     ) -> dict:
         _ = new_content_kind
+        creators = CreatorRepo(conn)
         targets = [
-            c for c in self._creators.list_monitored() if c.platform == platform
+            c for c in creators.list_monitored() if c.platform == platform
         ]
         if creator_id:
-            row = self._creators.get(creator_id)
+            row = creators.get(creator_id)
             targets = (
                 [row]
                 if row and row.monitor_enabled and row.platform == platform
@@ -228,11 +234,11 @@ class MonitorWatcher:
             if platform == "douyin":
                 if creator.vod_due_at is not None:
                     continue
-                self._creators.set_vod_due(creator.id, now)
+                creators.set_vod_due(creator.id, now)
             else:
                 if creator.archive_due_at is not None:
                     continue
-                self._creators.set_archive_due(creator.id, now)
+                creators.set_archive_due(creator.id, now)
             marked += 1
             log.info(
                 "content_due_marked",

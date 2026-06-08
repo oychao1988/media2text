@@ -139,6 +139,40 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
     assert shared_conn_ids.isdisjoint(set(scheduler_conn_ids))
 
 
+def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(live_poll_interval_sec=1),
+        monitor=MonitorConfig(scheduler_interval_sec=1),
+    )
+    watcher = MonitorWatcher(cfg)
+    shared_conn_ids: set[int] = {id(watcher._conn)}
+    slow_conn_ids: list[int] = []
+
+    orig_open = open_db
+
+    def tracking_open_db(c):
+        conn = orig_open(c)
+        if threading.current_thread().name == "slow-tick":
+            slow_conn_ids.append(id(conn))
+        return conn
+
+    monkeypatch.setattr("media2text.core.live.scheduler.open_db", tracking_open_db)
+    monkeypatch.setattr(
+        "media2text.core.live.probe.run_live_probe_tick",
+        lambda *a, **k: {},
+    )
+
+    scheduler = MonitorScheduler(watcher, cfg)
+    scheduler.start()
+    time.sleep(2.5)
+    scheduler.stop()
+
+    assert slow_conn_ids, "slow-tick thread should open_db"
+    assert shared_conn_ids.isdisjoint(set(slow_conn_ids))
+
+
 def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
     from media2text.core.live.probe import probe_budget_sec, run_live_probe_tick
 

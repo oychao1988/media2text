@@ -11,7 +11,7 @@ from media2text.core.workspace import open_db
 pytestmark = pytest.mark.desktop
 
 
-def test_scan_and_start_upserts_snapshot(tmp_path, monkeypatch) -> None:
+def test_observe_live_state_upserts_snapshot(tmp_path, monkeypatch) -> None:
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     cfg.ensure_workspace()
     conn = open_db(cfg)
@@ -38,8 +38,10 @@ def test_scan_and_start_upserts_snapshot(tmp_path, monkeypatch) -> None:
         "media2text.core.live.recording.effective_auto_record",
         lambda *a, **k: False,
     )
+    creator = CreatorRepo(conn).get(cid)
+    assert creator is not None
     with patch.object(core, "_start_recording") as mock_start:
-        core.scan_and_start()
+        core.observe_live_state(creator)
     mock_start.assert_not_called()
     snap = LiveSnapshotRepo(conn).get(cid)
     conn.close()

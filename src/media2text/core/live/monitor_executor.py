@@ -400,31 +400,5 @@ class MonitorExecutor:
             )
         return len(claimed)
 
-    def drain_priority_zero(
-        self,
-        cfg: AppConfig,
-        conn,
-        *,
-        notify: NotifyService,
-        watcher: MonitorWatcher | None = None,
-        limit: int = 10,
-    ) -> list[dict[str, Any]]:
-        """Inline drain for priority=0 tasks (finalize) on LiveTick thread."""
-        repo = MonitorTaskRepo(conn)
-        repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
-        claimed = repo.claim_pending(limit=limit, max_priority=0)
-        results: list[dict[str, Any]] = []
-        for task in claimed:
-            results.append(
-                run_monitor_task(
-                    cfg,
-                    conn,
-                    task_id=task.id,
-                    watcher=watcher,
-                    notify=notify,
-                )
-            )
-        return results
-
     def shutdown(self, *, wait: bool = True, cancel_futures: bool = False) -> None:
         self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)

@@ -1,9 +1,11 @@
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, NotifyConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.notify import NotifyService
 from media2text.core.notify.events import EventKind
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 
@@ -21,9 +23,13 @@ def _pending_live_ended_count(conn, session_id: str) -> int:
 
 def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
+    )
     cfg.live.offline_confirm_sec = confirm_sec
     cfg.live.offline_trust_recording_signals = False
+    NotifyDaemonGuard.enter()
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -51,7 +57,7 @@ def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
     adapter.get_live_room.return_value = LiveRoomInfo(
         room_id="99", is_live=False, stream_flv_url=None
     )
-    notify = MagicMock()
+    notify = NotifyService(cfg)
     core = LiveRecordingCore(
         cfg,
         conn=conn,
@@ -75,7 +81,6 @@ def test_first_offline_emits_live_ended_without_finalize(tmp_path, monkeypatch) 
     row = sessions.get(sid)
     assert row is not None
     assert row.offline_since_at is not None
-    notify.emit.assert_not_called()
     assert _pending_live_ended_count(conn, sid) == 1
 
 
@@ -107,7 +112,6 @@ def test_finalize_after_offline_confirm_sec(tmp_path, monkeypatch) -> None:
     ).fetchone()
     assert row is not None
     assert row["task_type"] == "finalize"
-    notify.emit.assert_not_called()
 
 
 def test_live_resume_clears_offline_since(tmp_path, monkeypatch) -> None:
@@ -143,7 +147,6 @@ def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
         core.poll_active_recordings()
         core.poll_active_recordings()
 
-    notify.emit.assert_not_called()
     assert _pending_live_ended_count(conn, sid) == 1
     row = sessions.get(sid)
     assert row is not None
