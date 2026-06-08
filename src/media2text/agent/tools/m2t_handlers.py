@@ -20,7 +20,6 @@ from media2text.api.services.transcript import (
     _media_path_for_session,
     read_summary_text,
     read_transcript_for_session,
-    read_transcript_payload,
 )
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc

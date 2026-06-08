@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
@@ -18,7 +17,6 @@ from media2text.api.services.transcript import (
     is_session_finalized,
     read_summary_text,
     read_transcript_for_session,
-    read_transcript_payload,
     session_sidecar_paths,
     transcript_mtime,
 )

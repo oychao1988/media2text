@@ -193,8 +193,6 @@ def test_claim_and_submit_priority_zero_async(tmp_path, monkeypatch) -> None:
     watcher = MonitorWatcher(cfg)
     submitted: list[str] = []
 
-    orig_submit = pool.submit
-
     def track_submit(cfg, *, task_id, notify, watcher=None):
         submitted.append(task_id)
 
