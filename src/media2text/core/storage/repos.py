@@ -7,6 +7,7 @@ from pathlib import Path
 from media2text.core.platform.douyin.models import AwemeItem
 import json
 
+from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.models import (
     AwemeRow,
     CloudUploadRow,
@@ -120,6 +121,48 @@ class CreatorRepo:
         )
         self._conn.commit()
         return cur.rowcount > 0
+
+    def set_vod_due(self, creator_id: str, iso: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET vod_due_at = ? WHERE id = ?",
+            (iso, creator_id),
+        )
+        self._conn.commit()
+
+    def set_archive_due(self, creator_id: str, iso: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET archive_due_at = ? WHERE id = ?",
+            (iso, creator_id),
+        )
+        self._conn.commit()
+
+    def set_dynamic_due(self, creator_id: str, iso: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET dynamic_due_at = ? WHERE id = ?",
+            (iso, creator_id),
+        )
+        self._conn.commit()
+
+    def clear_vod_due(self, creator_id: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET vod_due_at = NULL WHERE id = ?",
+            (creator_id,),
+        )
+        self._conn.commit()
+
+    def clear_archive_due(self, creator_id: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET archive_due_at = NULL WHERE id = ?",
+            (creator_id,),
+        )
+        self._conn.commit()
+
+    def clear_dynamic_due(self, creator_id: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET dynamic_due_at = NULL WHERE id = ?",
+            (creator_id,),
+        )
+        self._conn.commit()
 
     def update_profile(
         self,
@@ -1302,6 +1345,7 @@ class MonitorTaskRepo:
         priority: int = 10,
         payload_json: str | None = None,
     ) -> str | None:
+        ProbeExecutionGuard.record_violation("enqueue")
         task_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
         try:
@@ -1336,6 +1380,7 @@ class MonitorTaskRepo:
         priority: int,
         payload_json: str | None = None,
     ) -> str | None:
+        ProbeExecutionGuard.record_violation("ensure_task")
         return self.enqueue(
             creator_id=creator_id,
             task_type=task_type,

@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import json
 import threading
 import time
 from collections.abc import Callable
+from datetime import datetime, timezone
 
 import structlog
 
@@ -16,7 +16,6 @@ from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWa
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo
-from media2text.core.transcribe.factory import transcribe_engine_available
 from media2text.core.live.scheduler import MonitorScheduler
 from media2text.core.workspace import open_db
 
@@ -159,20 +158,15 @@ class MonitorWatcher:
                 if row and row.monitor_enabled and row.platform == "bilibili"
                 else []
             )
-        enqueued = 0
+        now = datetime.now(timezone.utc).isoformat()
+        marked = 0
         for creator in targets:
-            task_id = MonitorTaskRepo(self._conn).enqueue(
-                creator_id=creator.id,
-                task_type="sync_dynamic",
-                dedupe_key=f"sync_dynamic:{creator.id}",
-                priority=10,
-            )
-            if task_id:
-                enqueued += 1
+            self._creators.set_dynamic_due(creator.id, now)
+            marked += 1
         return {
             "platform": "bilibili",
             "creators": len(targets),
-            "enqueued": enqueued,
+            "marked": marked,
             "errors": [],
             "auth_required": False,
             "platform_changed": False,
@@ -211,6 +205,7 @@ class MonitorWatcher:
         platform: str,
         new_content_kind: EventKind,
     ) -> dict:
+        _ = new_content_kind
         targets = [
             c for c in self._creators.list_monitored() if c.platform == platform
         ]
@@ -225,52 +220,27 @@ class MonitorWatcher:
         if max_n > 0:
             targets = targets[:max_n]
 
-        results: list[dict] = []
-        errors: list[dict] = []
-        auth_required = False
-        enqueued = 0
-        available, skip_reason = transcribe_engine_available(self._cfg)
-        transcribe_skipped = not available
-
+        now = datetime.now(timezone.utc).isoformat()
+        marked = 0
         for creator in targets:
-            payload = json.dumps({"platform": platform})
-            task_id = MonitorTaskRepo(self._conn).enqueue(
+            if platform == "douyin":
+                self._creators.set_vod_due(creator.id, now)
+            else:
+                self._creators.set_archive_due(creator.id, now)
+            marked += 1
+            log.info(
+                "content_due_marked",
+                platform=platform,
                 creator_id=creator.id,
-                task_type="sync_catalog",
-                dedupe_key=f"sync_catalog:{creator.id}",
-                priority=10,
-                payload_json=payload,
             )
-            if task_id:
-                enqueued += 1
-                log.info(
-                    "monitor_task_enqueued",
-                    task_type="sync_catalog",
-                    creator_id=creator.id,
-                    task_id=task_id,
-                )
-            entry = {
-                "creator_id": creator.id,
-                "ok": True,
-                "enqueued": bool(task_id),
-            }
-            if transcribe_skipped:
-                entry["transcribe_skipped"] = True
-                if skip_reason:
-                    entry["transcribe_skip_reason"] = skip_reason
-            results.append(entry)
 
         payload: dict = {
             "platform": platform,
             "creators": len(targets),
-            "enqueued": enqueued,
-            "results": results,
-            "errors": errors,
-            "auth_required": auth_required,
-            "transcribe_skipped": transcribe_skipped,
+            "marked": marked,
+            "errors": [],
+            "auth_required": False,
         }
         if platform == "bilibili":
             payload["interval_sec"] = _bilibili_archive_poll_sec(self._cfg)
-        if transcribe_skipped and skip_reason:
-            payload["transcribe_skip_reason"] = skip_reason
         return payload

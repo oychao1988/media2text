@@ -84,3 +84,26 @@ def test_offline_flash_recovery_cancels_pending_finalize(tmp_path, monkeypatch) 
     conn.commit()
     reconcile_live(cfg, conn)
     assert not MonitorTaskRepo(conn).has_active_dedupe(f"finalize:{sid}")
+
+
+def test_reconcile_content_ensure_sync_when_vod_due(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.task_reconciler import reconcile_content
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAArc1",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+        platform="douyin",
+    )
+    past = datetime.now(timezone.utc).isoformat()
+    CreatorRepo(conn).set_vod_due(cid, past)
+    reconcile_content(cfg, conn)
+    assert MonitorTaskRepo(conn).has_active_dedupe(f"sync_catalog:{cid}")
+    creator = CreatorRepo(conn).get(cid)
+    assert creator is not None
+    assert creator.vod_due_at is None

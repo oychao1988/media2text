@@ -221,6 +221,21 @@ def _migrate_creators(conn: sqlite3.Connection) -> None:
     _migrate_creators_platform_sec_uid_unique(conn)
 
 
+_CREATOR_V6_COLUMNS = (
+    ("vod_due_at", "TEXT"),
+    ("archive_due_at", "TEXT"),
+    ("dynamic_due_at", "TEXT"),
+)
+
+
+def _migrate_creators_v6(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
+    for name, col_type in _CREATOR_V6_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE creators ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 _LIVE_SESSION_COLUMNS = (
     ("transcribe_status", "TEXT"),
     ("cloud_upload_status", "TEXT"),
@@ -659,6 +674,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
     with _connect_lock:
         conn.executescript(SCHEMA)
         _migrate_creators(conn)
+        _migrate_creators_v6(conn)
         _migrate_live_sessions(conn)
         _migrate_live_sessions_v2(conn)
         _migrate_live_sessions_v3(conn)

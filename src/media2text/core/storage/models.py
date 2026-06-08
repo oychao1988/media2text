@@ -17,6 +17,9 @@ class CreatorRow:
     profile_synced_at: str | None
     created_at: str
     auto_record_override: str = "inherit"
+    vod_due_at: str | None = None
+    archive_due_at: str | None = None
+    dynamic_due_at: str | None = None
 
 
 @dataclass
