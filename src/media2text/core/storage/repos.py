@@ -649,6 +649,8 @@ class LiveSessionRepo:
                 continue
             if (row.reconnect_attempts or 0) > 0:
                 continue
+            if row.obs_ffmpeg_alive == 0:
+                continue
             try:
                 os.kill(row.ffmpeg_pid, 0)
             except OSError:

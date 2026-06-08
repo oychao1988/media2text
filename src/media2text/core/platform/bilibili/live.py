@@ -84,29 +84,25 @@ class LiveWatcher:
                 "active": len(sessions.list_active()),
             }
 
-        finalized = core.poll_active_recordings()
-        started, started_ids, errors, auth_required, platform_changed = (
-            core.scan_and_start(creator_id=creator_id)
+        core.poll_active_recordings()
+
+        errors, auth_required, platform_changed = core.probe_live(
+            creator_id=creator_id,
+            deadline=deadline,
         )
-        if started_ids:
-            finalized.extend(
-                core.poll_active_recordings(skip_session_ids=started_ids)
-            )
         stale = sessions.mark_stale_recordings_failed()
         if stale:
             log.warning("bilibili_live_stale_sessions_cleared", count=stale)
-        result: dict = {
+        return {
             "platform": PLATFORM,
+            "probe": True,
             "checked": len(targets),
-            "started": started,
+            "started": 0,
             "active": len(sessions.list_active()),
             "errors": errors,
             "auth_required": auth_required,
             "platform_changed": platform_changed,
         }
-        if finalized:
-            result["finalized"] = finalized
-        return result
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         bcfg = self._cfg.platforms.bilibili

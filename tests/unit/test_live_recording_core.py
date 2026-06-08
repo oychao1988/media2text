@@ -54,6 +54,9 @@ def test_poll_skips_fresh_sessions(tmp_path, monkeypatch) -> None:
 
 
 def test_ffmpeg_exit_restarts_when_still_live(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.task_reconciler import reconcile_live
+    from media2text.core.storage.repos import MonitorTaskRepo
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     from media2text.core.workspace import open_db
@@ -80,12 +83,6 @@ def test_ffmpeg_exit_restarts_when_still_live(tmp_path, monkeypatch) -> None:
     adapter.get_live_room.return_value = LiveRoomInfo(
         room_id="99", is_live=True, stream_flv_url="https://example.com/live.flv"
     )
-    adapter.resolve_stream_url.return_value = "https://example.com/live2.flv"
-
-    mock_proc = MagicMock()
-    mock_proc.pid = 9999
-    mock_proc.poll.return_value = None
-    mock_proc.stderr = None
 
     core = LiveRecordingCore(
         cfg,
@@ -98,19 +95,16 @@ def test_ffmpeg_exit_restarts_when_still_live(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=False),
-        patch(
-            "media2text.core.live.recording.record_stream_copy",
-            return_value=mock_proc,
-        ),
-        patch("media2text.core.live.recording.time.sleep"),
-        patch.object(core, "_finalize_recording") as mock_fin,
+        patch.object(core, "_recording_still_live", return_value=True),
     ):
         core.poll_active_recordings()
-        mock_fin.assert_not_called()
-        row = sessions.get(sid)
-        assert row is not None
-        assert row.reconnect_attempts == 1
-        assert row.ffmpeg_pid == 9999
+        reconcile_live(cfg, conn)
+
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.obs_ffmpeg_alive == 0
+    assert row.obs_still_live == 1
+    assert MonitorTaskRepo(conn).has_active_dedupe(f"reconnect_rec:{sid}")
 
 
 def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:

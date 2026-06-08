@@ -108,9 +108,10 @@ def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
 
 
 def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
-    """Offline timeline: poll enqueues finalize; drain is TaskScheduler responsibility."""
+    """Offline timeline: poll sets obs; reconcile enqueues finalize once."""
     from datetime import datetime, timedelta, timezone
 
+    from media2text.core.live.task_reconciler import reconcile_live
     from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
 
     monkeypatch.chdir(tmp_path)
@@ -138,7 +139,11 @@ def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
     past_start = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
     past_offline = (datetime.now(timezone.utc) - timedelta(seconds=20)).isoformat()
     conn.execute(
-        "UPDATE live_sessions SET offline_since_at = ?, started_at = ? WHERE id = ?",
+        """
+        UPDATE live_sessions
+        SET offline_since_at = ?, started_at = ?, obs_still_live = 0
+        WHERE id = ?
+        """,
         (past_offline, past_start, sid),
     )
     conn.commit()
@@ -151,7 +156,8 @@ def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
         patch.object(core, "_recording_still_live", return_value=False),
     ):
         core.poll_active_recordings()
-        core.poll_active_recordings()
+        reconcile_live(cfg, conn)
+        reconcile_live(cfg, conn)
 
     tasks = MonitorTaskRepo(conn).count_by_status()
     assert tasks.get("pending", 0) == 1

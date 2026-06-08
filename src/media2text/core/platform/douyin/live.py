@@ -80,34 +80,33 @@ class LiveWatcher:
         sessions = LiveSessionRepo(work_conn)
         if deadline is not None and time.monotonic() >= deadline:
             return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
-        finalized = core.poll_active_recordings()
+
+        core.poll_active_recordings()
+
         if deadline is not None and time.monotonic() >= deadline:
             return {
+                "probe": True,
                 "active": len(sessions.list_active()),
                 "errors": [],
                 "auth_required": False,
                 "platform_changed": False,
             }
-        started, started_ids, errors, auth_required, platform_changed = (
-            core.scan_and_start(creator_id=creator_id)
+
+        errors, auth_required, platform_changed = core.probe_live(
+            creator_id=creator_id,
+            deadline=deadline,
         )
-        if started_ids:
-            finalized.extend(
-                core.poll_active_recordings(skip_session_ids=started_ids)
-            )
         stale = sessions.mark_stale_recordings_failed()
         if stale:
             log.warning("live_stale_sessions_cleared", count=stale)
-        result: dict = {
-            "started": started,
+        return {
+            "probe": True,
+            "started": 0,
             "active": len(sessions.list_active()),
             "errors": errors,
             "auth_required": auth_required,
             "platform_changed": platform_changed,
         }
-        if finalized:
-            result["finalized"] = finalized
-        return result
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         poll = live_poll_interval_sec(self._cfg)
