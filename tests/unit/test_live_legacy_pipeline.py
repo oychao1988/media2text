@@ -165,6 +165,10 @@ def test_legacy_post_process_transcribe_when_no_sidecar(tmp_path, monkeypatch) -
 
     with (
         patch(
+            "media2text.core.live.post_process.transcribe_engine_available",
+            return_value=(True, None),
+        ),
+        patch(
             "media2text.core.transcribe.factory.create_transcribe_backend",
             return_value=mock_backend,
         ),
