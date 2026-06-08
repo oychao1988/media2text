@@ -52,10 +52,7 @@ def test_poll_active_writes_obs_only(tmp_path, monkeypatch) -> None:
     real.poll_active_session = LiveRecordingCore.poll_active_session.__get__(core, LiveRecordingCore)
 
     state = StateWriter(conn, cfg=cfg)
-    with patch(
-        "media2text.core.live.recording.upsert_live_snapshot",
-        return_value=False,
-    ):
+    with patch.object(state, "update_snapshot", return_value=False):
         real.poll_active_session(row, creator, state=state)
 
     enqueue.assert_not_called()

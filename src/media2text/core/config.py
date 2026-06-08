@@ -61,6 +61,7 @@ class MonitorConfig(BaseModel):
     probe_tick_budget_sec: int = 0
     probe_parallelism: int = 4
     probe_http_timeout_sec: int = 5
+    probe_guard_strict: bool = False
 
 
 class StreamingSttConfig(BaseModel):

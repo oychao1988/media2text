@@ -40,6 +40,10 @@ FORBIDDEN_PATTERNS = [
         "sessions write",
     ),
     (r"(?<![\w.])refresh_manifest\s*\(", "refresh_manifest"),
+    (r"(?<![\w.])upsert_live_snapshot\s*\(", "upsert_live_snapshot"),
+    (r"(?<![\w.])record_event\s*\(", "record_event"),
+    (r"(?<![\w.])enqueue_creator_updated\s*\(", "enqueue_creator_updated"),
+    (r"touch_snapshot_probe_failed\s*\(", "touch_snapshot_probe_failed"),
 ]
 
 

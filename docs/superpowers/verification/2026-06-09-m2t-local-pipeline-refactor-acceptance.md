@@ -13,6 +13,19 @@
 | G5 | Content 不拖 Probe | `test_live_tick_runs_while_slow_tick_blocks` | [x] | |
 | L6 | notify outbox only | `pytest tests/unit/test_notify_outbox.py -v` | | [x] |
 
+## Gap Fix（GF-1..4，#246–#249）
+
+| ID | 验收项 | 命令/证据 | 状态 |
+|----|--------|-----------|------|
+| GF-1 | sync→download 经 Reconciler；tick post_process 先于 content | `issue_verify.py --issue 246` | [x] |
+| GF-2 | notify outbox_only + daemon drain | `issue_verify.py --issue 247` | [x] |
+| GF-3 | SlowTick 独立 conn；legacy 死代码删除 | `issue_verify.py --issue 248` | [x] |
+| GF-4 | StateWriter snapshot/events；probe_parallelism | `issue_verify.py --issue 249` + `check_no_direct_live_repo.py` | [x] |
+
+```bash
+python scripts/epic_verify.py local-pipeline-spec-gap-fix
+```
+
 ## E2E（R2c-3 闸门）
 
 - [x] `tests/e2e/test_live_pipeline_reconciler.py`：mock is_live → prepare → offline → finalize
