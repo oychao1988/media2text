@@ -8,8 +8,9 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.notify.events import EventKind, NotifyEvent
 from media2text.core.notify.feishu import send_feishu_text
-from media2text.core.notify.outbox import NotifyDaemonGuard
+from media2text.core.notify.outbox import NotifyDaemonGuard, NotifyEventRepo
 from media2text.core.notify.sound import play_sound
+from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
 
@@ -33,6 +34,7 @@ _KIND_LABELS: dict[EventKind, str] = {
 
 class NotifyService:
     def __init__(self, cfg: AppConfig) -> None:
+        self._cfg = cfg
         self._notify = cfg.notify
 
     @property
@@ -42,12 +44,27 @@ class NotifyService:
     def emit(self, event: NotifyEvent) -> None:
         if not self._notify.enabled:
             return
+        if not self._event_enabled(event.kind):
+            return
         if self._notify.outbox_only and NotifyDaemonGuard.is_active():
-            log.debug(
-                "notify_sync_skipped_outbox_only",
-                kind=event.kind,
-                title=event.title,
-            )
+            conn = open_db(self._cfg)
+            try:
+                NotifyEventRepo(conn).enqueue(
+                    kind=event.kind.value,
+                    title=event.title,
+                    body=event.body,
+                    creator_id=event.creator_id,
+                    session_id=event.session_id,
+                    dedupe_key=event.dedupe_key,
+                )
+            finally:
+                conn.close()
+            log.debug("notify_enqueued", kind=event.kind, title=event.title)
+            return
+        self.deliver(event)
+
+    def deliver(self, event: NotifyEvent) -> None:
+        if not self._notify.enabled:
             return
         if not self._event_enabled(event.kind):
             return
@@ -63,7 +80,7 @@ class NotifyService:
         elif self._notify.feishu.enabled and not webhook:
             log.debug("notify_feishu_skipped", reason="missing_webhook_url")
 
-        log.info("notify_emitted", kind=event.kind, title=event.title)
+        log.info("notify_delivered", kind=event.kind, title=event.title)
 
     def _event_enabled(self, kind: EventKind) -> bool:
         events = self._notify.events

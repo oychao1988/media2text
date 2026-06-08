@@ -1,6 +1,6 @@
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, NotifyConfig
 from media2text.core.live.state_writer import StateWriter
-from media2text.core.notify.outbox import NotifyEventRepo
+from media2text.core.notify.outbox import NotifyDaemonGuard, NotifyEventRepo
 from media2text.core.storage.repos import (
     CreatorRepo,
     DesktopEventRepo,
@@ -11,10 +11,14 @@ from media2text.core.storage.repos import (
 
 def test_set_offline_since_dual_writes_obs(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
+    NotifyDaemonGuard.enter()
     cid = CreatorRepo(conn).add(
         sec_uid="MS4wLjABAAAAsw1",
         profile_url="https://example.com/u",

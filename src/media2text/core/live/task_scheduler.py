@@ -7,6 +7,7 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
+from media2text.core.notify.drain import drain_once
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
@@ -92,6 +93,10 @@ class TaskSchedulerLoop:
             limit=self._cfg.monitor.executor_max_parallel,
             min_priority=10,
         )
+        try:
+            drain_once(self._cfg, limit=20)
+        except Exception:
+            log.exception("notify_drain_tick_failed")
 
     def _run(self) -> None:
         NotifyDaemonGuard.enter()
