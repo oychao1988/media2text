@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,7 +45,7 @@ from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
 
 log = structlog.get_logger()
 FFMPEG_STARTUP_GRACE_SEC = 2
@@ -95,107 +94,6 @@ class LiveRecordingCore:
     @property
     def _stt_sessions(self) -> dict[str, StreamingSttSession]:
         return self._runtime.stt_sessions
-
-    def scan_and_start(
-        self, *, creator_id: str | None = None
-    ) -> tuple[list[dict], set[str], list[dict], bool, bool]:
-        targets = [
-            c for c in self._creators.list_monitored() if c.platform == self._platform
-        ]
-        if creator_id:
-            row = self._creators.get(creator_id)
-            targets = [row] if row and row.platform == self._platform else []
-
-        started: list[dict] = []
-        started_session_ids: set[str] = set()
-        errors: list[dict] = []
-        auth_required = False
-        platform_changed = False
-
-        scan_targets: list = []
-        for creator in targets:
-            if self._sessions.get_active_for_creator(creator.id):
-                continue
-            scan_targets.append(creator)
-
-        observed: list[tuple] = []
-        if scan_targets:
-            workers = min(
-                max(1, self._cfg.live.scan_concurrency),
-                len(scan_targets),
-            )
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                futures = {
-                    pool.submit(self._fetch_live_info, creator): creator
-                    for creator in scan_targets
-                }
-                for future in as_completed(futures):
-                    creator = futures[future]
-                    try:
-                        observed.append((creator, future.result()))
-                    except Exception as exc:  # noqa: BLE001
-                        log.warning(
-                            "live_status_check_failed",
-                            creator_id=creator.id,
-                            error=str(exc),
-                        )
-                        errors.append({"creator_id": creator.id, "error": str(exc)})
-
-        for creator, (live_info, err) in observed:
-            if err is not None:
-                _kind, err_payload = err
-                touch_snapshot_probe_failed(
-                    self._conn,
-                    creator.id,
-                    error=str(err_payload.get("error", _kind)),
-                )
-                enqueue_creator_updated(self._conn, creator.id)
-                if err_payload.get("auth_required"):
-                    auth_required = True
-                elif err_payload.get("platform_changed"):
-                    platform_changed = True
-                errors.append(err_payload)
-                continue
-            if live_info is not None:
-                if upsert_live_snapshot(self._conn, creator.id, live_info):
-                    enqueue_creator_updated(self._conn, creator.id)
-            if live_info is None or not live_info.is_live or not live_info.room_id:
-                continue
-            if not effective_auto_record(creator, self._cfg):
-                continue
-            room_id = live_info.room_id
-            try:
-                meta = self.maybe_start_recording(creator, live_info)
-            except AuthRequired as exc:
-                auth_required = True
-                errors.append(
-                    {"creator_id": creator.id, "error": str(exc), "auth_required": True}
-                )
-                continue
-            except PlatformChanged as exc:
-                platform_changed = True
-                errors.append(
-                    {
-                        "creator_id": creator.id,
-                        "error": str(exc),
-                        "platform_changed": True,
-                    }
-                )
-                continue
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "live_stream_url_resolve_failed",
-                    creator_id=creator.id,
-                    room_id=room_id,
-                    error=str(exc),
-                )
-                errors.append({"creator_id": creator.id, "error": str(exc)})
-                continue
-
-            started.append(meta)
-            started_session_ids.add(meta["session_id"])
-
-        return started, started_session_ids, errors, auth_required, platform_changed
 
     def observe_live_state(self, creator) -> tuple[LiveRoomInfo | None, dict | None]:
         """Fetch live status, upsert snapshot, enqueue outbox; no recording."""
@@ -559,54 +457,6 @@ class LiveRecordingCore:
                 continue
             self.poll_active_session(row, creator, state=state)
         return []
-
-    def _enqueue_finalize(self, session_id: str, creator_id: str) -> None:
-        task_id = MonitorTaskRepo(self._conn).enqueue(
-            creator_id=creator_id,
-            task_type="finalize",
-            dedupe_key=f"finalize:{session_id}",
-            priority=0,
-            payload_json=json.dumps({"session_id": session_id}),
-        )
-        if task_id:
-            log.info(
-                "monitor_task_enqueued",
-                task_type="finalize",
-                session_id=session_id,
-                task_id=task_id,
-            )
-
-    def _handle_ffmpeg_exit(self, row, creator) -> dict | None:
-        session_id = row.id
-        temp_path = row.temp_path
-        pid = row.ffmpeg_pid
-        if pid is None:
-            self._enqueue_finalize(session_id, creator.id)
-            return None
-
-        if self._cfg.live.ffmpeg_exit_recheck:
-            try:
-                still_live = self._recording_still_live(creator, row)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "live_ffmpeg_exit_recheck_failed",
-                    session_id=session_id,
-                    error=str(exc),
-                )
-                still_live = False
-        else:
-            still_live = False
-
-        attempts = row.reconnect_attempts or 0
-        if (
-            still_live
-            and attempts < self._cfg.live.max_reconnect_attempts
-            and temp_path
-        ):
-            return self._reconnect_segment(session_id, creator, temp_path, pid)
-
-        self._enqueue_finalize(session_id, creator.id)
-        return None
 
     def _transcript_anchor(self, session_id: str, temp_path: str | None) -> Path:
         anchor = self._streaming_transcript_anchor.get(session_id)

@@ -10,7 +10,12 @@ app = typer.Typer(help="Unified creator monitoring (live + VOD)")
 
 @app.command("watch")
 def watch(
-    daemon: bool = typer.Option(False, "--daemon"),
+    daemon: bool = typer.Option(
+        False,
+        "--daemon",
+        help="Run continuously (recommended). Without --daemon: single debug round only; "
+        "does not guarantee full Execution Engine semantics.",
+    ),
     creator_id: str | None = typer.Option(None, "--creator"),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:

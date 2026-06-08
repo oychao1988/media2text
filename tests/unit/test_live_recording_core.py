@@ -145,7 +145,7 @@ def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:
     with (
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.manifest.refresh_manifest"),
         patch.object(core, "_process_alive", return_value=False),
     ):
         def _fake_remux(**kwargs):

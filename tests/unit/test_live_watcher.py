@@ -148,7 +148,7 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
     with (
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest") as mock_refresh,
+        patch("media2text.core.live.state_writer.refresh_manifest") as mock_refresh,
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):
@@ -203,7 +203,7 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
     with (
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.live.state_writer.refresh_manifest"),
         patch.object(watcher._notify, "emit"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
@@ -248,7 +248,7 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
     with (
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.live.state_writer.refresh_manifest"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):
