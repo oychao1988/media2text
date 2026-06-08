@@ -39,7 +39,7 @@ R2c-1/2 在 flag 保护下落地 Reconciler 与 Probe Guard 后，本 PR **删�
 ### 可观测
 
 - [x] `media2text live status --json` 仍含 monitor_tasks 统计（回归）
-- [x] `media2text doctor --json` exit 0
+- [x] `media2text doctor --json` exit 0（**本地/开发机**；CI 无 ffmpeg/session，不纳入 issue_verify）
 
 ## 验证命令
 
@@ -48,7 +48,6 @@ source .venv/bin/activate
 pytest tests/unit/test_probe_guard.py tests/unit/test_task_reconciler.py tests/unit/test_poll_active_obs.py tests/unit/test_live_worker_tasks.py tests/unit/test_live_scheduler.py tests/unit/test_task_scheduler.py tests/unit/test_session_runtime.py -v
 pytest tests/e2e/test_live_pipeline_reconciler.py -v
 ruff check src/media2text/core/platform/douyin/live.py src/media2text/core/platform/bilibili/live.py src/media2text/core/live/recording.py src/media2text/core/config.py
-media2text doctor --json
 media2text live status --json
 ```
 
