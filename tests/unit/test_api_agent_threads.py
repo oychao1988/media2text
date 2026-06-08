@@ -122,3 +122,58 @@ def test_activate_thread_updates_binding(api_client, workspace) -> None:
     thread = r2.json()["thread"]
     assert thread["contextMode"] == "transcript"
     assert thread["sessionId"] == "sess-1"
+
+
+def test_activate_thread_attachments_round_trip(api_client, workspace) -> None:
+    cid = _seed_creator(workspace)
+    r = api_client.post("/api/agent/threads", json={"creatorId": cid, "title": "attach"})
+    tid = r.json()["thread"]["id"]
+    attachments = [
+        {
+            "id": "transcript:creators/x/live/a.transcript.json",
+            "docType": "transcript",
+            "path": "creators/x/live/a.transcript.json",
+            "label": "直播",
+            "creatorId": cid,
+            "creatorName": "博主",
+            "sessionKind": "live",
+            "itemId": "sess-1",
+            "source": "session",
+        },
+        {
+            "id": "summary:creators/x/live/a.summary.md",
+            "docType": "summary",
+            "path": "creators/x/live/a.summary.md",
+            "label": "直播",
+            "creatorId": cid,
+            "creatorName": "博主",
+            "sessionKind": "live",
+            "itemId": "sess-1",
+            "source": "session",
+        },
+    ]
+    r2 = api_client.patch(
+        f"/api/agent/threads/{tid}/activate",
+        json={
+            "creatorId": cid,
+            "sessionId": "sess-1",
+            "sessionKind": "live",
+            "contextMode": "both",
+            "attachments": attachments,
+        },
+    )
+    assert r2.status_code == 200
+    thread = r2.json()["thread"]
+    assert thread["attachments"] == attachments
+    assert thread["transcriptPath"] == "creators/x/live/a.transcript.json"
+    assert thread["summaryPath"] == "creators/x/live/a.summary.md"
+
+    r3 = api_client.patch(
+        f"/api/agent/threads/{tid}/activate",
+        json={"creatorId": cid, "sessionId": "sess-1", "attachments": []},
+    )
+    assert r3.status_code == 200
+    cleared = r3.json()["thread"]
+    assert cleared["attachments"] == []
+    assert cleared.get("transcriptPath") is None
+    assert cleared.get("summaryPath") is None

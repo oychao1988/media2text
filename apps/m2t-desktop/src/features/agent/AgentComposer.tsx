@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { M2tSelect } from '../../components/M2tSelect';
+import { AgentAttachmentStrip } from './AgentAttachmentStrip';
+import type { ContextAttachment, ContextMode } from './contextAttachment';
 import { useAutoResizeTextarea } from './useAutoResizeTextarea';
 
 type AgentComposerProps = {
@@ -8,6 +10,10 @@ type AgentComposerProps = {
   model: string;
   providerModels: string[];
   placeholder?: string;
+  attachments?: ContextAttachment[];
+  contextMode?: ContextMode;
+  sidebarCreatorId?: string | null;
+  onRemoveAttachment?: (id: string) => void;
   onModelChange: (model: string) => void;
   onSend: (text: string) => void;
 };
@@ -53,6 +59,10 @@ export function AgentComposer({
   model,
   providerModels,
   placeholder: placeholderProp,
+  attachments = [],
+  contextMode = 'both',
+  sidebarCreatorId = null,
+  onRemoveAttachment,
   onModelChange,
   onSend,
 }: AgentComposerProps) {
@@ -90,6 +100,12 @@ export function AgentComposer({
         submit();
       }}
     >
+      <AgentAttachmentStrip
+        attachments={attachments}
+        contextMode={contextMode}
+        sidebarCreatorId={sidebarCreatorId}
+        onRemove={onRemoveAttachment ?? (() => {})}
+      />
       <textarea
         ref={inputRef}
         className="agent-composer-input"

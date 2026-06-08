@@ -1,4 +1,5 @@
 import type { PiEvent, ToolResultPayload } from '@m2t/shared';
+import type { ContextAttachment } from './contextAttachment';
 
 export type ChatMessage =
   | {
@@ -39,6 +40,10 @@ export type ThreadRow = {
   provider_name: string | null;
   model: string;
   updated_at?: string | null;
+  context_mode?: string | null;
+  transcript_path?: string | null;
+  summary_path?: string | null;
+  attachments?: ContextAttachment[] | null;
 };
 
 export type ChatProvider = {

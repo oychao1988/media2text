@@ -4996,6 +4996,76 @@ body.resize-row-active * {
   padding: 0 10px 10px;
 }
 
+.agent-attachment-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 4px 4px;
+}
+
+.agent-attachment-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px 4px 8px;
+  border-radius: 8px;
+  background: var(--surface-2, rgba(0, 0, 0, 0.04));
+  border: 1px solid var(--border-subtle, rgba(0, 0, 0, 0.08));
+  font-size: 12px;
+  line-height: 1.3;
+}
+
+.agent-attachment-chip--muted {
+  opacity: 0.45;
+}
+
+.agent-attachment-meta {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.agent-attachment-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 220px;
+  color: var(--text);
+}
+
+.agent-attachment-type {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.agent-attachment-remove {
+  flex-shrink: 0;
+  width: 20px;
+  height: 20px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+}
+
+.agent-attachment-remove:hover {
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--text);
+}
+
+[data-theme='dark'] .agent-attachment-chip {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+}
+
+[data-theme='dark'] .agent-attachment-remove:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
 .agent-composer-input {
   width: 100%;
   resize: none;
