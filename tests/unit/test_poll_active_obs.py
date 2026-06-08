@@ -1,8 +1,6 @@
-from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
-from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
