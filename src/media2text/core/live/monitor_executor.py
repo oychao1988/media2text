@@ -231,13 +231,7 @@ def _run_sync_catalog(
     if creator:
         _emit_sync_notifications(creator, outcome, new_content_kind=new_content_kind, notify=notify)
     if outcome.get("ok"):
-        MonitorTaskRepo(conn).enqueue(
-            creator_id=task.creator_id,
-            task_type="download",
-            dedupe_key=f"download:{task.creator_id}",
-            priority=10,
-            payload_json=json.dumps({"platform": platform}),
-        )
+        CreatorRepo(conn).mark_sync_needs_download(task.creator_id)
     return {"sync": outcome}
 
 

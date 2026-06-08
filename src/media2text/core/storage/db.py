@@ -236,6 +236,17 @@ def _migrate_creators_v6(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_CREATOR_V7_COLUMNS = (("sync_needs_download", "INTEGER NOT NULL DEFAULT 0"),)
+
+
+def _migrate_creators_v7(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
+    for name, col_type in _CREATOR_V7_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE creators ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 _LIVE_SESSION_COLUMNS = (
     ("transcribe_status", "TEXT"),
     ("cloud_upload_status", "TEXT"),
@@ -698,6 +709,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         conn.executescript(SCHEMA)
         _migrate_creators(conn)
         _migrate_creators_v6(conn)
+        _migrate_creators_v7(conn)
         _migrate_live_sessions(conn)
         _migrate_live_sessions_v2(conn)
         _migrate_live_sessions_v3(conn)

@@ -24,6 +24,7 @@ monitor:
   task_max_retries: 3  # monitor_tasks auto-retry before DLQ (status=failed)
   # Execution Engine v2 (Local Pipeline Refactor)
   scheduler_interval_sec: 1
+  # false = legacy path without TaskReconciler (startup warning); keep true in production
   reconciler_enabled: true
   live_worker_max_parallel: 1
   live_lane_min_claim_per_tick: 1

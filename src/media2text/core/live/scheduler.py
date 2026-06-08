@@ -181,6 +181,11 @@ class MonitorScheduler:
         self._scheduler_loop: TaskSchedulerLoop | None = None
 
     def start(self, *, creator_id: str | None = None) -> None:
+        if not self._cfg.monitor.reconciler_enabled:
+            log.warning(
+                "reconciler_disabled_legacy_path",
+                hint="set monitor.reconciler_enabled=true; legacy probe enqueue removed",
+            )
         live_poll = _live_poll_interval(self._cfg)
         bcfg = self._cfg.platforms.bilibili
         log.info(
