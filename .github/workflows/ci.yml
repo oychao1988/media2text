@@ -28,6 +28,9 @@ jobs:
       - name: Ruff
         run: ruff check src tests
 
+      - name: Live session write guard (R3b)
+        run: python scripts/check_no_direct_live_repo.py
+
       - name: Pyright (agent kernel)
         run: pyright src/media2text/agent/
 

@@ -44,7 +44,6 @@ from media2text.core.live.transcript_writer import (
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
 from media2text.core.live.state_writer import StateWriter
-from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
@@ -70,6 +69,7 @@ class LiveRecordingCore:
         self._conn = conn
         self._creators = CreatorRepo(conn)
         self._sessions = LiveSessionRepo(conn)
+        self._state = StateWriter(conn, cfg=cfg, notify=notify)
         self._jobs = PostProcessJobRepo(conn)
         self._adapter = adapter
         self._platform = platform
@@ -392,7 +392,7 @@ class LiveRecordingCore:
         with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
             stt_session.start()
         self._stt_sessions[session_id] = stt_session
-        self._sessions.update_status(session_id, transcribe_status="streaming")
+        self._state.update_status(session_id, transcribe_status="streaming")
         record_event(
             self._conn,
             session_id=session_id,
@@ -806,8 +806,8 @@ class LiveRecordingCore:
             if not streaming_merge:
                 self._mark_streaming_degraded(session_id, reason="ffmpeg_reconnect")
 
-        self._sessions.append_segment_path(session_id, temp_path)
-        attempt = self._sessions.increment_reconnect_attempts(session_id)
+        self._state.append_segment_path(session_id, temp_path)
+        attempt = self._state.increment_reconnect_attempts(session_id)
 
         try:
             live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
@@ -839,7 +839,7 @@ class LiveRecordingCore:
             stream_url=stream_url,
             output_path=new_temp,
         )
-        self._sessions.update_recording_state(
+        self._state.update_recording_state(
             session_id,
             ffmpeg_pid=new_proc.pid,
             temp_path=str(new_temp),
@@ -899,7 +899,7 @@ class LiveRecordingCore:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         temp_path = live_dir / f"{stamp}.flv"
 
-        session_id = self._sessions.create(
+        session_id = self._state.create_session(
             creator_id=creator_id,
             room_id=room_id,
             temp_path=str(temp_path),
@@ -917,7 +917,7 @@ class LiveRecordingCore:
                 temp_path=temp_path,
             )
         except Exception as exc:
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="failed",
                 error=str(exc)[:500],
@@ -978,7 +978,7 @@ class LiveRecordingCore:
             stream_url=stream_url,
             output_path=temp_path,
         )
-        self._sessions.update_recording_state(
+        self._state.update_recording_state(
             session_id,
             ffmpeg_pid=proc.pid,
             temp_path=str(temp_path),
@@ -992,7 +992,7 @@ class LiveRecordingCore:
                 with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                     stt_session.start()
                 self._stt_sessions[session_id] = stt_session
-                self._sessions.update_status(session_id, transcribe_status="streaming")
+                self._state.update_status(session_id, transcribe_status="streaming")
                 record_event(
                     self._conn,
                     session_id=session_id,
@@ -1034,7 +1034,7 @@ class LiveRecordingCore:
                 err_parts.append(f"ffmpeg_exited_early:{exit_code}:{err_tail}")
             if stt_failed:
                 err_parts.append(f"streaming_stt_failed:{stt_error}")
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="failed",
                 error="; ".join(err_parts) or "live_start_failed",
@@ -1209,7 +1209,7 @@ class LiveRecordingCore:
         self._stream_urls.pop(session_id, None)
         transcript_ok = False
         if not temp_path:
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id, status="failed", error="missing temp_path", ended=True
             )
             self._clear_streaming_session_state(session_id)
@@ -1221,7 +1221,7 @@ class LiveRecordingCore:
         flv_sources = segment_paths + [current]
         valid_flvs = [p for p in flv_sources if p.is_file() and p.stat().st_size > 0]
         if not valid_flvs:
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="failed",
                 error="empty_recording",
@@ -1322,14 +1322,14 @@ class LiveRecordingCore:
             index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
 
         self._clear_streaming_session_state(session_id)
-        self._sessions.update_status(
+        self._state.update_status(
             session_id,
             status="completed",
             local_path=str(media_path),
             transcribe_status="completed" if transcript_ok else "failed",
             ended=True,
         )
-        self._sessions.clear_pid(session_id)
+        self._state.clear_pid(session_id)
         log.info(
             "live_recording_completed_streaming",
             session_id=session_id,
@@ -1348,8 +1348,7 @@ class LiveRecordingCore:
             creator_id=creator.id,
             mp4_path=str(media_path),
         )
-        refresh_manifest(
-            self._conn,
+        self._state.refresh_creator_manifest(
             sec_uid=creator.sec_uid,
             workspace=self._ws,
             platform=creator.platform,
@@ -1396,7 +1395,7 @@ class LiveRecordingCore:
         self._stream_urls.pop(session_id, None)
 
         if not temp_path:
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id, status="failed", error="missing temp_path", ended=True
             )
             return None
@@ -1408,7 +1407,7 @@ class LiveRecordingCore:
         sources = segments + [current]
         valid_sources = [p for p in sources if p.is_file() and p.stat().st_size > 0]
         if not valid_sources:
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="failed",
                 error="empty_recording",
@@ -1421,7 +1420,7 @@ class LiveRecordingCore:
         if len(valid_sources) == 1 and valid_sources[0] == current:
             mp4 = current.with_suffix(".mp4")
 
-        self._sessions.update_status(session_id, status="remuxing")
+        self._state.update_status(session_id, status="remuxing")
         try:
             with stage_event(self._conn, session_id=session_id, stage="remux"):
                 if len(valid_sources) == 1:
@@ -1441,17 +1440,17 @@ class LiveRecordingCore:
                     for seg in valid_sources:
                         if seg.suffix.lower() in (".flv", ".ts", ".mkv"):
                             seg.unlink(missing_ok=True)
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="completed",
                 local_path=str(mp4),
                 ended=True,
             )
-            self._sessions.clear_pid(session_id)
+            self._state.clear_pid(session_id)
             log.info("live_recording_completed", session_id=session_id, path=str(mp4))
         except Exception as exc:  # noqa: BLE001
             seg_list = ", ".join(str(p) for p in valid_sources)
-            self._sessions.update_status(
+            self._state.update_status(
                 session_id,
                 status="failed",
                 error=f"{exc}; segments={seg_list}",
@@ -1472,8 +1471,7 @@ class LiveRecordingCore:
             creator_id=creator.id,
             mp4_path=str(mp4),
         )
-        refresh_manifest(
-            self._conn,
+        self._state.refresh_creator_manifest(
             sec_uid=creator.sec_uid,
             workspace=self._ws,
             platform=creator.platform,

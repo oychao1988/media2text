@@ -7,6 +7,7 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.state_writer import StateWriter
 from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.notify import NotifyService
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
@@ -96,7 +97,7 @@ class LiveWatcher:
             creator_id=creator_id,
             deadline=deadline,
         )
-        stale = sessions.mark_stale_recordings_failed()
+        stale = StateWriter(work_conn, cfg=self._cfg).mark_stale_recordings_failed()
         if stale:
             log.warning("live_stale_sessions_cleared", count=stale)
         return {

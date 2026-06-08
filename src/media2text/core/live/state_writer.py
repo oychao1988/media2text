@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+import json
+import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 from media2text.core.config import AppConfig
-from media2text.core.desktop.state_events import enqueue_creator_updated
-from media2text.core.live.pipeline_events import record_event
+from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 
 
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
 class StateWriter:
-    """Single write path for session obs_* and offline semantics (R2c-1 minimal set)."""
+    """Single write path for live session mutations (R2c minimal → R3b full)."""
 
     def __init__(
         self,
@@ -34,7 +40,7 @@ class StateWriter:
         stt_alive: bool | None,
         still_live: bool | None,
     ) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now = _now_iso()
         self._conn.execute(
             """
             UPDATE live_sessions SET
@@ -54,28 +60,203 @@ class StateWriter:
         )
         self._conn.commit()
 
-    def set_offline_since(self, session_id: str, iso: str, *, creator_id: str) -> None:
-        self._sessions.set_offline_since(session_id, iso)
-        self.write_obs(session_id, still_live=False, ffmpeg_alive=None, stt_alive=None)
-        record_event(
-            self._conn,
-            session_id=session_id,
-            stage="recording",
-            status="offline_pending",
+    def create_session(
+        self,
+        *,
+        creator_id: str,
+        room_id: str | None,
+        temp_path: str,
+        ffmpeg_pid: int | None = None,
+        platform_live_started_at: str | None = None,
+        pipeline_mode: str | None = None,
+    ) -> str:
+        return self._sessions.create(
+            creator_id=creator_id,
+            room_id=room_id,
+            temp_path=temp_path,
+            ffmpeg_pid=ffmpeg_pid,
+            platform_live_started_at=platform_live_started_at,
+            pipeline_mode=pipeline_mode,
         )
+
+    def update_status(
+        self,
+        session_id: str,
+        *,
+        status: str | None = None,
+        local_path: str | None = None,
+        error: str | None = None,
+        ended: bool = False,
+        transcribe_status: str | None = None,
+        cloud_upload_status: str | None = None,
+        cloud_file_id: str | None = None,
+        cloud_relative_path: str | None = None,
+    ) -> None:
+        self._sessions.update_status(
+            session_id,
+            status=status,
+            local_path=local_path,
+            error=error,
+            ended=ended,
+            transcribe_status=transcribe_status,
+            cloud_upload_status=cloud_upload_status,
+            cloud_file_id=cloud_file_id,
+            cloud_relative_path=cloud_relative_path,
+        )
+
+    def update_recording_state(
+        self,
+        session_id: str,
+        *,
+        ffmpeg_pid: int,
+        temp_path: str,
+    ) -> None:
+        self._sessions.update_recording_state(
+            session_id,
+            ffmpeg_pid=ffmpeg_pid,
+            temp_path=temp_path,
+        )
+
+    def clear_pid(self, session_id: str) -> None:
+        self._sessions.clear_pid(session_id)
+
+    def append_segment_path(self, session_id: str, path: str) -> None:
+        self._sessions.append_segment_path(session_id, path)
+
+    def increment_reconnect_attempts(self, session_id: str) -> int:
+        return self._sessions.increment_reconnect_attempts(session_id)
+
+    def mark_stale_recordings_failed(self) -> int:
+        return self._sessions.mark_stale_recordings_failed()
+
+    def refresh_creator_manifest(
+        self,
+        *,
+        sec_uid: str,
+        workspace: Path,
+        platform: str,
+    ) -> None:
+        refresh_manifest(
+            self._conn,
+            sec_uid=sec_uid,
+            workspace=workspace,
+            platform=platform,
+        )
+
+    def set_offline_since(self, session_id: str, iso: str, *, creator_id: str) -> None:
+        now = _now_iso()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._conn.execute(
+                "UPDATE live_sessions SET offline_since_at = ? WHERE id = ?",
+                (iso, session_id),
+            )
+            self._conn.execute(
+                """
+                UPDATE live_sessions SET
+                  obs_still_live = 0,
+                  obs_polled_at = ?
+                WHERE id = ?
+                """,
+                (now, session_id),
+            )
+            self._insert_pipeline_event(
+                session_id=session_id,
+                stage="recording",
+                status="offline_pending",
+            )
+            self._enqueue_creator_updated_no_commit(creator_id)
+            self._enqueue_notify_outbox(
+                creator_id=creator_id,
+                session_id=session_id,
+                kind=EventKind.LIVE_ENDED,
+            )
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
         self._emit_live_ended(creator_id, session_id)
-        enqueue_creator_updated(self._conn, creator_id)
 
     def clear_offline_since(self, session_id: str, *, creator_id: str) -> None:
-        self._sessions.clear_offline_since(session_id)
-        self.write_obs(session_id, still_live=True, ffmpeg_alive=None, stt_alive=None)
-        record_event(
-            self._conn,
-            session_id=session_id,
-            stage="recording",
-            status="offline_cancelled",
+        now = _now_iso()
+        self._conn.execute("BEGIN IMMEDIATE")
+        try:
+            self._conn.execute(
+                "UPDATE live_sessions SET offline_since_at = NULL WHERE id = ?",
+                (session_id,),
+            )
+            self._conn.execute(
+                """
+                UPDATE live_sessions SET
+                  obs_still_live = 1,
+                  obs_polled_at = ?
+                WHERE id = ?
+                """,
+                (now, session_id),
+            )
+            self._insert_pipeline_event(
+                session_id=session_id,
+                stage="recording",
+                status="offline_cancelled",
+            )
+            self._enqueue_creator_updated_no_commit(creator_id)
+            self._conn.commit()
+        except Exception:
+            self._conn.rollback()
+            raise
+
+    def _insert_pipeline_event(
+        self,
+        *,
+        session_id: str,
+        stage: str,
+        status: str,
+        job_id: str | None = None,
+        detail: dict | None = None,
+    ) -> str:
+        event_id = str(uuid.uuid4())
+        now = _now_iso()
+        self._conn.execute(
+            """
+            INSERT INTO live_pipeline_events
+              (id, session_id, job_id, stage, status, detail_json,
+               started_at, ended_at, duration_ms)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                event_id,
+                session_id,
+                job_id,
+                stage,
+                status,
+                json.dumps(detail, ensure_ascii=False) if detail else None,
+                now,
+                now,
+                0,
+            ),
         )
-        enqueue_creator_updated(self._conn, creator_id)
+        return event_id
+
+    def _enqueue_creator_updated_no_commit(self, creator_id: str) -> str:
+        event_id = str(uuid.uuid4())
+        now = _now_iso()
+        self._conn.execute(
+            """
+            INSERT INTO desktop_events (id, event_type, creator_id, payload_json, created_at)
+            VALUES (?, 'creator.updated', ?, NULL, ?)
+            """,
+            (event_id, creator_id, now),
+        )
+        return event_id
+
+    def _enqueue_notify_outbox(
+        self,
+        *,
+        creator_id: str,
+        session_id: str,
+        kind: EventKind,
+    ) -> None:
+        """Placeholder for #237 notify_events outbox; sync notify remains in _emit_live_ended."""
 
     def _emit_live_ended(self, creator_id: str, session_id: str) -> None:
         creator = self._creators.get(creator_id)
