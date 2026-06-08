@@ -20,6 +20,7 @@ class CreatorRow:
     vod_due_at: str | None = None
     archive_due_at: str | None = None
     dynamic_due_at: str | None = None
+    sync_needs_download: int = 0
 
 
 @dataclass

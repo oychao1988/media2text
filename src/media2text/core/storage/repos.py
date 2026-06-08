@@ -176,6 +176,20 @@ class CreatorRepo:
         next_at = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
         self.set_dynamic_due(creator_id, next_at.isoformat())
 
+    def mark_sync_needs_download(self, creator_id: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET sync_needs_download = 1 WHERE id = ?",
+            (creator_id,),
+        )
+        self._conn.commit()
+
+    def clear_sync_needs_download(self, creator_id: str) -> None:
+        self._conn.execute(
+            "UPDATE creators SET sync_needs_download = 0 WHERE id = ?",
+            (creator_id,),
+        )
+        self._conn.commit()
+
     def update_profile(
         self,
         creator_id: str,

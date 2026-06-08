@@ -249,3 +249,43 @@ def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> N
     loop.tick_once(conn)
     assert calls.index("live") < calls.index("drain")
     assert calls.index("content") < calls.index("drain")
+
+
+def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    conn = open_db(cfg)
+    order: list[str] = []
+    watcher = MonitorWatcher(cfg)
+    pool = MagicMock()
+    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
+
+    def track_drain(*args, **kwargs):
+        min_priority = kwargs.get("min_priority", 10)
+        if min_priority >= 10:
+            order.append("content")
+        else:
+            order.append("live")
+        return 0
+
+    pool.drain_pending = MagicMock(side_effect=track_drain)
+    post_pool = MagicMock()
+    post_pool.drain_pending = MagicMock(side_effect=lambda *a, **k: order.append("post"))
+    stop = threading.Event()
+    loop = TaskSchedulerLoop(
+        cfg,
+        watcher,
+        pool,
+        post_pool=post_pool,
+        stop=stop,
+    )
+
+    import media2text.core.live.task_scheduler as task_scheduler_mod
+
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_live", lambda *a, **k: 0)
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
+    loop.tick_once(conn)
+    assert order.index("post") < order.index("content")

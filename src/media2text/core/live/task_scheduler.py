@@ -19,7 +19,7 @@ log = structlog.get_logger()
 
 
 class TaskSchedulerLoop:
-    """1s tick (R2a): p0 drain → live workers → content → post_process.
+    """1s tick (R2a): p0 drain → live workers → post_process → content.
 
     R2c+ (reconciler_enabled): reconcile_live → reconcile_content → then drains (D4).
     """
@@ -78,6 +78,12 @@ class TaskSchedulerLoop:
             min_priority=1,
             max_priority=9,
         )
+        self._post_pool.drain_pending(
+            self._cfg,
+            conn,
+            notify=self._watcher._notify,
+            limit=self._cfg.live.post_process_max_parallel,
+        )
         self._monitor_pool.drain_pending(
             self._cfg,
             conn,
@@ -85,12 +91,6 @@ class TaskSchedulerLoop:
             watcher=self._watcher,
             limit=self._cfg.monitor.executor_max_parallel,
             min_priority=10,
-        )
-        self._post_pool.drain_pending(
-            self._cfg,
-            conn,
-            notify=self._watcher._notify,
-            limit=self._cfg.live.post_process_max_parallel,
         )
 
     def _run(self) -> None:

@@ -176,7 +176,7 @@ def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
 
 
 def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
-    """RC-01..03: ensure content sync tasks from creator *_due_at columns."""
+    """RC-01..04: ensure content sync tasks from creator *_due_at columns."""
     ensured = 0
     now = datetime.now(timezone.utc)
     tasks = MonitorTaskRepo(conn)
@@ -198,6 +198,24 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                     creators_repo.schedule_vod_poll(
                         creator.id, cfg.monitor.vod_poll_interval_sec
                     )
+
+        if creator.sync_needs_download:
+            download_key = f"download:{creator.id}"
+            if log_only:
+                ensured += 1
+            elif tasks.has_active_dedupe(download_key):
+                creators_repo.clear_sync_needs_download(creator.id)
+            elif _maybe_ensure(
+                tasks,
+                log_only=False,
+                creator_id=creator.id,
+                task_type="download",
+                dedupe_key=download_key,
+                priority=10,
+                payload_json=json.dumps({"platform": creator.platform}),
+            ):
+                creators_repo.clear_sync_needs_download(creator.id)
+                ensured += 1
 
         if creator.platform != "bilibili":
             continue
