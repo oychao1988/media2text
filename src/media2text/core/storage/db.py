@@ -286,6 +286,22 @@ def _migrate_live_sessions_v4(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+_LIVE_SESSION_V5_COLUMNS = (
+    ("obs_ffmpeg_alive", "INTEGER"),
+    ("obs_stt_alive", "INTEGER"),
+    ("obs_still_live", "INTEGER"),
+    ("obs_polled_at", "TEXT"),
+)
+
+
+def _migrate_live_sessions_v5(conn: sqlite3.Connection) -> None:
+    existing = {row[1] for row in conn.execute("PRAGMA table_info(live_sessions)").fetchall()}
+    for name, col_type in _LIVE_SESSION_V5_COLUMNS:
+        if name not in existing:
+            conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {col_type}")
+    conn.commit()
+
+
 def _migrate_desktop_v1(conn: sqlite3.Connection) -> None:
     creator_cols = {row[1] for row in conn.execute("PRAGMA table_info(creators)").fetchall()}
     if "auto_record_override" not in creator_cols:
@@ -647,6 +663,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_live_sessions_v2(conn)
         _migrate_live_sessions_v3(conn)
         _migrate_live_sessions_v4(conn)
+        _migrate_live_sessions_v5(conn)
         _migrate_desktop_v1(conn)
         _migrate_desktop_v2(conn)
         _migrate_monitor_v1(conn)

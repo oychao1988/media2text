@@ -308,3 +308,117 @@ def test_retry_failed_resets_dlq(tmp_path, monkeypatch) -> None:
     assert row.status == "pending"
     assert row.attempt_count == 0
     assert row.error is None
+
+
+def test_ensure_task_idempotent(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAensure1",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    dedupe = f"prepare:{cid}"
+    id1 = repo.ensure_task(
+        creator_id=cid,
+        task_type="prepare_live_recording",
+        dedupe_key=dedupe,
+        priority=1,
+    )
+    id2 = repo.ensure_task(
+        creator_id=cid,
+        task_type="prepare_live_recording",
+        dedupe_key=dedupe,
+        priority=1,
+    )
+    assert id1 is not None
+    assert id2 is None
+
+
+def test_cancel_pending_only_pending(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAcancel1",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    tid = repo.enqueue(
+        creator_id=cid,
+        task_type="finalize",
+        dedupe_key="finalize:s1",
+        priority=0,
+    )
+    assert tid is not None
+    n = repo.cancel_pending(dedupe_key="finalize:s1")
+    assert n == 1
+    row = repo.get(tid)
+    assert row is not None
+    assert row.status == "cancelled"
+
+
+def test_ensure_task_noop_when_running(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAensure2",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    dedupe = "finalize:s1"
+    tid = repo.enqueue(
+        creator_id=cid,
+        task_type="finalize",
+        dedupe_key=dedupe,
+        priority=0,
+    )
+    assert tid is not None
+    repo.mark_running(tid)
+    assert (
+        repo.ensure_task(
+            creator_id=cid,
+            task_type="finalize",
+            dedupe_key=dedupe,
+            priority=0,
+        )
+        is None
+    )
+
+
+def test_has_active_dedupe_pending_and_running(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAdedupe2",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    dedupe = f"prepare:{cid}"
+    tid = repo.ensure_task(
+        creator_id=cid,
+        task_type="prepare_live_recording",
+        dedupe_key=dedupe,
+        priority=1,
+    )
+    assert tid is not None
+    assert repo.has_active_dedupe(dedupe) is True
+    repo.mark_running(tid)
+    assert repo.has_active_dedupe(dedupe) is True
+    repo.mark_done(tid)
+    assert repo.has_active_dedupe(dedupe) is False

@@ -1327,6 +1327,59 @@ class MonitorTaskRepo:
         except sqlite3.IntegrityError:
             return None
 
+    def ensure_task(
+        self,
+        *,
+        creator_id: str,
+        task_type: str,
+        dedupe_key: str,
+        priority: int,
+        payload_json: str | None = None,
+    ) -> str | None:
+        return self.enqueue(
+            creator_id=creator_id,
+            task_type=task_type,
+            dedupe_key=dedupe_key,
+            priority=priority,
+            payload_json=payload_json,
+        )
+
+    def cancel_pending(self, *, dedupe_key: str) -> int:
+        now = datetime.now(timezone.utc).isoformat()
+        cur = self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'cancelled', finished_at = ?
+            WHERE dedupe_key = ? AND status = 'pending'
+            """,
+            (now, dedupe_key),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
+    def has_active_dedupe(self, dedupe_key: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM monitor_tasks
+            WHERE dedupe_key = ? AND status IN ('pending', 'running')
+            LIMIT 1
+            """,
+            (dedupe_key,),
+        ).fetchone()
+        return row is not None
+
+    def mark_running(self, task_id: str) -> None:
+        now = datetime.now(timezone.utc).isoformat()
+        self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'running', started_at = ?
+            WHERE id = ? AND status = 'pending'
+            """,
+            (now, task_id),
+        )
+        self._conn.commit()
+
     def get(self, task_id: str) -> MonitorTaskRow | None:
         row = self._conn.execute(
             "SELECT * FROM monitor_tasks WHERE id = ?",
