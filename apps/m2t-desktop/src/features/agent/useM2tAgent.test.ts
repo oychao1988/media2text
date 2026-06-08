@@ -183,6 +183,62 @@ describe('useM2tAgent (M2 WS + turn)', () => {
     });
   });
 
+  it('PATCHes activate with attachments round-trip', async () => {
+    const attachments = [
+      {
+        id: 'transcript:creators/a/x.transcript.json',
+        docType: 'transcript' as const,
+        path: 'creators/a/x.transcript.json',
+        label: '场次',
+        creatorId: 'creator-1',
+        creatorName: '博主',
+        sessionKind: 'live' as const,
+        itemId: 's1',
+        source: 'session' as const,
+      },
+    ];
+    renderHook(() =>
+      useM2tAgent({
+        threadId: 'thread-1',
+        creatorId: 'creator-1',
+        threadCreatorId: 'creator-1',
+        sessionContext: {
+          sessionId: 's1',
+          sessionKind: 'live',
+          contextMode: 'both',
+          attachments,
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(apiPatch).toHaveBeenCalled();
+      const [, body] = apiPatch.mock.calls[0]!;
+      expect(body).toMatchObject({ attachments });
+    });
+  });
+
+  it('shows toast when activate PATCH fails', async () => {
+    apiPatch.mockRejectedValueOnce(new api.ApiError('network', 500));
+    renderHook(() =>
+      useM2tAgent({
+        threadId: 'thread-1',
+        creatorId: 'creator-1',
+        sessionContext: {
+          sessionId: 'sess-1',
+          contextMode: 'both',
+        },
+      }),
+    );
+
+    await waitFor(() => {
+      expect(toast.showToast).toHaveBeenCalledWith(
+        expect.stringContaining('请重试'),
+        'error',
+      );
+    });
+  });
+
   it('does not bind sidebar creator on global thread activate', async () => {
     renderHook(() =>
       useM2tAgent({

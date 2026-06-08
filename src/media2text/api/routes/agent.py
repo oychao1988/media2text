@@ -73,10 +73,14 @@ class ActivateBody(BaseModel):
     summary_path: str | None = Field(default=None, alias="summaryPath")
     context_mode: str | None = Field(default=None, alias="contextMode")
     clear_session: bool = Field(default=False, alias="clearSession")
+    attachments: list[dict[str, Any]] | None = None
 
 
 def _thread_dict(row) -> dict[str, Any]:
     binding = parse_binding(row["active_binding_json"])
+    attachments = binding.get("attachments")
+    if not isinstance(attachments, list):
+        attachments = None
     return {
         "id": row["display_thread_id"],
         "sessionId": binding.get("session_id"),
@@ -89,6 +93,13 @@ def _thread_dict(row) -> dict[str, Any]:
         "model": binding.get("model", "auto"),
         "context_mode": binding.get("context_mode", "both"),
         "contextMode": binding.get("context_mode", "both"),
+        "session_kind": binding.get("session_kind"),
+        "sessionKind": binding.get("session_kind"),
+        "transcript_path": binding.get("transcript_path"),
+        "transcriptPath": binding.get("transcript_path"),
+        "summary_path": binding.get("summary_path"),
+        "summaryPath": binding.get("summary_path"),
+        "attachments": attachments,
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -260,6 +271,7 @@ def activate_thread(
         transcript_path=body.transcript_path,
         summary_path=body.summary_path,
         context_mode=body.context_mode,
+        attachments=body.attachments,
     )
     row = db.get_thread_by_display_id(thread_id)
     assert row is not None

@@ -214,6 +214,7 @@ class SessionDB:
         transcript_path: str | None = None,
         summary_path: str | None = None,
         context_mode: str | None = None,
+        attachments: list[Any] | None = None,
     ) -> bool:
         session_id = self.get_active_session_for_thread(display_thread_id)
         row = self.get_session_row(session_id)
@@ -232,6 +233,18 @@ class SessionDB:
             binding["transcript_path"] = transcript_path
         if summary_path is not None:
             binding["summary_path"] = summary_path
+        if attachments is not None:
+            binding["attachments"] = attachments
+            tp = next(
+                (a.get("path") for a in attachments if a.get("docType") == "transcript"),
+                None,
+            )
+            sp = next(
+                (a.get("path") for a in attachments if a.get("docType") == "summary"),
+                None,
+            )
+            binding["transcript_path"] = tp
+            binding["summary_path"] = sp
         now = _utc_now()
         creator_val = row["creator_id"] if creator_id is None else creator_id
 

@@ -308,8 +308,12 @@ export function useM2tAgent(opts: {
       transcriptPath: sessionContext.transcriptPath ?? null,
       summaryPath: sessionContext.summaryPath ?? null,
       contextMode: sessionContext.contextMode,
+      attachments: sessionContext.attachments,
     });
-    void apiPatch(`/api/agent/threads/${threadId}/activate`, payload, true).catch(() => {});
+    void apiPatch(`/api/agent/threads/${threadId}/activate`, payload, true).catch((err) => {
+      const msg = err instanceof ApiError ? err.message : '上下文同步失败';
+      showToast(`${msg}，请重试`, 'error');
+    });
   }, [threadCreatorId, threadId, sessionContext]);
 
   const patchThreadModel = useCallback(

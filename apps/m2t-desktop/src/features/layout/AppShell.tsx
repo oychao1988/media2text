@@ -7,6 +7,7 @@ import { DaemonCard } from '../daemon/DaemonCard';
 import { ViewPlayback } from '../history/ViewPlayback';
 import { useLiveStatus } from '../live/useLiveStatus';
 import { AgentPanel, type AgentPanelHandle } from '../agent/AgentPanel';
+import type { SessionDocumentsOffer } from '../agent/contextAttachment';
 import { TranscriptPane } from '../transcript/TranscriptPane';
 import type { LiveSessionSummary } from '../../lib/types';
 import { ViewConfig } from '../views/ViewConfig';
@@ -159,6 +160,51 @@ export function AppShell() {
 
   const transcriptMode =
     historySessionRow || centerView === 'playback' ? ('playback' as const) : ('live' as const);
+
+  const sessionDocumentsOffer = useMemo((): SessionDocumentsOffer | null => {
+    if (!selectedId || !selected || !transcriptSessionId) return null;
+    const sessionKind =
+      historySessionRow?.kind ??
+      (playbackSession?.kind ?? (transcriptSelection.mode === 'live' ? 'live' : null));
+    if (!sessionKind) return null;
+    const itemId =
+      historySessionRow?.itemId ?? playbackSession?.item_id ?? transcriptSessionId;
+    const hasTranscript = Boolean(
+      playbackItem?.hasTranscript ?? transcriptSelection.mode === 'history'
+        ? transcriptSelection.hasTranscript
+        : false,
+    );
+    const hasSummary = Boolean(
+      playbackItem?.hasSummary ?? transcriptSelection.mode === 'history'
+        ? transcriptSelection.hasSummary
+        : false,
+    );
+    const label =
+      playbackSession?.title ??
+      (transcriptSelection.mode === 'history' ? itemId : transcriptSessionId);
+    return {
+      sessionId: transcriptSessionId,
+      sessionKind,
+      creatorId: selectedId,
+      creatorName: selected.display_name ?? '',
+      itemId,
+      label,
+      hasTranscript,
+      hasSummary,
+      transcriptPath,
+      summaryPath,
+    };
+  }, [
+    historySessionRow,
+    playbackItem,
+    playbackSession,
+    selected,
+    selectedId,
+    summaryPath,
+    transcriptPath,
+    transcriptSelection,
+    transcriptSessionId,
+  ]);
 
   const rightPanelTitle = isTranscriptChat ? 'Agent' : '内容';
 
@@ -387,6 +433,7 @@ export function AppShell() {
               summaryPath,
               contextMode: 'both',
             }}
+            sessionDocumentsOffer={sessionDocumentsOffer}
             playbackMode={transcriptMode === 'playback'}
           />
         </div>

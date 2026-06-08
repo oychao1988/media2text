@@ -27,6 +27,8 @@ import {
   type AgentTabEntry,
 } from './useAgentTabs';
 import { useAgentThreads } from './useAgentThreads';
+import type { SessionDocumentsOffer } from './contextAttachment';
+import { useAgentAttachments } from './useAgentAttachments';
 import { useM2tAgent, type SessionContext } from './useM2tAgent';
 
 const AGENT_HISTORY_KEY = 'm2t-agent-history-collapsed';
@@ -34,6 +36,7 @@ const AGENT_HISTORY_KEY = 'm2t-agent-history-collapsed';
 type AgentPanelProps = {
   creatorId: string | null;
   sessionContext: SessionContext;
+  sessionDocumentsOffer?: SessionDocumentsOffer | null;
   playbackMode?: boolean;
 };
 
@@ -114,7 +117,7 @@ function AgentChatMessages({
 }
 
 export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function AgentPanel(
-  { creatorId, sessionContext, playbackMode = false },
+  { creatorId, sessionContext, sessionDocumentsOffer = null, playbackMode = false },
   ref,
 ) {
   const { creators, setSelectedId } = useCreators();
@@ -156,14 +159,45 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
   const creatorMismatch =
     !isDraftActive && shouldNotifyCreatorMismatch(activeThread?.creator_id, creatorId);
 
+  const creatorName =
+    creators.find((c) => c.id === creatorId)?.display_name ?? '';
+
+  const attachmentsState = useAgentAttachments({
+    activeTabKey: activeTabKey,
+    activeThreadId,
+    threadCreatorId: activeThread?.creator_id ?? null,
+    creatorName,
+    sessionId: sessionContext.sessionId ?? null,
+    sessionKind: sessionContext.sessionKind ?? null,
+    contextMode: sessionContext.contextMode ?? 'both',
+    legacyTranscriptPath: activeThread?.transcript_path ?? sessionContext.transcriptPath,
+    legacySummaryPath: activeThread?.summary_path ?? sessionContext.summaryPath,
+    legacyAttachments: activeThread?.attachments ?? null,
+  });
+
+  const agentSessionContext = useMemo(
+    (): SessionContext => ({
+      ...sessionContext,
+      attachments: attachmentsState.activeAttachments,
+    }),
+    [attachmentsState.activeAttachments, sessionContext],
+  );
+
   const agent = useM2tAgent({
     threadId: activeThreadId,
     creatorId,
     threadCreatorId: activeThread?.creator_id ?? null,
-    sessionContext,
+    sessionContext: agentSessionContext,
     onTurnEnd: refresh,
     onThreadTitle: applyThreadTitle,
   });
+
+  const { appendSessionAttachments } = attachmentsState;
+
+  useEffect(() => {
+    if (!sessionDocumentsOffer) return;
+    appendSessionAttachments(sessionDocumentsOffer);
+  }, [appendSessionAttachments, sessionDocumentsOffer]);
 
   const { scrollRef: chatScrollRef, onScroll: onChatScroll } = useAgentChatScroll(
     activeThreadId,
@@ -265,6 +299,7 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
 
   const handleCloseTab = useCallback(
     (key: string) => {
+      attachmentsState.clearTab(key);
       setTabEntries((prev) => {
         const { entries, activeKey } = closeAgentTabEntry(prev, key, activeTabKey);
         setActiveTabKey(activeKey);
@@ -272,7 +307,7 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
       });
       showToast('已关闭页签', 'info');
     },
-    [activeTabKey],
+    [activeTabKey, attachmentsState],
   );
 
   const handleSend = useCallback(
@@ -289,8 +324,10 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
               ? await createGlobalThread(threadOpts)
               : await createThread(agentId, sessionContext.sessionId, threadOpts);
           if (!thread) return;
+          const threadKey = `thread:${thread.id}`;
+          attachmentsState.migrateTabAttachments(draftKey, threadKey);
           setTabEntries((prev) => promoteDraftTab(prev, draftKey, thread.id));
-          setActiveTabKey(`thread:${thread.id}`);
+          setActiveTabKey(threadKey);
           await agent.sendMessage(text, thread.id);
         } catch {
           showToast('新建会话失败', 'error');
@@ -299,7 +336,15 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
       }
       await agent.sendMessage(text);
     },
-    [activeEntry, agent, createGlobalThread, createThread, providerByModel, sessionContext.sessionId],
+    [
+      activeEntry,
+      agent,
+      attachmentsState,
+      createGlobalThread,
+      createThread,
+      providerByModel,
+      sessionContext.sessionId,
+    ],
   );
 
   const handleToggleHistory = useCallback(() => {
@@ -503,6 +548,10 @@ export const AgentPanel = forwardRef<AgentPanelHandle, AgentPanelProps>(function
             model={agent.threadModel}
             providerModels={modelOptions}
             placeholder={composerPlaceholder}
+            attachments={attachmentsState.activeAttachments}
+            contextMode={sessionContext.contextMode ?? 'both'}
+            sidebarCreatorId={creatorId}
+            onRemoveAttachment={attachmentsState.removeAttachment}
             onModelChange={(m) =>
               void agent.patchThreadModel(m, m === 'auto' ? null : providerByModel.get(m))
             }

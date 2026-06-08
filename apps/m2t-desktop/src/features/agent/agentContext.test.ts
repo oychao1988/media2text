@@ -36,4 +36,28 @@ describe('buildActivatePayload', () => {
       contextMode: 'both',
     });
   });
+
+  it('includes attachments array when provided', () => {
+    const attachments = [
+      {
+        id: 'transcript:creators/a/x.transcript.json',
+        docType: 'transcript' as const,
+        path: 'creators/a/x.transcript.json',
+        label: '场次',
+        creatorId: 'c1',
+        creatorName: '博主',
+        sessionKind: 'live' as const,
+        itemId: 's1',
+        source: 'session' as const,
+      },
+    ];
+    expect(
+      buildActivatePayload({
+        creatorId: 'c1',
+        sessionId: 's1',
+        contextMode: 'both',
+        attachments,
+      }),
+    ).toMatchObject({ attachments });
+  });
 });

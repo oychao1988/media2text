@@ -1,3 +1,5 @@
+import type { ContextAttachment } from './contextAttachment';
+
 export type AgentContext = {
   creatorId?: string;
   sessionId?: string;
@@ -6,6 +8,7 @@ export type AgentContext = {
   transcriptPath?: string | null;
   summaryPath?: string | null;
   contextMode?: 'transcript' | 'summary' | 'both';
+  attachments?: ContextAttachment[];
 };
 
 export type ActivateThreadPayload = {
@@ -16,6 +19,7 @@ export type ActivateThreadPayload = {
   summaryPath?: string | null;
   contextMode?: 'transcript' | 'summary' | 'both';
   clearSession?: boolean;
+  attachments?: ContextAttachment[];
 };
 
 export function buildActivatePayload(ctx: AgentContext): ActivateThreadPayload {
@@ -31,5 +35,6 @@ export function buildActivatePayload(ctx: AgentContext): ActivateThreadPayload {
   if (ctx.sessionKind !== undefined) payload.sessionKind = ctx.sessionKind;
   if (ctx.transcriptPath !== undefined) payload.transcriptPath = ctx.transcriptPath;
   if (ctx.summaryPath !== undefined) payload.summaryPath = ctx.summaryPath;
+  if (ctx.attachments !== undefined) payload.attachments = ctx.attachments;
   return payload;
 }

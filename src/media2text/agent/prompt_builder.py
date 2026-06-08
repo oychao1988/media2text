@@ -6,6 +6,7 @@ import json
 from dataclasses import dataclass
 from typing import Any
 
+from media2text.agent.attachments import format_attachments_block, legacy_binding_to_attachments
 from media2text.agent.memory_store import (
     format_memory_block,
     load_volatile_snapshot,
@@ -77,6 +78,8 @@ def build_system_prompt(
     if isinstance(profile, AgentProfileContext):
         record_default_skills_use(profile)
     binding = thread.get("binding") or {}
+    if creator_id and "creator_id" not in binding:
+        binding = {**binding, "creator_id": creator_id}
     context_mode = binding.get("context_mode") or thread.get("context_mode") or "both"
 
     skills_block = format_skills_index_block(build_skills_index(profile))
@@ -92,11 +95,17 @@ def build_system_prompt(
         profile_line = f"Profile: {profile.profile_id} ({profile.memory_paths.profile_dir})"
     else:
         profile_line = f"Profile dir: {profile.get('profile_dir')}"
+    attachment_block = format_attachments_block(
+        legacy_binding_to_attachments(binding),
+        context_mode=str(context_mode),
+    )
     context_lines = [
         profile_line,
         f"Context mode: {context_mode}",
         _manifest_summary(cfg, creator_id),
     ]
+    if attachment_block:
+        context_lines.append(attachment_block)
     if isinstance(profile, AgentProfileContext):
         snapshot = load_volatile_snapshot_for_profile(profile)
     else:
