@@ -21,6 +21,7 @@ from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
 from media2text.core.creator.service import VALID_AUTO_RECORD_OVERRIDES
 from media2text.core.desktop.status_lights import compute_status_light, snapshot_for_status_light
+from media2text.core.live.pipeline_phase import pipeline_phase_for_creator
 from media2text.core.platform.profile import sync_creator_profile
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, LiveSnapshotRepo
 
@@ -72,6 +73,13 @@ def _enrich_creator(
     item["profile_synced_at"] = row.profile_synced_at
     item["live_snapshot"] = _snapshot_dict(snap)
     item["active_session_id"] = active.id if active else None
+    item["pipeline_phase"] = pipeline_phase_for_creator(
+        conn,
+        cfg,
+        row.id,
+        active=active,
+        is_live=bool(snap and snap.is_live),
+    )
     return item
 
 
@@ -110,6 +118,13 @@ def get_creator(
     )
     detail["live_snapshot"] = _snapshot_dict(snap)
     detail["active_session_id"] = active.id if active else None
+    detail["pipeline_phase"] = pipeline_phase_for_creator(
+        conn,
+        cfg,
+        creator_id,
+        active=active,
+        is_live=bool(snap and snap.is_live),
+    )
     return {"ok": True, "creator": detail}
 
 

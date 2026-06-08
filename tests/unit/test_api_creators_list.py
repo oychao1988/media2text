@@ -52,6 +52,7 @@ def test_list_monitored_only(api_client, workspace) -> None:
     assert item["follower_count"] == 12345
     assert item["profile_synced_at"] == "2026-06-05T12:00:00+00:00"
     assert item["live_snapshot"]["is_live"] is True
+    assert item["pipeline_phase"] == "live_unrecorded"
 
 
 def test_list_all_query(api_client, workspace) -> None:
