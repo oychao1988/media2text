@@ -45,7 +45,7 @@ pip install -e ".[desktop,dev]"
 pytest tests/unit/test_notify_outbox.py tests/unit/test_state_writer.py -v
 pytest tests/unit/test_api_* -v -k notify 2>/dev/null || true
 ruff check src/media2text/core/notify/outbox.py src/media2text/api/services/notify_event_drain.py src/media2text/core/live/state_writer.py
-media2text doctor --json  # 本地/开发机；CI 无 playwright 浏览器，不纳入 issue_verify
+# media2text doctor --json  # 本地/开发机；CI 无 playwright 浏览器，不纳入 issue_verify
 ```
 
 ## 非目标范围
