@@ -1,0 +1,33 @@
+# Epic verification — m2t-desktop Agent context & attachments
+# Run: python scripts/epic_verify.py agent-context-attachments
+name: m2t-desktop-agent-context-attachments
+spec: docs/superpowers/specs/2026-06-09-m2t-desktop-agent-context-attachments-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-09-m2t-desktop-agent-context-attachments-acceptance.md
+issues: [254, 255, 256, 257, 258, 259]
+spec_ids_automated: [A1, A2, A3, A4, B1, B2, B3, B5, C1, C2, C3, D1, D2, D3, D4, D5]
+spec_ids_manual: [A5, B4, D3]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: m2t-desktop-vitest
+    run: pnpm --filter m2t-desktop test
+
+  - name: agent-api-pytest
+    run: pytest tests/unit/test_api_agent_threads.py tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop --tb=short -q
+
+  - name: issue-verify-254
+    run: python scripts/issue_verify.py --issue 254
+
+  - name: issue-verify-255
+    run: python scripts/issue_verify.py --issue 255
+
+  - name: issue-verify-256
+    run: python scripts/issue_verify.py --issue 256
+
+  - name: issue-verify-257
+    run: python scripts/issue_verify.py --issue 257
+
+  - name: issue-verify-258
+    run: python scripts/issue_verify.py --issue 258

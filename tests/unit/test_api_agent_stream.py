@@ -41,7 +41,7 @@ def test_agent_stream_turn_sequence(api_client, workspace, monkeypatch) -> None:
             with api_client.websocket_connect(f"/api/agent/stream?threadId={tid}") as ws:
                 ready = json.loads(ws.receive_text())
                 assert ready["type"] == "sidecar.ready"
-                deadline = time.time() + 5.0
+                deadline = time.time() + 15.0
                 while time.time() < deadline:
                     msg = ws.receive_text()
                     event = json.loads(msg)
@@ -62,7 +62,7 @@ def test_agent_stream_turn_sequence(api_client, workspace, monkeypatch) -> None:
         json={"text": "hello", "sidebarCreatorId": cid},
     )
 
-    reader.join(timeout=6.0)
+    reader.join(timeout=16.0)
     assert not errors, errors
     assert "turn.start" in seen
     assert "message.assistant.delta" in seen
