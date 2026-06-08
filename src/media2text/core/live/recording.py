@@ -214,6 +214,66 @@ class LiveRecordingCore:
                 enqueue_creator_updated(self._conn, creator.id)
         return live_info, None
 
+    def probe_live(
+        self,
+        *,
+        creator_id: str | None = None,
+        deadline: float | None = None,
+    ) -> tuple[list[dict], bool, bool]:
+        """LP-01: parallel observe_live_state for creators without active sessions."""
+        targets = [
+            c for c in self._creators.list_monitored() if c.platform == self._platform
+        ]
+        if creator_id:
+            row = self._creators.get(creator_id)
+            targets = [row] if row and row.platform == self._platform else []
+
+        errors: list[dict] = []
+        auth_required = False
+        platform_changed = False
+
+        scan_targets = [
+            c for c in targets if not self._sessions.get_active_for_creator(c.id)
+        ]
+        if not scan_targets:
+            return errors, auth_required, platform_changed
+
+        if deadline is not None and time.monotonic() >= deadline:
+            return errors, auth_required, platform_changed
+
+        workers = min(
+            max(1, self._cfg.live.scan_concurrency),
+            len(scan_targets),
+        )
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {
+                pool.submit(self.observe_live_state, creator): creator
+                for creator in scan_targets
+            }
+            for future in as_completed(futures):
+                if deadline is not None and time.monotonic() >= deadline:
+                    break
+                creator = futures[future]
+                try:
+                    _live_info, err = future.result()
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "live_status_check_failed",
+                        creator_id=creator.id,
+                        error=str(exc),
+                    )
+                    errors.append({"creator_id": creator.id, "error": str(exc)})
+                    continue
+                if err is None:
+                    continue
+                errors.append(err)
+                if err.get("auth_required"):
+                    auth_required = True
+                elif err.get("platform_changed"):
+                    platform_changed = True
+
+        return errors, auth_required, platform_changed
+
     def maybe_start_recording(self, creator, live_info: LiveRoomInfo) -> dict:
         return self._start_recording(
             creator.id, creator.sec_uid, live_info.room_id, live_info
@@ -486,24 +546,9 @@ class LiveRecordingCore:
     def poll_active_recordings(
         self, *, skip_session_ids: set[str] | None = None
     ) -> list[dict]:
+        """LP-02: obs-only poll for all active sessions (finalize via Reconciler)."""
         skip = skip_session_ids or set()
-        if self._cfg.monitor.reconciler_enabled:
-            state = StateWriter(self._conn, cfg=self._cfg, notify=self._notify)
-            for row in self._sessions.list_active():
-                if row.id in skip:
-                    continue
-                if row.status != "recording" or row.ffmpeg_pid is None:
-                    continue
-                creator = self._creators.get(row.creator_id)
-                if not creator or creator.platform != self._platform:
-                    continue
-                self.poll_active_session(row, creator, state=state)
-            return []
-
-        finalized: list[dict] = []
-        min_offline = self._cfg.live.min_recording_sec_before_offline_end
-        confirm_sec = self._cfg.live.offline_confirm_sec
-
+        state = StateWriter(self._conn, cfg=self._cfg, notify=self._notify)
         for row in self._sessions.list_active():
             if row.id in skip:
                 continue
@@ -512,81 +557,8 @@ class LiveRecordingCore:
             creator = self._creators.get(row.creator_id)
             if not creator or creator.platform != self._platform:
                 continue
-
-            pid = row.ffmpeg_pid
-            if not self._process_alive(pid):
-                meta = self._handle_ffmpeg_exit(row, creator)
-                if meta:
-                    finalized.append(meta)
-                continue
-
-            if self._use_streaming_pipeline(row.id) and row.id not in self._streaming_legacy_finalize:
-                stt = self._stt_sessions.get(row.id)
-                if stt is not None and not stt.is_alive():
-                    self._handle_stt_disconnect(row, creator)
-
-            try:
-                still_live = self._recording_still_live(creator, row)
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "live_status_check_failed",
-                    creator_id=creator.id,
-                    error=str(exc),
-                )
-                continue
-
-            try:
-                profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-                if upsert_live_snapshot(self._conn, creator.id, profile):
-                    enqueue_creator_updated(self._conn, creator.id)
-            except Exception:  # noqa: BLE001
-                pass
-
-            if still_live:
-                if row.offline_since_at:
-                    self._sessions.clear_offline_since(row.id)
-                    record_event(
-                        self._conn,
-                        session_id=row.id,
-                        stage="recording",
-                        status="offline_cancelled",
-                    )
-                    log.debug(
-                        "live_offline_cancelled",
-                        session_id=row.id,
-                        creator_id=creator.id,
-                    )
-                    enqueue_creator_updated(self._conn, creator.id)
-                continue
-
-            if self._recording_age_sec(row.started_at) < min_offline:
-                continue
-
-            now = datetime.now(timezone.utc)
-            if row.offline_since_at is None:
-                iso = now.isoformat()
-                self._sessions.set_offline_since(row.id, iso)
-                record_event(
-                    self._conn,
-                    session_id=row.id,
-                    stage="recording",
-                    status="offline_pending",
-                )
-                self._emit_live_ended(creator, row)
-                enqueue_creator_updated(self._conn, creator.id)
-                continue
-
-            offline_since = self._parse_iso(row.offline_since_at)
-            if offline_since is None:
-                continue
-            elapsed = (now - offline_since).total_seconds()
-            if elapsed < confirm_sec:
-                continue
-
-            self._enqueue_finalize(row.id, creator.id)
-            continue
-
-        return finalized
+            self.poll_active_session(row, creator, state=state)
+        return []
 
     def _enqueue_finalize(self, session_id: str, creator_id: str) -> None:
         task_id = MonitorTaskRepo(self._conn).enqueue(

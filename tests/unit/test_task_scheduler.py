@@ -16,7 +16,7 @@ def test_monitor_scheduler_config_defaults() -> None:
     assert cfg.monitor.scheduler_interval_sec == 1
     assert cfg.monitor.live_lane_min_claim_per_tick == 1
     assert cfg.monitor.probe_parallelism == 4
-    assert cfg.monitor.reconciler_enabled is False
+    assert cfg.monitor.reconciler_enabled is True
     assert cfg.monitor.reconciler_log_only is False
     assert cfg.monitor.live_worker_max_parallel == 1
 

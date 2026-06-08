@@ -1,4 +1,3 @@
-import os
 import sys
 from unittest.mock import MagicMock, patch
 
@@ -6,7 +5,7 @@ from media2text.core.config import AppConfig, LiveConfig, TranscribeConfig
 from media2text.core.platform.douyin.live import LiveWatcher
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import CreatorRepo
-def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> None:
+def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
@@ -18,32 +17,21 @@ def test_run_once_starts_recording_for_live_creator(tmp_path, monkeypatch) -> No
         monitor_enabled=True,
     )
 
-    mock_proc = MagicMock()
-    mock_proc.pid = os.getpid()
-    mock_proc.poll.return_value = None
-    mock_proc.stderr = None
-
-    with (
-        patch(
-            "media2text.core.live.recording.record_stream_copy",
-            return_value=mock_proc,
-        ),
-        patch("media2text.core.live.recording.time.sleep"),
-        patch.object(watcher, "_process_alive", return_value=True),
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4"),
-    ):
+    live = LiveRoomInfo(
+        room_id="123",
+        is_live=True,
+        stream_flv_url="https://example.com/live.flv",
+    )
+    with patch.object(watcher._core._adapter, "get_live_room", return_value=live):
         result = watcher.run_once(creator_id=cid)
 
-    assert len(result["started"]) == 1
-    assert result["started"][0]["pid"] == os.getpid()
-    active = watcher._sessions.get_active_for_creator(cid)
-    assert active is not None
-    assert active.status == "recording"
+    assert result.get("probe") is True
+    assert result.get("started") == 0
+    assert watcher._sessions.get_active_for_creator(cid) is None
 
 
-def test_run_once_finalizes_dead_ffmpeg_before_stale(tmp_path, monkeypatch) -> None:
-    """ffmpeg 正常退出时 poll 应先 remux，而非 mark_stale 误判。"""
+def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> None:
+    """Dead ffmpeg: poll writes obs; stale must not mark failed (Reconciler owns exit)."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
@@ -70,23 +58,16 @@ def test_run_once_finalizes_dead_ffmpeg_before_stale(tmp_path, monkeypatch) -> N
     with (
         patch.object(watcher._core._adapter, "get_live_room", return_value=offline),
         patch.object(watcher._core, "_process_alive", return_value=False),
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest"),
-        patch.object(watcher._notify, "emit"),
     ):
-        def _fake_remux(**kwargs):
-            kwargs["dst"].write_bytes(b"\x00\x00\x00\x18ftyp")
-
-        mock_remux.side_effect = _fake_remux
-        result = watcher.run_once(creator_id=cid)
+        watcher.run_once(creator_id=cid)
 
     row = conn.execute(
-        "SELECT status, error FROM live_sessions WHERE id = ?", (sid,)
+        "SELECT status, obs_ffmpeg_alive, error FROM live_sessions WHERE id = ?",
+        (sid,),
     ).fetchone()
-    assert row["status"] == "completed"
+    assert row["status"] == "recording"
+    assert row["obs_ffmpeg_alive"] == 0
     assert row["error"] is None
-    assert result.get("finalized")
 
 
 def test_get_active_for_creator_keeps_dead_pid_for_poll(tmp_path, monkeypatch) -> None:

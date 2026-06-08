@@ -53,40 +53,50 @@ def _core(tmp_path, monkeypatch, *, confirm_sec: int = 45) -> tuple:
 
 
 def test_first_offline_emits_live_ended_without_finalize(tmp_path, monkeypatch) -> None:
-    _, _, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
+    cfg, _, _, sessions, core, sid, notify = _core(tmp_path, monkeypatch)
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_enqueue_finalize") as mock_enqueue,
+        patch.object(core, "_recording_still_live", return_value=False),
     ):
         core.poll_active_recordings()
-        mock_enqueue.assert_not_called()
-        row = sessions.get(sid)
-        assert row is not None
-        assert row.offline_since_at is not None
-        notify.emit.assert_called_once()
-        assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
+
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.offline_since_at is not None
+    notify.emit.assert_called_once()
+    assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
 
 
 def test_finalize_after_offline_confirm_sec(tmp_path, monkeypatch) -> None:
-    _, conn, _, sessions, core, sid, notify = _core(
+    from media2text.core.live.task_reconciler import reconcile_live
+    from media2text.core.storage.repos import MonitorTaskRepo
+
+    cfg, conn, _, _sessions, core, sid, notify = _core(
         tmp_path, monkeypatch, confirm_sec=10
     )
     past = (datetime.now(timezone.utc) - timedelta(seconds=15)).isoformat()
     conn.execute(
-        "UPDATE live_sessions SET offline_since_at = ? WHERE id = ?",
+        "UPDATE live_sessions SET offline_since_at = ?, obs_still_live = 0 WHERE id = ?",
         (past, sid),
     )
     conn.commit()
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_enqueue_finalize") as mock_enqueue,
+        patch.object(core, "_recording_still_live", return_value=False),
     ):
         core.poll_active_recordings()
-        mock_enqueue.assert_called_once()
-        assert mock_enqueue.call_args[0][0] == sid
-        notify.emit.assert_not_called()
+        reconcile_live(cfg, conn)
+
+    tasks = MonitorTaskRepo(conn).count_by_status()
+    assert tasks.get("pending", 0) == 1
+    row = conn.execute(
+        "SELECT task_type FROM monitor_tasks WHERE status = 'pending' LIMIT 1"
+    ).fetchone()
+    assert row is not None
+    assert row["task_type"] == "finalize"
+    notify.emit.assert_not_called()
 
 
 def test_live_resume_clears_offline_since(tmp_path, monkeypatch) -> None:
@@ -103,13 +113,13 @@ def test_live_resume_clears_offline_since(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_enqueue_finalize") as mock_enqueue,
+        patch.object(core, "_recording_still_live", return_value=True),
     ):
         core.poll_active_recordings()
-        mock_enqueue.assert_not_called()
-        row = sessions.get(sid)
-        assert row is not None
-        assert row.offline_since_at is None
+
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.offline_since_at is None
 
 
 def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
@@ -117,11 +127,12 @@ def test_live_ended_emitted_only_once(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_enqueue_finalize"),
+        patch.object(core, "_recording_still_live", return_value=False),
     ):
         core.poll_active_recordings()
         core.poll_active_recordings()
-        assert notify.emit.call_count == 1
-        row = sessions.get(sid)
-        assert row is not None
-        assert row.offline_since_at is not None
+
+    assert notify.emit.call_count == 1
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.offline_since_at is not None

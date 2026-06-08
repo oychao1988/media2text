@@ -282,6 +282,9 @@ def test_stt_disconnect_restarts_when_reconnect_enabled(tmp_path, monkeypatch) -
 
 
 def test_poll_marks_degraded_when_stt_dies(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.task_reconciler import reconcile_live
+    from media2text.core.storage.repos import MonitorTaskRepo
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -310,7 +313,13 @@ def test_poll_marks_degraded_when_stt_dies(tmp_path, monkeypatch) -> None:
         room_id="1",
         temp_path=str(flv),
         ffmpeg_pid=4242,
+        pipeline_mode="streaming",
     )
+    conn.execute(
+        "UPDATE live_sessions SET transcribe_status = 'streaming' WHERE id = ?",
+        (sid,),
+    )
+    conn.commit()
 
     adapter = MagicMock()
     adapter.get_live_room.return_value = LiveRoomInfo(
@@ -333,9 +342,12 @@ def test_poll_marks_degraded_when_stt_dies(tmp_path, monkeypatch) -> None:
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_finalize_recording") as mock_finalize,
+        patch.object(core, "_recording_still_live", return_value=True),
     ):
         core.poll_active_recordings()
+        reconcile_live(cfg, conn)
 
-    mock_finalize.assert_not_called()
-    assert sid in core._streaming_legacy_finalize
+    row = sessions.get(sid)
+    assert row is not None
+    assert row.obs_stt_alive == 0
+    assert MonitorTaskRepo(conn).has_active_dedupe(f"reconnect_stt:{sid}")

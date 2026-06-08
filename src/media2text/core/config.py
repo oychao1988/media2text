@@ -54,7 +54,7 @@ class MonitorConfig(BaseModel):
     stale_running_sec: int = 3600
     task_max_retries: int = 3
     scheduler_interval_sec: int = 1
-    reconciler_enabled: bool = False
+    reconciler_enabled: bool = True
     reconciler_log_only: bool = False
     live_worker_max_parallel: int = 1
     live_lane_min_claim_per_tick: int = 1

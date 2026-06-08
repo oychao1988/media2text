@@ -24,7 +24,7 @@ monitor:
   task_max_retries: 3  # monitor_tasks auto-retry before DLQ (status=failed)
   # Execution Engine v2 (Local Pipeline Refactor)
   scheduler_interval_sec: 1
-  reconciler_enabled: false
+  reconciler_enabled: true
   live_worker_max_parallel: 1
   live_lane_min_claim_per_tick: 1
   probe_tick_budget_sec: 0  # 0 => 2 * live_poll_interval_sec
