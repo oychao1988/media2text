@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import Popen
@@ -100,15 +101,47 @@ class LiveRecordingCore:
                 continue
             scan_targets.append(creator)
 
-        for creator in scan_targets:
-            live_info, err_payload = self.observe_live_state(creator)
-            if err_payload is not None:
+        observed: list[tuple] = []
+        if scan_targets:
+            workers = min(
+                max(1, self._cfg.live.scan_concurrency),
+                len(scan_targets),
+            )
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(self._fetch_live_info, creator): creator
+                    for creator in scan_targets
+                }
+                for future in as_completed(futures):
+                    creator = futures[future]
+                    try:
+                        observed.append((creator, future.result()))
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "live_status_check_failed",
+                            creator_id=creator.id,
+                            error=str(exc),
+                        )
+                        errors.append({"creator_id": creator.id, "error": str(exc)})
+
+        for creator, (live_info, err) in observed:
+            if err is not None:
+                _kind, err_payload = err
+                touch_snapshot_probe_failed(
+                    self._conn,
+                    creator.id,
+                    error=str(err_payload.get("error", _kind)),
+                )
+                enqueue_creator_updated(self._conn, creator.id)
                 if err_payload.get("auth_required"):
                     auth_required = True
                 elif err_payload.get("platform_changed"):
                     platform_changed = True
                 errors.append(err_payload)
                 continue
+            if live_info is not None:
+                if upsert_live_snapshot(self._conn, creator.id, live_info):
+                    enqueue_creator_updated(self._conn, creator.id)
             if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             if not effective_auto_record(creator, self._cfg):

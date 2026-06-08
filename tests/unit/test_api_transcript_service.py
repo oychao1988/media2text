@@ -61,6 +61,54 @@ def test_get_session_and_transcript(api_client, workspace) -> None:
     assert len(t["segments"]) == 1
 
 
+def test_transcript_after_ffmpeg_reconnect(api_client, workspace) -> None:
+    """Partial sidecar stays on anchor FLV; temp_path moves to _rN segment."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_reconnect",
+        profile_url="https://www.douyin.com/user/sec_reconnect",
+        platform="douyin",
+    )
+    live_dir = workspace / "creators" / "sec_reconnect" / "live"
+    live_dir.mkdir(parents=True)
+    anchor = live_dir / "20260608T045208Z.flv"
+    anchor.write_bytes(b"\x00")
+    reconnect = live_dir / "20260608T062751Z_r1.flv"
+    reconnect.write_bytes(b"\x00")
+    partial = anchor.with_suffix(".transcript.partial.json")
+    partial.write_text(
+        json.dumps(
+            {
+                "text": "live partial",
+                "segments": [{"start": 10.0, "end": 12.0, "text": "live partial"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sessions = LiveSessionRepo(conn)
+    sid = sessions.create(
+        creator_id=cid,
+        room_id="room1",
+        temp_path=str(reconnect),
+    )
+    conn.execute(
+        "UPDATE live_sessions SET segment_paths_json = ? WHERE id = ?",
+        (json.dumps([str(anchor)]), sid),
+    )
+    conn.commit()
+    conn.close()
+
+    tr = api_client.get(f"/api/sessions/{sid}/transcript")
+    assert tr.status_code == 200
+    body = tr.json()
+    assert body["partial"] is True
+    assert body["text"] == "live partial"
+
+    detail = api_client.get(f"/api/sessions/{sid}").json()["session"]
+    assert detail["paths"]["partial_transcript_path"] is not None
+
+
 def test_transcript_not_found(api_client, workspace) -> None:
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)

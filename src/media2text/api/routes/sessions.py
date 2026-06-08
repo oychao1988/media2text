@@ -17,8 +17,10 @@ from media2text.api.services.transcript import (
     _media_path_for_session,
     is_session_finalized,
     read_summary_text,
+    read_transcript_for_session,
     read_transcript_payload,
     session_sidecar_paths,
+    transcript_mtime,
 )
 from media2text.core.config import AppConfig
 from media2text.core.manifest import _summary_sidecar_path
@@ -76,10 +78,7 @@ def get_transcript(
     row = LiveSessionRepo(conn).get(session_id)
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
-    media = _media_path_for_session(row)
-    if media is None:
-        raise HTTPException(status_code=404, detail="no media path for session")
-    payload = read_transcript_payload(media)
+    payload = read_transcript_for_session(row)
     return {"ok": True, "session_id": session_id, **payload}
 
 
@@ -126,16 +125,6 @@ def stream_proxy(
     return StreamingResponse(body, media_type=headers.get("content-type", "video/x-flv"), headers=headers)
 
 
-def _transcript_mtime(media: Path) -> float | None:
-    partial = media.with_suffix(".transcript.partial.json")
-    final_json = media.with_suffix(".transcript.json")
-    mtimes = []
-    for p in (partial, final_json):
-        if p.is_file():
-            mtimes.append(p.stat().st_mtime)
-    return max(mtimes) if mtimes else None
-
-
 @router.websocket("/{session_id}/transcript/stream")
 async def transcript_stream_ws(
     websocket: WebSocket,
@@ -165,11 +154,11 @@ async def transcript_stream_ws(
                 await websocket.close(code=4404)
                 return
 
-            mtime = _transcript_mtime(media)
+            mtime = transcript_mtime(row)
             if mtime is not None and mtime != last_mtime:
                 last_mtime = mtime
                 try:
-                    payload = read_transcript_payload(media)
+                    payload = read_transcript_for_session(row)
                 except HTTPException:
                     payload = None
                 if payload is not None:
@@ -178,7 +167,7 @@ async def transcript_stream_ws(
             if is_session_finalized(row):
                 if mtime is None or mtime == last_mtime:
                     try:
-                        payload = read_transcript_payload(media)
+                        payload = read_transcript_for_session(row)
                         await websocket.send_text(
                             json.dumps(payload, ensure_ascii=False)
                         )

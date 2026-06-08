@@ -26,8 +26,10 @@ function selectionKey(sel: TranscriptSelection): string {
   return `${sel.kind}:${sel.itemId}`;
 }
 
-function liveCurrentLabel(isLive: boolean): string {
-  return isLive ? '当前 · 录制中' : '当前 · 等待录制';
+function liveCurrentLabel(isLive: boolean, statusLabel?: string | null): string {
+  if (!isLive) return '当前 · 等待录制';
+  if (statusLabel) return `当前 · ${statusLabel}`;
+  return '当前 · 录制中';
 }
 
 /** Survives TranscriptPane remounts so history picks are not reset to live. */
@@ -75,7 +77,12 @@ export function TranscriptSessionSelect() {
   }, [selectedId, setTranscriptSelection]);
 
   const activeSessionId = selected?.active_session_id ?? null;
-  const isLiveNow = Boolean(selected?.is_live || selected?.status_light === 'green');
+  const isLiveNow = Boolean(
+    activeSessionId &&
+      (selected?.status_light === 'green' ||
+        selected?.status_light === 'yellow' ||
+        selected?.is_live),
+  );
 
   const options = useMemo(() => {
     const rows: {
@@ -89,7 +96,7 @@ export function TranscriptSessionSelect() {
     }[] = [];
     rows.push({
       key: 'live',
-      label: liveCurrentLabel(isLiveNow && Boolean(activeSessionId)),
+      label: liveCurrentLabel(isLiveNow, selected?.status_label),
       selection: LIVE_TRANSCRIPT_SELECTION,
       hasTranscript: true,
       iconKind: 'live-current',
@@ -109,7 +116,7 @@ export function TranscriptSessionSelect() {
       });
     }
     return rows;
-  }, [activeSessionId, isLiveNow, sessions]);
+  }, [activeSessionId, isLiveNow, selected?.status_label, sessions]);
 
   const currentKey = selectionKey(transcriptSelection);
 

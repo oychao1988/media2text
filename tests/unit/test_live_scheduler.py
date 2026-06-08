@@ -7,6 +7,56 @@ from media2text.core.live.scheduler import LiveTickLoop, MonitorScheduler, SlowT
 from media2text.core.monitor.watcher import MonitorWatcher
 
 
+def test_live_tick_records_before_finalize_drain(tmp_path, monkeypatch) -> None:
+    """Poll heartbeat must not wait for inline finalize drain."""
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(live_poll_interval_sec=1, post_process_poll_interval_sec=60),
+    )
+    watcher = MonitorWatcher(cfg)
+    stop = threading.Event()
+    post_pool = MagicMock()
+    monitor_pool = MagicMock()
+    monitor_pool.drain_priority_zero.return_value = [{"finalized": True}]
+    order: list[str] = []
+    tick_cb = MagicMock(side_effect=lambda: order.append("tick"))
+
+    def slow_run_once(**_kwargs) -> dict:
+        order.append("run_once")
+        return {}
+
+    def slow_finalize(*_args, **_kwargs) -> list:
+        order.append("finalize")
+        return [{"finalized": True}]
+
+    monitor_pool.drain_priority_zero.side_effect = slow_finalize
+
+    with (
+        patch.object(watcher._douyin_live, "run_once", side_effect=slow_run_once),
+        patch.object(watcher._bilibili_live, "run_once", return_value={}),
+    ):
+        live_loop = LiveTickLoop(
+            watcher,
+            cfg,
+            post_pool,
+            monitor_pool,
+            creator_id=None,
+            stop=stop,
+            on_tick=tick_cb,
+        )
+        live_loop.start()
+        time.sleep(0.5)
+        stop.set()
+        live_loop.join(timeout=2)
+
+    assert order[0] == "tick"
+    assert "run_once" in order
+    tick_idx = order.index("tick", 1)
+    finalize_idx = order.index("finalize")
+    assert tick_idx < finalize_idx
+
+
 def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
@@ -41,6 +91,7 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
             watcher,
             cfg,
             monitor_pool,
+            MagicMock(),
             creator_id=None,
             stop=stop,
         )

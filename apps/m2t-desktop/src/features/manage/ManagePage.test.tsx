@@ -33,6 +33,7 @@ const sampleCreator = {
   auto_record_override: 'inherit',
   status_light: 'gray',
   status_abbr: '—',
+  status_label: '离线',
   profile_stale: false,
   profile_url: null,
   is_live: false,

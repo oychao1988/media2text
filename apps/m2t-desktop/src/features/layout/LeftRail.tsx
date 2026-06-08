@@ -62,6 +62,7 @@ export function LeftRail({ creators, selectedCreatorId, onSelectCreator }: Props
                   profileSyncedAt={creator.profile_synced_at}
                   light={creator.status_light}
                   abbr={creator.status_abbr}
+                  statusLabel={creator.status_label}
                 />
               </div>
             </CreatorHoverPopover>

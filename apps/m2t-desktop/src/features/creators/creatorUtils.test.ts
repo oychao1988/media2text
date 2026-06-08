@@ -23,6 +23,7 @@ const base = (overrides: Partial<Creator>): Creator =>
     badge: '',
     badge_class: '',
     status_abbr: '—',
+    status_label: '离线',
     avatar_url: null,
     signature: null,
     follower_count: null,

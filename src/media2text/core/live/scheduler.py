@@ -68,8 +68,24 @@ class LiveTickLoop:
         live_poll = _live_poll_interval(self._cfg)
         last_post = 0.0
         while not self._stop.is_set():
+            if self._on_tick is not None:
+                self._on_tick()
+            else:
+                write_heartbeat(
+                    self._cfg.ensure_workspace(),
+                    last_tick_at=datetime.now(timezone.utc).isoformat(),
+                )
             self._watcher._douyin_live.run_once(creator_id=self._creator_id)
             self._watcher._bilibili_live.run_once(creator_id=self._creator_id)
+            active = len(LiveSessionRepo(self._watcher._conn).list_active())
+            log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
+            if self._on_tick is not None:
+                self._on_tick()
+            else:
+                write_heartbeat(
+                    self._cfg.ensure_workspace(),
+                    last_tick_at=datetime.now(timezone.utc).isoformat(),
+                )
             finalized = self._monitor_pool.drain_priority_zero(
                 self._cfg,
                 self._watcher._conn,
@@ -87,15 +103,6 @@ class LiveTickLoop:
                     limit=self._cfg.live.post_process_max_parallel,
                 )
                 last_post = now
-            active = len(LiveSessionRepo(self._watcher._conn).list_active())
-            log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
-            if self._on_tick is not None:
-                self._on_tick()
-            else:
-                write_heartbeat(
-                    self._cfg.ensure_workspace(),
-                    last_tick_at=datetime.now(timezone.utc).isoformat(),
-                )
             self._stop.wait(timeout=live_poll)
 
 

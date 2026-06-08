@@ -20,7 +20,7 @@ from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
 from media2text.core.creator.service import VALID_AUTO_RECORD_OVERRIDES
-from media2text.core.desktop.status_lights import compute_status_light
+from media2text.core.desktop.status_lights import compute_status_light, snapshot_for_status_light
 from media2text.core.platform.profile import sync_creator_profile
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, LiveSnapshotRepo
 
@@ -61,7 +61,10 @@ def _enrich_creator(
     snapshots = LiveSnapshotRepo(conn)
     active = sessions.get_active_for_creator(row.id)
     snap = snapshots.get(row.id)
-    lights = compute_status_light(active_session=active, snapshot=snap)
+    lights = compute_status_light(
+        active_session=active,
+        snapshot=snapshot_for_status_light(cfg, snap),
+    )
     item.update(lights)
     item["avatar_url"] = row.avatar_url
     item["signature"] = row.signature
@@ -99,8 +102,14 @@ def get_creator(
     snapshots = LiveSnapshotRepo(conn)
     active = sessions.get_active_for_creator(creator_id)
     snap = snapshots.get(creator_id)
-    detail.update(compute_status_light(active_session=active, snapshot=snap))
+    detail.update(
+        compute_status_light(
+            active_session=active,
+            snapshot=snapshot_for_status_light(cfg, snap),
+        )
+    )
     detail["live_snapshot"] = _snapshot_dict(snap)
+    detail["active_session_id"] = active.id if active else None
     return {"ok": True, "creator": detail}
 
 

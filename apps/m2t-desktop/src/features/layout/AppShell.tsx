@@ -172,7 +172,11 @@ export function AppShell() {
   const handleSelectCreator = useCallback(
     (id: string) => {
       const creator = creators.find((c) => c.id === id);
-      const isLive = creator != null && (creator.is_live || creator.status_light === 'green');
+      const isLive =
+        creator != null &&
+        (creator.is_live ||
+          creator.status_light === 'green' ||
+          (creator.status_light === 'yellow' && Boolean(creator.active_session_id)));
       const targetView = isLive ? 'live' : 'history';
 
       setSelectedId(id);
