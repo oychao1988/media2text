@@ -129,23 +129,10 @@ class SlowTickLoop:
             self._thread.join(timeout=timeout)
 
     def _run(self) -> None:
-        bcfg = self._cfg.platforms.bilibili
-        archive_poll = _bilibili_archive_poll_sec(self._cfg)
-        dynamic_poll = bcfg.dynamic_poll_interval_sec
-        last_vod = 0.0
-        last_archive = 0.0
-        last_dynamic = 0.0
         while not self._stop.is_set():
-            now = time.time()
-            if now - last_vod >= self._cfg.monitor.vod_poll_interval_sec:
-                self._watcher._run_vod_tick(creator_id=self._creator_id)
-                last_vod = now
-            if now - last_archive >= archive_poll:
-                self._watcher._run_archive_tick(creator_id=self._creator_id)
-                last_archive = now
-            if now - last_dynamic >= dynamic_poll:
-                self._watcher._run_dynamic_tick(creator_id=self._creator_id)
-                last_dynamic = now
+            self._watcher._run_vod_tick(creator_id=self._creator_id)
+            self._watcher._run_archive_tick(creator_id=self._creator_id)
+            self._watcher._run_dynamic_tick(creator_id=self._creator_id)
             now_distill = time.time()
             if now_distill - self._last_distill >= 300:
                 from media2text.agent.creator_distill.pool import resolve_distill_workers

@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from typing import TYPE_CHECKING, Any
 
+from media2text.core.live.probe_guard import ProbeExecutionGuard
+
 if TYPE_CHECKING:
     from media2text.core.config import AppConfig
     from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
@@ -24,9 +26,13 @@ def run_live_probe_tick(
     bilibili: BilibiliLiveWatcher,
     creator_id: str | None = None,
 ) -> dict[str, Any]:
-    deadline = time.monotonic() + probe_budget_sec(cfg)
-    dy = douyin.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
-    if time.monotonic() >= deadline:
-        return {"douyin": dy, "bilibili": {"skipped": "budget_exhausted"}}
-    bi = bilibili.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
-    return {"douyin": dy, "bilibili": bi}
+    ProbeExecutionGuard.enter_probe_tick()
+    try:
+        deadline = time.monotonic() + probe_budget_sec(cfg)
+        dy = douyin.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
+        if time.monotonic() >= deadline:
+            return {"douyin": dy, "bilibili": {"skipped": "budget_exhausted"}}
+        bi = bilibili.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
+        return {"douyin": dy, "bilibili": bi}
+    finally:
+        ProbeExecutionGuard.exit_probe_tick(strict=False)

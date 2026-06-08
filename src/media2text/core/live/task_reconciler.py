@@ -16,6 +16,10 @@ def _parse_iso(value: str) -> datetime | None:
         return None
 
 
+def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
+    return cfg.platforms.bilibili.archive_poll_interval_sec
+
+
 def _offline_confirmed(cfg: AppConfig, row: LiveSessionRow) -> bool:
     if not row.offline_since_at:
         return False
@@ -172,15 +176,14 @@ def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
 
 
 def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
-    """RC-01..03 skeleton: creator due columns land in PR4."""
-    _ = cfg, log_only
+    """RC-01..03: ensure content sync tasks from creator *_due_at columns."""
     ensured = 0
     now = datetime.now(timezone.utc)
     tasks = MonitorTaskRepo(conn)
+    creators_repo = CreatorRepo(conn)
 
-    for creator in CreatorRepo(conn).list_monitored():
-        vod_due = getattr(creator, "vod_due_at", None)
-        if vod_due and (due := _parse_iso(vod_due)) and due <= now:
+    for creator in creators_repo.list_monitored():
+        if creator.vod_due_at and (due := _parse_iso(creator.vod_due_at)) and due <= now:
             if _maybe_ensure(
                 tasks,
                 log_only=log_only,
@@ -188,26 +191,42 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                 task_type="sync_catalog",
                 dedupe_key=f"sync_catalog:{creator.id}",
                 priority=10,
+                payload_json=json.dumps({"platform": creator.platform}),
             ):
                 ensured += 1
+                if not log_only:
+                    creators_repo.schedule_vod_poll(
+                        creator.id, cfg.monitor.vod_poll_interval_sec
+                    )
 
         if creator.platform != "bilibili":
             continue
 
-        archive_due = getattr(creator, "archive_due_at", None)
-        if archive_due and (due := _parse_iso(archive_due)) and due <= now:
+        if (
+            creator.archive_due_at
+            and (due := _parse_iso(creator.archive_due_at))
+            and due <= now
+        ):
             if _maybe_ensure(
                 tasks,
                 log_only=log_only,
                 creator_id=creator.id,
-                task_type="sync_archive",
-                dedupe_key=f"sync_archive:{creator.id}",
+                task_type="sync_catalog",
+                dedupe_key=f"sync_catalog:{creator.id}",
                 priority=10,
+                payload_json=json.dumps({"platform": "bilibili"}),
             ):
                 ensured += 1
+                if not log_only:
+                    creators_repo.schedule_archive_poll(
+                        creator.id, _bilibili_archive_poll_sec(cfg)
+                    )
 
-        dynamic_due = getattr(creator, "dynamic_due_at", None)
-        if dynamic_due and (due := _parse_iso(dynamic_due)) and due <= now:
+        if (
+            creator.dynamic_due_at
+            and (due := _parse_iso(creator.dynamic_due_at))
+            and due <= now
+        ):
             if _maybe_ensure(
                 tasks,
                 log_only=log_only,
@@ -217,5 +236,10 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                 priority=10,
             ):
                 ensured += 1
+                if not log_only:
+                    creators_repo.schedule_dynamic_poll(
+                        creator.id,
+                        cfg.platforms.bilibili.dynamic_poll_interval_sec,
+                    )
 
     return ensured

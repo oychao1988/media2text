@@ -6,9 +6,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
-from subprocess import Popen
 
 import structlog
+
+from media2text.core.live.probe_guard import ProbeExecutionGuard, guarded_popen as Popen
 
 from media2text.core.config import AppConfig
 from media2text.core.desktop.auto_record import effective_auto_record
@@ -42,6 +43,7 @@ from media2text.core.live.transcript_writer import (
 )
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.live.pipeline_events import record_event, stage_event
+from media2text.core.live.state_writer import StateWriter
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
@@ -424,10 +426,80 @@ class LiveRecordingCore:
                 {"creator_id": creator.id, "error": str(exc)},
             )
 
+    def poll_active_session(self, row, creator, *, state: StateWriter) -> None:
+        """LP-02: process/API obs + offline semantics only (no enqueue/reconnect)."""
+        if row.status != "recording" or row.ffmpeg_pid is None:
+            return
+
+        pid = row.ffmpeg_pid
+        ffmpeg_alive = self._process_alive(pid)
+
+        stt_alive = None
+        if self._use_streaming_pipeline(row.id) and row.id not in self._streaming_legacy_finalize:
+            stt = self._stt_sessions.get(row.id)
+            stt_alive = stt.is_alive() if stt else False
+
+        try:
+            still_live = self._recording_still_live(creator, row)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "live_status_check_failed",
+                creator_id=creator.id,
+                error=str(exc),
+            )
+            state.write_obs(
+                row.id,
+                ffmpeg_alive=ffmpeg_alive,
+                stt_alive=stt_alive,
+                still_live=None,
+            )
+            return
+
+        state.write_obs(
+            row.id,
+            ffmpeg_alive=ffmpeg_alive,
+            stt_alive=stt_alive,
+            still_live=still_live,
+        )
+
+        try:
+            profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            if upsert_live_snapshot(self._conn, creator.id, profile):
+                enqueue_creator_updated(self._conn, creator.id)
+        except Exception:  # noqa: BLE001
+            pass
+
+        min_offline = self._cfg.live.min_recording_sec_before_offline_end
+
+        if still_live:
+            if row.offline_since_at:
+                state.clear_offline_since(row.id, creator_id=creator.id)
+            return
+
+        if self._recording_age_sec(row.started_at) < min_offline:
+            return
+
+        now = datetime.now(timezone.utc)
+        if row.offline_since_at is None:
+            state.set_offline_since(row.id, now.isoformat(), creator_id=creator.id)
+
     def poll_active_recordings(
         self, *, skip_session_ids: set[str] | None = None
     ) -> list[dict]:
         skip = skip_session_ids or set()
+        if self._cfg.monitor.reconciler_enabled:
+            state = StateWriter(self._conn, cfg=self._cfg, notify=self._notify)
+            for row in self._sessions.list_active():
+                if row.id in skip:
+                    continue
+                if row.status != "recording" or row.ffmpeg_pid is None:
+                    continue
+                creator = self._creators.get(row.creator_id)
+                if not creator or creator.platform != self._platform:
+                    continue
+                self.poll_active_session(row, creator, state=state)
+            return []
+
         finalized: list[dict] = []
         min_offline = self._cfg.live.min_recording_sec_before_offline_end
         confirm_sec = self._cfg.live.offline_confirm_sec
@@ -849,6 +921,7 @@ class LiveRecordingCore:
         room_id: str | None,
         live_info: LiveRoomInfo,
     ) -> dict:
+        ProbeExecutionGuard.record_violation("_start_recording")
         live_dir = self._ws / "creators" / sec_uid / "live"
         live_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
