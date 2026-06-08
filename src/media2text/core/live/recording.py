@@ -20,8 +20,7 @@ from media2text.core.errors import (
     PlatformChanged,
     RecordingError,
 )
-from media2text.core.desktop.state_events import enqueue_creator_updated
-from media2text.core.live.snapshot import touch_snapshot_probe_failed, upsert_live_snapshot
+from media2text.core.live.probe import probe_workers
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.ffmpeg import (
     concat_to_flv,
@@ -41,7 +40,7 @@ from media2text.core.live.transcript_writer import (
     seal_partial_transcript,
 )
 from media2text.core.platform.douyin.models import LiveRoomInfo
-from media2text.core.live.pipeline_events import record_event, stage_event
+from media2text.core.live.pipeline_events import stage_event
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
@@ -100,16 +99,13 @@ class LiveRecordingCore:
         live_info, err = self._fetch_live_info(creator)
         if err is not None:
             _kind, payload = err
-            touch_snapshot_probe_failed(
-                self._conn,
+            self._state.mark_snapshot_probe_failed(
                 creator.id,
                 error=str(payload.get("error", _kind)),
             )
-            enqueue_creator_updated(self._conn, creator.id)
             return None, payload
         if live_info is not None:
-            if upsert_live_snapshot(self._conn, creator.id, live_info):
-                enqueue_creator_updated(self._conn, creator.id)
+            self._state.update_snapshot(creator.id, live_info)
         return live_info, None
 
     def probe_live(
@@ -139,10 +135,7 @@ class LiveRecordingCore:
         if deadline is not None and time.monotonic() >= deadline:
             return errors, auth_required, platform_changed
 
-        workers = min(
-            max(1, self._cfg.live.scan_concurrency),
-            len(scan_targets),
-        )
+        workers = probe_workers(self._cfg, len(scan_targets))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
                 pool.submit(self.observe_live_state, creator): creator
@@ -197,7 +190,7 @@ class LiveRecordingCore:
                 raise PlatformChanged("platform changed")
             raise RecordingError(str(_payload.get("error", "live status check failed")))
         if live_info is not None:
-            upsert_live_snapshot(self._conn, creator_id, live_info)
+            self._state.update_snapshot(creator_id, live_info)
         if live_info is None or not live_info.is_live or not live_info.room_id:
             raise NotLive("creator is not live")
         return self._start_recording(
@@ -241,8 +234,7 @@ class LiveRecordingCore:
                 _kind, payload = err
                 return {"ok": False, "kind": _kind, **payload}
         if live_info is not None:
-            if upsert_live_snapshot(self._conn, creator_id, live_info):
-                enqueue_creator_updated(self._conn, creator_id)
+            self._state.update_snapshot(creator_id, live_info)
         if live_info is None or not live_info.is_live or not live_info.room_id:
             return {"skipped": "not_live", "creator_id": creator_id}
 
@@ -291,8 +283,7 @@ class LiveRecordingCore:
             stt_session.start()
         self._stt_sessions[session_id] = stt_session
         self._state.update_status(session_id, transcribe_status="streaming")
-        record_event(
-            self._conn,
+        self._state.record_pipeline_event(
             session_id=session_id,
             stage="streaming_stt",
             status="started",
@@ -422,8 +413,7 @@ class LiveRecordingCore:
 
         try:
             profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-            if upsert_live_snapshot(self._conn, creator.id, profile):
-                enqueue_creator_updated(self._conn, creator.id)
+            state.update_snapshot(creator.id, profile)
         except Exception:  # noqa: BLE001
             pass
 
@@ -495,8 +485,7 @@ class LiveRecordingCore:
         )
 
         def on_first_final(latency_sec: float) -> None:
-            record_event(
-                self._conn,
+            self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="streaming_stt",
                 status="first_final",
@@ -542,8 +531,7 @@ class LiveRecordingCore:
         detail: dict[str, str] = {"reason": reason}
         if error:
             detail["error"] = error
-        record_event(
-            self._conn,
+        self._state.record_pipeline_event(
             session_id=session_id,
             stage="streaming_stt",
             status="degraded",
@@ -603,8 +591,7 @@ class LiveRecordingCore:
             with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                 new_stt.start()
             self._stt_sessions[session_id] = new_stt
-            record_event(
-                self._conn,
+            self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="streaming_stt",
                 status="reconnected",
@@ -710,8 +697,7 @@ class LiveRecordingCore:
                 with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                     new_stt.start()
                 self._stt_sessions[session_id] = new_stt
-                record_event(
-                    self._conn,
+                self._state.record_pipeline_event(
                     session_id=session_id,
                     stage="streaming_stt",
                     status="reconnected",
@@ -773,7 +759,7 @@ class LiveRecordingCore:
                 error=str(exc)[:500],
                 ended=True,
             )
-            enqueue_creator_updated(self._conn, creator_id)
+            self._state.enqueue_creator_updated(creator_id)
             raise
 
     def _start_recording_after_session(
@@ -786,8 +772,7 @@ class LiveRecordingCore:
         live_info: LiveRoomInfo,
         temp_path: Path,
     ) -> dict:
-        record_event(
-            self._conn,
+        self._state.record_pipeline_event(
             session_id=session_id,
             stage="detected_live",
             status="completed",
@@ -843,8 +828,7 @@ class LiveRecordingCore:
                     stt_session.start()
                 self._stt_sessions[session_id] = stt_session
                 self._state.update_status(session_id, transcribe_status="streaming")
-                record_event(
-                    self._conn,
+                self._state.record_pipeline_event(
                     session_id=session_id,
                     stage="streaming_stt",
                     status="started",
@@ -857,8 +841,7 @@ class LiveRecordingCore:
                     session_id=session_id,
                     error=stt_error,
                 )
-                record_event(
-                    self._conn,
+                self._state.record_pipeline_event(
                     session_id=session_id,
                     stage="streaming_stt",
                     status="failed",
@@ -920,8 +903,7 @@ class LiveRecordingCore:
         log.info(
             "live_recording_started", session_id=session_id, temp_path=str(temp_path)
         )
-        record_event(
-            self._conn,
+        self._state.record_pipeline_event(
             session_id=session_id,
             stage="recording",
             status="started",
@@ -1127,15 +1109,13 @@ class LiveRecordingCore:
                     transcript_ok = True
                 elif seal_partial_transcript(anchor) is not None:
                     transcript_ok = True
-            record_event(
-                self._conn,
+            self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="streaming_stt",
                 status="completed" if transcript_ok else "failed",
             )
         except Exception as exc:  # noqa: BLE001
-            record_event(
-                self._conn,
+            self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="streaming_stt",
                 status="failed",
@@ -1161,8 +1141,7 @@ class LiveRecordingCore:
                     error=str(exc),
                 )
         else:
-            record_event(
-                self._conn,
+            self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="remux",
                 status="skipped",

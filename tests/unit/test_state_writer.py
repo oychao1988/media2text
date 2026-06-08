@@ -1,5 +1,7 @@
 from media2text.core.config import AppConfig, NotifyConfig
 from media2text.core.live.state_writer import StateWriter
+from media2text.core.platform.douyin.models import LiveRoomInfo
+from media2text.core.storage.repos import LiveSnapshotRepo
 from media2text.core.notify.outbox import NotifyDaemonGuard, NotifyEventRepo
 from media2text.core.storage.repos import (
     CreatorRepo,
@@ -114,6 +116,60 @@ def test_offline_since_atomic(tmp_path, monkeypatch) -> None:
     assert any(e.status == "offline_pending" for e in events)
     desktop = DesktopEventRepo(conn).claim_pending(limit=10)
     assert any(e.creator_id == cid for e in desktop)
+
+
+def test_state_writer_update_snapshot(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAsnap",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sw = StateWriter(conn, cfg=cfg)
+    info = LiveRoomInfo(
+        room_id="1",
+        is_live=True,
+        stream_flv_url="https://example.com/x.flv",
+        title="live",
+    )
+    assert sw.update_snapshot(cid, info) is True
+    snap = LiveSnapshotRepo(conn).get(cid)
+    assert snap is not None
+    assert snap.is_live == 1
+    desktop = DesktopEventRepo(conn).claim_pending(limit=10)
+    assert any(e.creator_id == cid for e in desktop)
+
+
+def test_state_writer_record_pipeline_event(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAevt",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(tmp_path / "live.flv"),
+        ffmpeg_pid=99999,
+    )
+    sw = StateWriter(conn, cfg=cfg)
+    sw.record_pipeline_event(
+        session_id=sid,
+        stage="probe",
+        status="completed",
+        detail={"ok": True},
+    )
+    events = PipelineEventRepo(conn).list_for_session(sid)
+    assert any(e.stage == "probe" and e.status == "completed" for e in events)
 
 
 def test_write_obs_updates_columns(tmp_path, monkeypatch) -> None:

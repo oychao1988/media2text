@@ -173,6 +173,18 @@ def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None
     assert shared_conn_ids.isdisjoint(set(slow_conn_ids))
 
 
+def test_probe_workers_prefers_probe_parallelism(tmp_path) -> None:
+    from media2text.core.live.probe import probe_workers
+
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(scan_concurrency=2),
+        monitor=MonitorConfig(probe_parallelism=6),
+    )
+    assert probe_workers(cfg, 10) == 6
+    assert probe_workers(cfg, 3) == 3
+
+
 def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
     from media2text.core.live.probe import probe_budget_sec, run_live_probe_tick
 

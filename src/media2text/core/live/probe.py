@@ -11,6 +11,11 @@ if TYPE_CHECKING:
     from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 
 
+def probe_workers(cfg: AppConfig, n_targets: int) -> int:
+    n = cfg.monitor.probe_parallelism or cfg.live.scan_concurrency
+    return min(max(1, n), n_targets)
+
+
 def probe_budget_sec(cfg: AppConfig) -> float:
     if cfg.monitor.probe_tick_budget_sec > 0:
         return float(cfg.monitor.probe_tick_budget_sec)
@@ -35,4 +40,4 @@ def run_live_probe_tick(
         bi = bilibili.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
         return {"douyin": dy, "bilibili": bi}
     finally:
-        ProbeExecutionGuard.exit_probe_tick(strict=False)
+        ProbeExecutionGuard.exit_probe_tick(strict=cfg.monitor.probe_guard_strict)

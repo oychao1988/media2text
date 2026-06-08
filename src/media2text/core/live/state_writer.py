@@ -143,6 +143,45 @@ class StateWriter:
             platform=platform,
         )
 
+    def update_snapshot(self, creator_id: str, live_info) -> bool:
+        from media2text.core.live.snapshot import upsert_live_snapshot
+
+        changed = upsert_live_snapshot(self._conn, creator_id, live_info)
+        if changed:
+            self._enqueue_creator_updated_no_commit(creator_id)
+            self._conn.commit()
+        return changed
+
+    def mark_snapshot_probe_failed(self, creator_id: str, *, error: str) -> bool:
+        from media2text.core.live.snapshot import touch_snapshot_probe_failed
+
+        changed = touch_snapshot_probe_failed(self._conn, creator_id, error=error)
+        self._enqueue_creator_updated_no_commit(creator_id)
+        self._conn.commit()
+        return changed
+
+    def record_pipeline_event(
+        self,
+        *,
+        session_id: str,
+        stage: str,
+        status: str,
+        job_id: str | None = None,
+        detail: dict | None = None,
+        duration_ms: int | None = None,
+    ) -> str:
+        from media2text.core.live.pipeline_events import record_event
+
+        return record_event(
+            self._conn,
+            session_id=session_id,
+            stage=stage,
+            status=status,
+            job_id=job_id,
+            detail=detail,
+            duration_ms=duration_ms,
+        )
+
     def set_offline_since(self, session_id: str, iso: str, *, creator_id: str) -> None:
         now = _now_iso()
         self._conn.execute("BEGIN IMMEDIATE")
@@ -244,6 +283,11 @@ class StateWriter:
                 0,
             ),
         )
+        return event_id
+
+    def enqueue_creator_updated(self, creator_id: str) -> str:
+        event_id = self._enqueue_creator_updated_no_commit(creator_id)
+        self._conn.commit()
         return event_id
 
     def _enqueue_creator_updated_no_commit(self, creator_id: str) -> str:
