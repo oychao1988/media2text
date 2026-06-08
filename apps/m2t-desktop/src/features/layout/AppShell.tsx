@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { CreatorList } from '../creators/CreatorList';
 import { CreatorListEmpty } from '../creators/CreatorListEmpty';
 import { CreatorListSkeleton } from '../creators/CreatorListSkeleton';
@@ -6,7 +6,7 @@ import { useCreators } from '../creators/CreatorsContext';
 import { DaemonCard } from '../daemon/DaemonCard';
 import { ViewPlayback } from '../history/ViewPlayback';
 import { useLiveStatus } from '../live/useLiveStatus';
-import { AgentPanel } from '../agent/AgentPanel';
+import { AgentPanel, type AgentPanelHandle } from '../agent/AgentPanel';
 import { TranscriptPane } from '../transcript/TranscriptPane';
 import type { LiveSessionSummary } from '../../lib/types';
 import { ViewConfig } from '../views/ViewConfig';
@@ -62,6 +62,7 @@ export function AppShell() {
 
   const [playbackSession, setPlaybackSession] = useState<LiveSessionSummary | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
+  const agentPanelRef = useRef<AgentPanelHandle>(null);
   const previewLoading = readLoadingPreview();
   const { refresh: refreshLive } = useLiveStatus(
     centerView === 'live' || centerView === 'history' || centerView === 'playback'
@@ -180,6 +181,7 @@ export function AppShell() {
       const targetView = isLive ? 'live' : 'history';
 
       setSelectedId(id);
+      agentPanelRef.current?.openNewDraftForAgent(id);
       if (centerView === 'config' || centerView === 'manage' || centerView === 'playback') {
         if (centerView === 'playback') setPlaybackSession(null);
         openCenterView(targetView);
@@ -372,6 +374,7 @@ export function AppShell() {
             />
           ) : null}
           <AgentPanel
+            ref={agentPanelRef}
             creatorId={selectedId}
             sessionContext={{
               sessionId: transcriptSessionId,
