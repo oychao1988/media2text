@@ -12,6 +12,7 @@ from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.config import AppConfig
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
+from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.platform.bilibili.dynamic import sync_creator_dynamics
 from media2text.core.platform.vod import download_pending, sync_creator
 from media2text.core.storage.repos import (
@@ -92,6 +93,14 @@ def _dispatch_task(
 ) -> dict[str, Any]:
     if task.task_type == "finalize":
         return _run_finalize(cfg, conn, task, watcher=watcher)
+    if task.task_type == "prepare_live_recording":
+        return _run_prepare_live_recording(cfg, conn, task, watcher=watcher)
+    if task.task_type == "reconnect_recording":
+        return _run_reconnect_recording(cfg, conn, task, watcher=watcher)
+    if task.task_type == "start_streaming_stt":
+        return _run_start_streaming_stt(cfg, conn, task, watcher=watcher)
+    if task.task_type == "reconnect_streaming_stt":
+        return _run_reconnect_streaming_stt(cfg, conn, task, watcher=watcher)
     if task.task_type == "sync_catalog":
         return _run_sync_catalog(cfg, conn, task, notify=notify)
     if task.task_type == "download":
@@ -101,6 +110,81 @@ def _dispatch_task(
     if task.task_type == "pipeline_run":
         return _run_pipeline_run(cfg, task)
     raise ValueError(f"unknown_monitor_task_type:{task.task_type}")
+
+
+def _core_for_task(
+    conn,
+    task,
+    *,
+    watcher: MonitorWatcher | None,
+) -> LiveRecordingCore:
+    if watcher is None:
+        raise RuntimeError("live_worker_requires_watcher")
+    creator = CreatorRepo(conn).get(task.creator_id)
+    if not creator:
+        raise ValueError(f"creator_not_found:{task.creator_id}")
+    return watcher.core_for_platform(conn, creator.platform)
+
+
+def _run_prepare_live_recording(
+    cfg: AppConfig,
+    conn,
+    task,
+    *,
+    watcher: MonitorWatcher | None,
+) -> dict[str, Any]:
+    payload = json.loads(task.payload_json or "{}")
+    live_info = LiveRecordingCore.live_info_from_payload(payload)
+    core = _core_for_task(conn, task, watcher=watcher)
+    return core.run_prepare_live_recording(
+        task.creator_id,
+        live_info=live_info,
+    )
+
+
+def _run_reconnect_recording(
+    cfg: AppConfig,
+    conn,
+    task,
+    *,
+    watcher: MonitorWatcher | None,
+) -> dict[str, Any]:
+    payload = json.loads(task.payload_json or "{}")
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise ValueError("reconnect_recording_missing_session_id")
+    core = _core_for_task(conn, task, watcher=watcher)
+    return core.run_reconnect_recording(session_id)
+
+
+def _run_start_streaming_stt(
+    cfg: AppConfig,
+    conn,
+    task,
+    *,
+    watcher: MonitorWatcher | None,
+) -> dict[str, Any]:
+    payload = json.loads(task.payload_json or "{}")
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise ValueError("start_streaming_stt_missing_session_id")
+    core = _core_for_task(conn, task, watcher=watcher)
+    return core.run_start_streaming_stt(session_id)
+
+
+def _run_reconnect_streaming_stt(
+    cfg: AppConfig,
+    conn,
+    task,
+    *,
+    watcher: MonitorWatcher | None,
+) -> dict[str, Any]:
+    payload = json.loads(task.payload_json or "{}")
+    session_id = payload.get("session_id")
+    if not session_id:
+        raise ValueError("reconnect_streaming_stt_missing_session_id")
+    core = _core_for_task(conn, task, watcher=watcher)
+    return core.run_reconnect_streaming_stt(session_id)
 
 
 def _run_finalize(

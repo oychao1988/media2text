@@ -258,6 +258,140 @@ class LiveRecordingCore:
             row.ffmpeg_pid or 0,
         )
 
+    def run_prepare_live_recording(
+        self,
+        creator_id: str,
+        *,
+        live_info: LiveRoomInfo | None = None,
+    ) -> dict:
+        """LW-01: resolve stream if needed, create session, spawn ffmpeg."""
+        if self._sessions.get_active_for_creator(creator_id):
+            return {"skipped": "already_recording", "creator_id": creator_id}
+        creator = self._creators.get(creator_id)
+        if not creator:
+            raise ValueError(f"creator_not_found:{creator_id}")
+        if creator.platform != self._platform:
+            raise ValueError(f"platform_mismatch:{creator.platform}")
+        if not effective_auto_record(creator, self._cfg):
+            return {"skipped": "auto_record_disabled", "creator_id": creator_id}
+
+        if live_info is None:
+            live_info, err = self._fetch_live_info(creator)
+            if err is not None:
+                _kind, payload = err
+                return {"ok": False, "kind": _kind, **payload}
+        if live_info is not None:
+            if upsert_live_snapshot(self._conn, creator_id, live_info):
+                enqueue_creator_updated(self._conn, creator_id)
+        if live_info is None or not live_info.is_live or not live_info.room_id:
+            return {"skipped": "not_live", "creator_id": creator_id}
+
+        meta = self.maybe_start_recording(creator, live_info)
+        return {"started": meta}
+
+    def run_start_streaming_stt(self, session_id: str) -> dict:
+        """LW-02: start STT sidecar on an active streaming recording."""
+        row = self._sessions.get(session_id)
+        if not row:
+            raise ValueError(f"session_not_found:{session_id}")
+        if row.status != "recording":
+            return {"skipped": "not_recording", "session_id": session_id}
+        if not self._use_streaming_pipeline(session_id):
+            return {"skipped": "not_streaming", "session_id": session_id}
+        if session_id in self._stt_sessions:
+            return {"skipped": "stt_already_running", "session_id": session_id}
+
+        creator = self._creators.get(row.creator_id)
+        if not creator:
+            raise ValueError(f"creator_not_found:{row.creator_id}")
+        if not row.temp_path:
+            raise ValueError(f"missing_temp_path:{session_id}")
+
+        stream_url = self._stream_urls.get(session_id)
+        if not stream_url and row.room_id:
+            stream_url = self._adapter.resolve_stream_url(
+                room_id=row.room_id,
+                sec_uid=creator.sec_uid,
+            )
+        if not stream_url:
+            raise ValueError(f"missing_stream_url:{session_id}")
+
+        self._streaming_transcript_anchor.setdefault(
+            session_id, Path(row.temp_path)
+        )
+        self._stt_checkpoint_counter.setdefault(session_id, 0)
+        anchor = self._transcript_anchor(session_id, row.temp_path)
+        stt_session = self._build_streaming_stt_session(
+            session_id,
+            creator=creator,
+            stream_url=stream_url,
+            media_path=anchor,
+        )
+        with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+            stt_session.start()
+        self._stt_sessions[session_id] = stt_session
+        self._sessions.update_status(session_id, transcribe_status="streaming")
+        record_event(
+            self._conn,
+            session_id=session_id,
+            stage="streaming_stt",
+            status="started",
+            detail={"task": "start_streaming_stt"},
+        )
+        return {"started": True, "session_id": session_id}
+
+    def run_reconnect_recording(self, session_id: str) -> dict:
+        """LW-03: ffmpeg reconnect — wraps _reconnect_segment."""
+        row = self._sessions.get(session_id)
+        if not row:
+            raise ValueError(f"session_not_found:{session_id}")
+        if row.status != "recording":
+            return {"skipped": "not_recording", "session_id": session_id}
+        creator = self._creators.get(row.creator_id)
+        if not creator:
+            raise ValueError(f"creator_not_found:{row.creator_id}")
+        if not row.temp_path or row.ffmpeg_pid is None:
+            raise ValueError(f"missing_recording_state:{session_id}")
+
+        self._reconnect_segment(
+            session_id,
+            creator,
+            row.temp_path,
+            row.ffmpeg_pid,
+        )
+        return {"reconnected": True, "session_id": session_id}
+
+    def run_reconnect_streaming_stt(self, session_id: str) -> dict:
+        """LW-04: STT reconnect — wraps _handle_stt_disconnect path."""
+        row = self._sessions.get(session_id)
+        if not row:
+            raise ValueError(f"session_not_found:{session_id}")
+        if row.status != "recording":
+            return {"skipped": "not_recording", "session_id": session_id}
+        creator = self._creators.get(row.creator_id)
+        if not creator:
+            raise ValueError(f"creator_not_found:{row.creator_id}")
+
+        self._handle_stt_disconnect(row, creator)
+        return {"session_id": session_id, "stt_reconnect_attempted": True}
+
+    @staticmethod
+    def live_info_from_payload(payload: dict) -> LiveRoomInfo | None:
+        raw = payload.get("live_info")
+        if raw is None:
+            return None
+        if isinstance(raw, LiveRoomInfo):
+            return raw
+        if isinstance(raw, dict):
+            return LiveRoomInfo(
+                room_id=raw.get("room_id"),
+                is_live=bool(raw.get("is_live")),
+                stream_flv_url=raw.get("stream_flv_url"),
+                title=raw.get("title"),
+                platform_live_started_at=raw.get("platform_live_started_at"),
+            )
+        return None
+
     def _fetch_live_info(self, creator):
         try:
             return self._adapter.get_live_room(sec_uid=creator.sec_uid), None
