@@ -32,6 +32,7 @@ type Props = {
     hasSummary: boolean;
   } | null;
   onSummaryUpdated?: (summaryPath: string | null) => void;
+  onTabChange?: (tab: 'transcript' | 'summary') => void;
 };
 
 const LIVE_SCROLL_TAIL_PX = 48;
@@ -88,6 +89,7 @@ export function TranscriptPane({
   playbackTime = 0,
   playbackItem = null,
   onSummaryUpdated,
+  onTabChange,
 }: Props) {
   const [tab, setTab] = useState<'transcript' | 'summary'>('transcript');
   const [state, dispatch] = useReducer(transcriptReducer, initialTranscriptState);
@@ -103,6 +105,14 @@ export function TranscriptPane({
   const showLiveTranscript = !isPlayback && tab === 'transcript';
   const showPlaybackTranscript = isPlayback && tab === 'transcript';
   const showSummaryPlayback = tab === 'summary';
+
+  useEffect(() => {
+    onTabChange?.(tab);
+  }, [onTabChange, tab]);
+
+  const selectTab = useCallback((next: 'transcript' | 'summary') => {
+    setTab(next);
+  }, []);
 
   useEffect(() => {
     setActiveSummaryPath(summaryPath);
@@ -432,7 +442,7 @@ export function TranscriptPane({
           role="tab"
           type="button"
           aria-selected={tab === 'transcript'}
-          onClick={() => setTab('transcript')}
+          onClick={() => selectTab('transcript')}
         >
           转写
         </button>
@@ -441,7 +451,7 @@ export function TranscriptPane({
           role="tab"
           type="button"
           aria-selected={tab === 'summary'}
-          onClick={() => setTab('summary')}
+          onClick={() => selectTab('summary')}
         >
           摘要
         </button>

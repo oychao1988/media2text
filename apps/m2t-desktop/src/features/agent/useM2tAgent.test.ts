@@ -239,6 +239,34 @@ describe('useM2tAgent (M2 WS + turn)', () => {
     });
   });
 
+  it('PATCHes activate when contextMode changes after tab switch', async () => {
+    const { rerender } = renderHook(
+      ({ contextMode }: { contextMode: 'transcript' | 'summary' }) =>
+        useM2tAgent({
+          threadId: 'thread-1',
+          creatorId: 'creator-1',
+          threadCreatorId: 'creator-1',
+          sessionContext: {
+            sessionId: 'sess-1',
+            sessionKind: 'live',
+            contextMode,
+          },
+        }),
+      { initialProps: { contextMode: 'transcript' as const } },
+    );
+
+    await waitFor(() => expect(apiPatch).toHaveBeenCalled());
+    apiPatch.mockClear();
+
+    rerender({ contextMode: 'summary' });
+
+    await waitFor(() => {
+      expect(apiPatch).toHaveBeenCalled();
+      const [, body] = apiPatch.mock.calls.at(-1)!;
+      expect(body).toMatchObject({ contextMode: 'summary' });
+    });
+  });
+
   it('does not bind sidebar creator on global thread activate', async () => {
     renderHook(() =>
       useM2tAgent({

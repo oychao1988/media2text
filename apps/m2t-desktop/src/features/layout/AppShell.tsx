@@ -63,6 +63,9 @@ export function AppShell() {
 
   const [playbackSession, setPlaybackSession] = useState<LiveSessionSummary | null>(null);
   const [playbackTime, setPlaybackTime] = useState(0);
+  const [transcriptContextMode, setTranscriptContextMode] = useState<
+    'transcript' | 'summary'
+  >('transcript');
   const agentPanelRef = useRef<AgentPanelHandle>(null);
   const previewLoading = readLoadingPreview();
   const { refresh: refreshLive } = useLiveStatus(
@@ -250,6 +253,7 @@ export function AppShell() {
         if (!playbackSession) return;
         setPlaybackSession({ ...playbackSession, has_summary: Boolean(path), summary_path: path });
       }}
+      onTabChange={setTranscriptContextMode}
     />
   ) : null;
 
@@ -431,7 +435,7 @@ export function AppShell() {
                   : null,
               transcriptPath,
               summaryPath,
-              contextMode: 'both',
+              contextMode: transcriptContextMode,
             }}
             sessionDocumentsOffer={sessionDocumentsOffer}
             playbackMode={transcriptMode === 'playback'}
