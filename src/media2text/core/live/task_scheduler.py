@@ -8,6 +8,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.post_process_pool import PostProcessExecutor
+from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -51,6 +52,14 @@ class TaskSchedulerLoop:
             self._thread.join(timeout=timeout)
 
     def tick_once(self, conn) -> None:
+        if self._cfg.monitor.reconciler_enabled:
+            reconcile_live(self._cfg, conn)
+            reconcile_content(self._cfg, conn)
+        elif self._cfg.monitor.reconciler_log_only:
+            n_live = reconcile_live(self._cfg, conn, log_only=True)
+            n_content = reconcile_content(self._cfg, conn, log_only=True)
+            log.info("reconcile_shadow", live=n_live, content=n_content)
+
         min_claim = max(1, self._cfg.monitor.live_lane_min_claim_per_tick)
         self._monitor_pool.claim_and_submit_priority_zero(
             self._cfg,

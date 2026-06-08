@@ -17,6 +17,7 @@ def test_monitor_scheduler_config_defaults() -> None:
     assert cfg.monitor.live_lane_min_claim_per_tick == 1
     assert cfg.monitor.probe_parallelism == 4
     assert cfg.monitor.reconciler_enabled is False
+    assert cfg.monitor.reconciler_log_only is False
     assert cfg.monitor.live_worker_max_parallel == 1
 
 
@@ -208,3 +209,43 @@ def test_claim_and_submit_priority_zero_async(tmp_path, monkeypatch) -> None:
     assert count == 1
     assert len(submitted) == 1
     pool.shutdown(wait=False)
+
+
+def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    conn = open_db(cfg)
+    calls: list[str] = []
+    watcher = MonitorWatcher(cfg)
+    pool = MagicMock()
+    pool.claim_and_submit_priority_zero = MagicMock(
+        side_effect=lambda *a, **k: calls.append("drain") or 0
+    )
+    pool.drain_pending = MagicMock()
+    stop = threading.Event()
+    loop = TaskSchedulerLoop(
+        cfg,
+        watcher,
+        pool,
+        post_pool=MagicMock(),
+        stop=stop,
+    )
+
+    import media2text.core.live.task_scheduler as task_scheduler_mod
+
+    monkeypatch.setattr(
+        task_scheduler_mod,
+        "reconcile_live",
+        lambda *a, **k: calls.append("live") or 0,
+    )
+    monkeypatch.setattr(
+        task_scheduler_mod,
+        "reconcile_content",
+        lambda *a, **k: calls.append("content") or 0,
+    )
+    loop.tick_once(conn)
+    assert calls.index("live") < calls.index("drain")
+    assert calls.index("content") < calls.index("drain")

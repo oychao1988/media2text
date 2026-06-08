@@ -117,6 +117,10 @@ class LiveSessionRow:
     offline_since_at: str | None = None
     platform_live_started_at: str | None = None
     pipeline_mode: str | None = None
+    obs_ffmpeg_alive: int | None = None
+    obs_stt_alive: int | None = None
+    obs_still_live: int | None = None
+    obs_polled_at: str | None = None
 
 
 @dataclass
