@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 from media2text.core.config import AppConfig
 from media2text.core.live.post_process import run_post_process_job
 from media2text.core.notify import NotifyService
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.storage.repos import PostProcessJobRepo
 from media2text.core.workspace import open_db
 
@@ -36,6 +37,7 @@ class PostProcessExecutor:
         """D1: worker opens its own DB connection — do not pass LiveTick conn."""
 
         def _run() -> None:
+            NotifyDaemonGuard.enter()
             conn = open_db(cfg)
             try:
                 run_post_process_job(cfg, conn, job_id=job_id, notify=notify)

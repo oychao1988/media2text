@@ -4,6 +4,7 @@ from unittest.mock import patch
 from media2text.core.config import AppConfig, NotifyConfig
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
+from media2text.core.notify.drain import drain_once
 from media2text.core.notify.outbox import NotifyDaemonGuard, NotifyEventRepo
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 
@@ -36,7 +37,10 @@ def test_notify_event_repo_enqueue_claim_mark_done(tmp_path, monkeypatch) -> Non
 
 def test_notify_outbox_only(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -51,12 +55,8 @@ def test_notify_outbox_only(tmp_path, monkeypatch) -> None:
         temp_path=str(tmp_path / "live.flv"),
         ffmpeg_pid=99999,
     )
+    NotifyDaemonGuard.enter()
     sw = StateWriter(conn, cfg=cfg)
-
-    def fail_emit(*_args, **_kwargs) -> None:
-        raise AssertionError("sync emit must not run for set_offline_since")
-
-    monkeypatch.setattr(NotifyService, "emit", fail_emit)
     sw.set_offline_since(sid, "2026-06-09T12:00:00+00:00", creator_id=cid)
 
     repo = NotifyEventRepo(conn)
@@ -67,30 +67,27 @@ def test_notify_outbox_only(tmp_path, monkeypatch) -> None:
     assert row.creator_id == cid
 
 
-def test_notify_outbox_only_blocks_daemon_sync_emit(tmp_path, monkeypatch) -> None:
+def test_emit_in_daemon_enqueues_when_outbox_only(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
         notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
     )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
     svc = NotifyService(cfg)
     NotifyDaemonGuard.enter()
-    with (
-        patch("media2text.core.notify.service.play_sound") as mock_sound,
-        patch("media2text.core.notify.service.send_feishu_text") as mock_feishu,
-    ):
-        svc.emit(NotifyEvent(kind=EventKind.LIVE_ENDED, title="t", body="b"))
-    mock_sound.assert_not_called()
-    mock_feishu.assert_not_called()
+    svc.emit(NotifyEvent(kind=EventKind.RECORDING_COMPLETED, title="t", body="b"))
+    assert NotifyEventRepo(conn).count_pending() == 1
 
 
-def test_notify_drain_emits_pending(tmp_path, monkeypatch) -> None:
+def test_notify_drain_delivers_without_reenqueue(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
-        notify=NotifyConfig(enabled=True, sound=False),
+        notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
     )
-    from media2text.api.services.notify_event_drain import drain_once
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -101,8 +98,52 @@ def test_notify_drain_emits_pending(tmp_path, monkeypatch) -> None:
     )
     conn.close()
 
-    with patch("media2text.api.services.notify_event_drain.NotifyService.emit") as mock_emit:
+    with patch("media2text.core.notify.drain.NotifyService.deliver") as mock_deliver:
         n = drain_once(cfg)
     assert n == 1
-    mock_emit.assert_called_once()
-    assert mock_emit.call_args.args[0].kind == EventKind.RECORDING_COMPLETED
+    mock_deliver.assert_called_once()
+    conn2 = open_db(cfg)
+    assert NotifyEventRepo(conn2).count_pending() == 0
+    conn2.close()
+
+
+def test_notify_drain_emits_pending(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    NotifyEventRepo(conn).enqueue(
+        kind=EventKind.RECORDING_COMPLETED.value,
+        title="博主",
+        body="录制完成",
+    )
+    conn.close()
+
+    with patch("media2text.core.notify.drain.NotifyService.deliver") as mock_deliver:
+        n = drain_once(cfg)
+    assert n == 1
+    mock_deliver.assert_called_once()
+    assert mock_deliver.call_args.args[0].kind == EventKind.RECORDING_COMPLETED
+
+
+def test_post_process_emit_enqueues_under_outbox_only(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        notify=NotifyConfig(enabled=True, sound=False, outbox_only=True),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    notify = NotifyService(cfg)
+
+    def worker_emit() -> None:
+        NotifyDaemonGuard.enter()
+        notify.emit(NotifyEvent(kind=EventKind.TRANSCRIBE_COMPLETED, title="t", body="b"))
+
+    worker_emit()
+    assert NotifyEventRepo(conn).count_pending() == 1

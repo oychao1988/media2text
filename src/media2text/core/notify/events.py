@@ -26,3 +26,6 @@ class NotifyEvent:
     kind: EventKind
     title: str
     body: str
+    creator_id: str | None = None
+    session_id: str | None = None
+    dedupe_key: str | None = None
