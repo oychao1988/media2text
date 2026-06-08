@@ -1,8 +1,18 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { M2tSelect } from '../../components/M2tSelect';
 import { AgentAttachmentStrip } from './AgentAttachmentStrip';
+import { AgentMentionPopover } from './AgentMentionPopover';
 import type { ContextAttachment, ContextMode } from './contextAttachment';
+import {
+  mentionRowToAttachment,
+  parseMentionAtCaret,
+  removeMentionSegment,
+  type MentionDocumentRow,
+} from './mentionDocuments';
+import { useMentionSessionIndex } from './useMentionSessionIndex';
 import { useAutoResizeTextarea } from './useAutoResizeTextarea';
+
+type MentionCreator = { id: string; display_name: string | null };
 
 type AgentComposerProps = {
   ready: boolean;
@@ -13,7 +23,9 @@ type AgentComposerProps = {
   attachments?: ContextAttachment[];
   contextMode?: ContextMode;
   sidebarCreatorId?: string | null;
+  mentionCreators?: MentionCreator[];
   onRemoveAttachment?: (id: string) => void;
+  onAppendMentionAttachment?: (attachment: ContextAttachment) => void;
   onModelChange: (model: string) => void;
   onSend: (text: string) => void;
 };
@@ -62,18 +74,89 @@ export function AgentComposer({
   attachments = [],
   contextMode = 'both',
   sidebarCreatorId = null,
+  mentionCreators = [],
   onRemoveAttachment,
+  onAppendMentionAttachment,
   onModelChange,
   onSend,
 }: AgentComposerProps) {
   const [text, setText] = useState('');
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionStart, setMentionStart] = useState<number | null>(null);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionActiveIndex, setMentionActiveIndex] = useState(0);
   const { ref: inputRef, onInput } = useAutoResizeTextarea(text, 10);
 
+  const { rows: mentionRows, loading: mentionLoading } = useMentionSessionIndex(
+    mentionCreators,
+    mentionQuery,
+    mentionOpen,
+  );
+
+  useEffect(() => {
+    setMentionActiveIndex(0);
+  }, [mentionQuery, mentionRows.length]);
+
+  const closeMention = useCallback(() => {
+    setMentionOpen(false);
+    setMentionStart(null);
+    setMentionQuery('');
+    setMentionActiveIndex(0);
+  }, []);
+
+  const syncMentionFromInput = useCallback(
+    (value: string, caret: number) => {
+      const parsed = parseMentionAtCaret(value, caret);
+      if (!parsed) {
+        closeMention();
+        return;
+      }
+      setMentionOpen(true);
+      setMentionStart(parsed.start);
+      setMentionQuery(parsed.query);
+    },
+    [closeMention],
+  );
+
+  const selectMentionRow = useCallback(
+    (row: MentionDocumentRow) => {
+      if (mentionStart == null || !onAppendMentionAttachment) return;
+      const el = inputRef.current;
+      const caret = el?.selectionStart ?? text.length;
+      const nextText = removeMentionSegment(text, mentionStart, caret);
+      setText(nextText);
+      onAppendMentionAttachment(mentionRowToAttachment(row));
+      closeMention();
+      requestAnimationFrame(() => {
+        el?.focus();
+        const pos = mentionStart;
+        el?.setSelectionRange(pos, pos);
+      });
+    },
+    [closeMention, inputRef, mentionStart, onAppendMentionAttachment, text],
+  );
+
+  const insertAtTrigger = useCallback(() => {
+    const el = inputRef.current;
+    if (!el || !ready || blocked) return;
+    const caret = el.selectionStart ?? text.length;
+    const next = `${text.slice(0, caret)}@${text.slice(caret)}`;
+    setText(next);
+    const newCaret = caret + 1;
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(newCaret, newCaret);
+      syncMentionFromInput(next, newCaret);
+    });
+  }, [blocked, inputRef, ready, syncMentionFromInput, text]);
+
   const submit = () => {
+    if (mentionOpen) return;
     const trimmed = text.trim();
     if (!trimmed || !ready || blocked) return;
     onSend(trimmed);
     setText('');
+    closeMention();
   };
 
   const modelOptions = [
@@ -106,24 +189,61 @@ export function AgentComposer({
         sidebarCreatorId={sidebarCreatorId}
         onRemove={onRemoveAttachment ?? (() => {})}
       />
-      <textarea
-        ref={inputRef}
-        className="agent-composer-input"
-        rows={1}
-        id="agent-input"
-        placeholder={placeholder}
-        aria-label="Agent 输入"
-        value={text}
-        disabled={!ready || blocked}
-        onChange={(e) => setText(e.target.value)}
-        onInput={onInput}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' && !e.shiftKey) {
-            e.preventDefault();
-            submit();
-          }
-        }}
-      />
+      <div className="agent-composer-input-wrap">
+        <AgentMentionPopover
+          open={mentionOpen}
+          rows={mentionRows}
+          loading={mentionLoading}
+          activeIndex={mentionActiveIndex}
+          onActiveIndexChange={setMentionActiveIndex}
+          onSelect={selectMentionRow}
+        />
+        <textarea
+          ref={inputRef}
+          className="agent-composer-input"
+          rows={1}
+          id="agent-input"
+          placeholder={placeholder}
+          aria-label="Agent 输入"
+          value={text}
+          disabled={!ready || blocked}
+          onChange={(e) => {
+            const value = e.target.value;
+            setText(value);
+            syncMentionFromInput(value, e.target.selectionStart ?? value.length);
+          }}
+          onInput={onInput}
+          onKeyDown={(e) => {
+            if (mentionOpen && mentionRows.length > 0) {
+              if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                setMentionActiveIndex((i) => Math.min(i + 1, mentionRows.length - 1));
+                return;
+              }
+              if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                setMentionActiveIndex((i) => Math.max(i - 1, 0));
+                return;
+              }
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                const row = mentionRows[mentionActiveIndex];
+                if (row) selectMentionRow(row);
+                return;
+              }
+            }
+            if (e.key === 'Escape' && mentionOpen) {
+              e.preventDefault();
+              closeMention();
+              return;
+            }
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              submit();
+            }
+          }}
+        />
+      </div>
       <div className="agent-composer-toolbar">
         <div className="agent-composer-left">
           <button
@@ -169,9 +289,10 @@ export function AgentComposer({
             type="button"
             className="agent-icon-btn"
             id="agent-attach-btn"
-            title="附件"
-            aria-label="附件"
+            title="引用文档 @"
+            aria-label="引用文档"
             disabled={controlsDisabled}
+            onClick={insertAtTrigger}
           >
             <AttachIcon />
           </button>
