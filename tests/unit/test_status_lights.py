@@ -73,6 +73,24 @@ def test_yellow_when_active_session_without_ffmpeg() -> None:
         snapshot=CreatorLiveSnapshotRow("c1", 0, None, None, "2026-01-01T00:00:00Z"),
     )
     assert out["status_light"] == "yellow"
+    assert out["status_label"] == "录制异常"
+    assert out["status_abbr"] == "异"
+
+
+def test_yellow_degraded_while_recording() -> None:
+    import os
+
+    pid = os.getpid()
+    out = compute_status_light(
+        active_session=_session(
+            ffmpeg_pid=pid,
+            status="recording",
+            transcribe_status="degraded",
+        ),
+        snapshot=CreatorLiveSnapshotRow("c1", 1, "r1", "t", "2026-01-01T00:00:00Z"),
+    )
+    assert out["status_light"] == "yellow"
+    assert out["status_label"] == "转写降级"
 
 
 def test_gray_when_offline() -> None:

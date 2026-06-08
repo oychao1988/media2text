@@ -64,6 +64,7 @@ export function CreatorList({
                   profileSyncedAt={creator.profile_synced_at}
                   light={creator.status_light}
                   abbr={creator.status_abbr}
+                  statusLabel={creator.status_label}
                 />
               </div>
               <div className="creator-info">

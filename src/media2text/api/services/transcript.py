@@ -19,6 +19,54 @@ def _media_path_for_session(row: LiveSessionRow) -> Path | None:
     return Path(raw)
 
 
+def _parse_segment_paths(row: LiveSessionRow) -> list[str]:
+    if not row.segment_paths_json:
+        return []
+    try:
+        data = json.loads(row.segment_paths_json)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(data, list):
+        return []
+    return [str(p) for p in data if p]
+
+
+def transcript_media_candidates(row: LiveSessionRow) -> list[Path]:
+    """FLV paths that may host transcript sidecars (anchor first, then current)."""
+    seen: set[str] = set()
+    out: list[Path] = []
+    for raw in _parse_segment_paths(row):
+        if raw in seen:
+            continue
+        seen.add(raw)
+        out.append(Path(raw))
+    for raw in (row.temp_path, row.local_path):
+        if not raw or raw in seen:
+            continue
+        seen.add(raw)
+        out.append(Path(raw))
+    return out
+
+
+def resolve_transcript_media(row: LiveSessionRow) -> Path | None:
+    """First candidate path with a partial/final/md transcript sidecar."""
+    for media in transcript_media_candidates(row):
+        if _transcript_sidecar_exists(media):
+            return media
+    return None
+
+
+def _transcript_sidecar_exists(media_path: Path) -> bool:
+    for suffix in (
+        ".transcript.partial.json",
+        ".transcript.json",
+        ".transcript.md",
+    ):
+        if media_path.with_suffix(suffix).is_file():
+            return True
+    return False
+
+
 def _read_json_sidecar(path: Path) -> dict[str, Any] | None:
     if not path.is_file():
         return None
@@ -73,6 +121,34 @@ def read_transcript_payload(media_path: Path) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="transcript not found")
 
 
+def read_transcript_for_session(row: LiveSessionRow) -> dict[str, Any]:
+    """Load transcript for a session; follows streaming anchor across reconnects."""
+    last_exc: HTTPException | None = None
+    for media in transcript_media_candidates(row):
+        try:
+            return read_transcript_payload(media)
+        except HTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            last_exc = exc
+    if last_exc is not None:
+        raise last_exc
+    raise HTTPException(status_code=404, detail="transcript not found")
+
+
+def transcript_mtime(row: LiveSessionRow) -> float | None:
+    media = resolve_transcript_media(row)
+    if media is None:
+        return None
+    partial = media.with_suffix(".transcript.partial.json")
+    final_json = media.with_suffix(".transcript.json")
+    mtimes: list[float] = []
+    for path in (partial, final_json):
+        if path.is_file():
+            mtimes.append(path.stat().st_mtime)
+    return max(mtimes) if mtimes else None
+
+
 def read_summary_text(media_path: Path) -> str:
     summary_path = _summary_sidecar_path(str(media_path))
     if not summary_path:
@@ -88,19 +164,21 @@ def read_summary_text(media_path: Path) -> str:
 
 def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
     media = _media_path_for_session(row)
-    if media is None:
+    transcript_media = resolve_transcript_media(row)
+    if media is None and transcript_media is None:
         return {
             "media_path": None,
             "transcript_path": None,
             "summary_path": None,
             "partial_transcript_path": None,
         }
-    media_s = str(media)
-    partial = media.with_suffix(".transcript.partial.json")
+    media_s = str(media) if media is not None else str(transcript_media)
+    transcript_s = str(transcript_media) if transcript_media is not None else media_s
+    partial = Path(transcript_s).with_suffix(".transcript.partial.json")
     return {
         "media_path": media_s,
-        "transcript_path": _transcript_sidecar_path(media_s),
-        "summary_path": _summary_sidecar_path(media_s),
+        "transcript_path": _transcript_sidecar_path(transcript_s),
+        "summary_path": _summary_sidecar_path(transcript_s),
         "partial_transcript_path": str(partial) if partial.is_file() else None,
     }
 

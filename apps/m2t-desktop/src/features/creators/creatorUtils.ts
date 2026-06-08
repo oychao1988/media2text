@@ -15,9 +15,10 @@ export function statusAriaLabel(light: StatusLight): string {
 export function manageStatusText(c: {
   monitor_enabled: boolean;
   status_light: StatusLight;
+  status_label?: string;
 }): string {
   if (!c.monitor_enabled) return '未监控';
-  return statusAriaLabel(c.status_light);
+  return c.status_label ?? statusAriaLabel(c.status_light);
 }
 
 export function creatorInitial(name: string | null | undefined): string {
@@ -30,8 +31,10 @@ export function formatCreatorSub(c: {
   platform: string;
   status_light: StatusLight;
   is_live: boolean;
+  status_label?: string;
 }): string {
   const platform = c.platform;
+  if (c.status_label) return `${platform} · ${c.status_label}`;
   if (c.status_light === 'green') return `${platform} · 录制中`;
   if (c.status_light === 'yellow') return `${platform} · 收尾中`;
   if (c.is_live || c.status_light === 'red') return `${platform} · 直播中`;
@@ -49,18 +52,25 @@ export function autoRecordPillLabel(
 }
 
 /** Higher = more urgent live presence (sidebar pin order). */
-export function creatorLiveRank(c: Pick<Creator, 'is_live' | 'status_light'>): number {
+export function creatorLiveRank(
+  c: Pick<Creator, 'is_live' | 'status_light' | 'active_session_id'>,
+): number {
   if (c.status_light === 'green') return 2;
   if (c.is_live || c.status_light === 'red') return 1;
+  if (c.status_light === 'yellow' && c.active_session_id) return 1;
   return 0;
 }
 
-export function isCreatorLive(c: Pick<Creator, 'is_live' | 'status_light'>): boolean {
+export function isCreatorLive(
+  c: Pick<Creator, 'is_live' | 'status_light' | 'active_session_id'>,
+): boolean {
   return creatorLiveRank(c) > 0;
 }
 
 /** Pin live creators to the top; preserve API order within each tier. */
-export function sortCreatorsLiveFirst<T extends Pick<Creator, 'is_live' | 'status_light'>>(creators: T[]): T[] {
+export function sortCreatorsLiveFirst<
+  T extends Pick<Creator, 'is_live' | 'status_light' | 'active_session_id'>,
+>(creators: T[]): T[] {
   return creators
     .map((creator, index) => ({ creator, index }))
     .sort((a, b) => {

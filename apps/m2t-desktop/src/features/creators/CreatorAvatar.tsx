@@ -14,6 +14,7 @@ type CreatorAvatarProps = {
   size?: 'sm' | 'lg';
   light?: StatusLight;
   abbr?: string;
+  statusLabel?: string;
   className?: string;
 };
 
@@ -26,6 +27,7 @@ export function CreatorAvatar({
   size = 'sm',
   light,
   abbr,
+  statusLabel,
   className,
 }: CreatorAvatarProps) {
   const [src, setSrc] = useState<string | null>(null);
@@ -59,7 +61,7 @@ export function CreatorAvatar({
       ) : (
         creatorInitial(displayName)
       )}
-      {light ? <StatusLightBadge light={light} abbr={abbr} /> : null}
+      {light ? <StatusLightBadge light={light} abbr={abbr} label={statusLabel} /> : null}
     </div>
   );
 }

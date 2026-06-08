@@ -6,6 +6,8 @@ import json
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from fastapi import HTTPException
+
 if TYPE_CHECKING:
     from media2text.agent.approval import ApprovalGate
     from media2text.agent.profile_resolver import AgentProfileContext
@@ -17,7 +19,7 @@ from media2text.api.services.sessions_list import list_creator_sessions
 from media2text.api.services.transcript import (
     _media_path_for_session,
     read_summary_text,
-    read_transcript_payload,
+    read_transcript_for_session,
 )
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
@@ -166,11 +168,12 @@ def m2t_read_transcript(ctx: ToolContext, **params: Any) -> dict[str, Any]:
     row = LiveSessionRepo(ctx.conn).get(session_id)
     if not row:
         return _err("NOT_FOUND", "session not found")
-    media = _media_path_for_session(row)
-    if media is None:
-        return _err("NO_MEDIA", "session has no media path")
     try:
-        payload = read_transcript_payload(media)
+        payload = read_transcript_for_session(row)
+    except HTTPException as exc:
+        if exc.status_code == 404:
+            return _err("NOT_FOUND", "transcript not found")
+        return _err("READ_FAILED", str(exc.detail))
     except OSError as exc:
         return _err("READ_FAILED", str(exc))
     return _ok(payload)

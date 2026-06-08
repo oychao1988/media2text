@@ -122,12 +122,7 @@ def _run_finalize(
     creator = CreatorRepo(conn).get(session.creator_id)
     if not creator:
         raise ValueError(f"creator_not_found:{session.creator_id}")
-    if creator.platform == "douyin":
-        core = watcher._douyin_live._core
-    elif creator.platform == "bilibili":
-        core = watcher._bilibili_live._core
-    else:
-        raise ValueError(f"unsupported_platform:{creator.platform}")
+    core = watcher.core_for_platform(conn, creator.platform)
     meta = core._finalize_recording(
         session_id, session.temp_path, session.ffmpeg_pid or 0
     )
@@ -292,14 +287,38 @@ class MonitorExecutor:
         notify: NotifyService,
         watcher: MonitorWatcher | None = None,
         limit: int,
+        min_priority: int = 1,
+        max_priority: int | None = None,
     ) -> None:
         repo = MonitorTaskRepo(conn)
         repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
-        claimed = repo.claim_pending(limit=limit, min_priority=1)
+        claimed = repo.claim_pending(
+            limit=limit,
+            min_priority=min_priority,
+            max_priority=max_priority,
+        )
         for task in claimed:
             self.submit(
                 cfg, task_id=task.id, notify=notify, watcher=watcher
             )
+
+    def claim_and_submit_priority_zero(
+        self,
+        cfg: AppConfig,
+        conn,
+        *,
+        notify: NotifyService,
+        watcher: MonitorWatcher | None = None,
+        limit: int = 1,
+    ) -> int:
+        repo = MonitorTaskRepo(conn)
+        repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
+        claimed = repo.claim_pending(limit=limit, max_priority=0, min_priority=0)
+        for task in claimed:
+            self.submit(
+                cfg, task_id=task.id, notify=notify, watcher=watcher
+            )
+        return len(claimed)
 
     def drain_priority_zero(
         self,

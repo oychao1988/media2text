@@ -421,6 +421,7 @@ export function ManagePage() {
                   profileSyncedAt={c.profile_synced_at}
                   light={c.status_light}
                   abbr={c.status_abbr}
+                  statusLabel={c.status_label}
                 />
                 <div className="manage-row-info">
                   <div className="manage-row-name">{c.display_name ?? c.unique_id ?? c.id}</div>

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from subprocess import Popen
@@ -32,6 +33,7 @@ from media2text.core.ffmpeg import (
 )
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.partial_notify import PartialTranscriptNotifier
+from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.live.streaming_stt import StreamingSttSession
 from media2text.core.live.transcript_writer import (
     list_segment_checkpoints,
@@ -57,8 +59,9 @@ class LiveRecordingCore:
         conn,
         adapter: LivePlatformAdapter,
         platform: str,
-        processes: dict[str, Popen],
         notify: NotifyService,
+        processes: dict[str, Popen] | None = None,
+        runtime: SessionRuntime | None = None,
     ) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
@@ -68,15 +71,28 @@ class LiveRecordingCore:
         self._jobs = PostProcessJobRepo(conn)
         self._adapter = adapter
         self._platform = platform
-        self._processes = processes
+        if runtime is None:
+            runtime = SessionRuntime()
+            if processes is not None:
+                runtime.processes = processes
+        elif processes is not None and not runtime.processes:
+            runtime.processes = processes
+        self._runtime = runtime
         self._notify = notify
         self._flv_size_snapshots: dict[str, int] = {}
-        self._stt_sessions: dict[str, StreamingSttSession] = {}
         self._stream_urls: dict[str, str] = {}
         self._streaming_legacy_finalize: set[str] = set()
         self._streaming_transcript_anchor: dict[str, Path] = {}
         self._stt_checkpoint_counter: dict[str, int] = {}
         self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
+
+    @property
+    def _processes(self) -> dict[str, Popen]:
+        return self._runtime.processes
+
+    @property
+    def _stt_sessions(self) -> dict[str, StreamingSttSession]:
+        return self._runtime.stt_sessions
 
     def scan_and_start(
         self, *, creator_id: str | None = None
@@ -100,15 +116,47 @@ class LiveRecordingCore:
                 continue
             scan_targets.append(creator)
 
-        for creator in scan_targets:
-            live_info, err_payload = self.observe_live_state(creator)
-            if err_payload is not None:
+        observed: list[tuple] = []
+        if scan_targets:
+            workers = min(
+                max(1, self._cfg.live.scan_concurrency),
+                len(scan_targets),
+            )
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                futures = {
+                    pool.submit(self._fetch_live_info, creator): creator
+                    for creator in scan_targets
+                }
+                for future in as_completed(futures):
+                    creator = futures[future]
+                    try:
+                        observed.append((creator, future.result()))
+                    except Exception as exc:  # noqa: BLE001
+                        log.warning(
+                            "live_status_check_failed",
+                            creator_id=creator.id,
+                            error=str(exc),
+                        )
+                        errors.append({"creator_id": creator.id, "error": str(exc)})
+
+        for creator, (live_info, err) in observed:
+            if err is not None:
+                _kind, err_payload = err
+                touch_snapshot_probe_failed(
+                    self._conn,
+                    creator.id,
+                    error=str(err_payload.get("error", _kind)),
+                )
+                enqueue_creator_updated(self._conn, creator.id)
                 if err_payload.get("auth_required"):
                     auth_required = True
                 elif err_payload.get("platform_changed"):
                     platform_changed = True
                 errors.append(err_payload)
                 continue
+            if live_info is not None:
+                if upsert_live_snapshot(self._conn, creator.id, live_info):
+                    enqueue_creator_updated(self._conn, creator.id)
             if live_info is None or not live_info.is_live or not live_info.room_id:
                 continue
             if not effective_auto_record(creator, self._cfg):

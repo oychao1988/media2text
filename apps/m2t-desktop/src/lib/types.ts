@@ -15,6 +15,7 @@ export type Creator = {
   badge: string;
   badge_class: string;
   status_abbr: string;
+  status_label: string;
   avatar_url: string | null;
   signature: string | null;
   follower_count: number | null;

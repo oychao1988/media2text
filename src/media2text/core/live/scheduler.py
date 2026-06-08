@@ -14,6 +14,9 @@ from media2text.core.storage.repos import LiveSessionRepo
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
+from media2text.core.live.probe import run_live_probe_tick
+from media2text.core.live.task_scheduler import TaskSchedulerLoop
+from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
     from media2text.core.monitor.watcher import MonitorWatcher
@@ -30,14 +33,12 @@ def _live_poll_interval(cfg: AppConfig) -> int:
 
 
 class LiveTickLoop:
-    """Dedicated thread: douyin + bilibili run_once and non-blocking post-process drain."""
+    """Dedicated thread: live probe only (LP-01/02/03); no inline finalize drain."""
 
     def __init__(
         self,
         watcher: MonitorWatcher,
         cfg: AppConfig,
-        post_pool: PostProcessExecutor,
-        monitor_pool: MonitorExecutor,
         *,
         creator_id: str | None,
         stop: threading.Event,
@@ -45,8 +46,6 @@ class LiveTickLoop:
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
-        self._post_pool = post_pool
-        self._monitor_pool = monitor_pool
         self._creator_id = creator_id
         self._stop = stop
         self._on_tick = on_tick
@@ -55,7 +54,7 @@ class LiveTickLoop:
     def start(self) -> None:
         self._thread = threading.Thread(
             target=self._run,
-            name="live-tick",
+            name="live-probe",
             daemon=True,
         )
         self._thread.start()
@@ -66,29 +65,27 @@ class LiveTickLoop:
 
     def _run(self) -> None:
         live_poll = _live_poll_interval(self._cfg)
-        last_post = 0.0
         while not self._stop.is_set():
-            self._watcher._douyin_live.run_once(creator_id=self._creator_id)
-            self._watcher._bilibili_live.run_once(creator_id=self._creator_id)
-            finalized = self._monitor_pool.drain_priority_zero(
-                self._cfg,
-                self._watcher._conn,
-                notify=self._watcher._notify,
-                watcher=self._watcher,
-            )
-            if finalized:
-                log.info("monitor_finalize_drained", count=len(finalized))
-            now = time.time()
-            if now - last_post >= self._cfg.live.post_process_poll_interval_sec:
-                self._post_pool.drain_pending(
-                    self._cfg,
-                    self._watcher._conn,
-                    notify=self._watcher._notify,
-                    limit=self._cfg.live.post_process_max_parallel,
+            if self._on_tick is not None:
+                self._on_tick()
+            else:
+                write_heartbeat(
+                    self._cfg.ensure_workspace(),
+                    last_tick_at=datetime.now(timezone.utc).isoformat(),
                 )
-                last_post = now
-            active = len(LiveSessionRepo(self._watcher._conn).list_active())
-            log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
+            conn = open_db(self._cfg)
+            try:
+                run_live_probe_tick(
+                    self._cfg,
+                    conn,
+                    douyin=self._watcher._douyin_live,
+                    bilibili=self._watcher._bilibili_live,
+                    creator_id=self._creator_id,
+                )
+                active = len(LiveSessionRepo(conn).list_active())
+                log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
+            finally:
+                conn.close()
             if self._on_tick is not None:
                 self._on_tick()
             else:
@@ -106,7 +103,6 @@ class SlowTickLoop:
         self,
         watcher: MonitorWatcher,
         cfg: AppConfig,
-        monitor_pool: MonitorExecutor,
         distill_pool,
         *,
         creator_id: str | None,
@@ -114,7 +110,6 @@ class SlowTickLoop:
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
-        self._monitor_pool = monitor_pool
         self._distill_pool = distill_pool
         self._creator_id = creator_id
         self._stop = stop
@@ -151,22 +146,19 @@ class SlowTickLoop:
             if now - last_dynamic >= dynamic_poll:
                 self._watcher._run_dynamic_tick(creator_id=self._creator_id)
                 last_dynamic = now
-            self._monitor_pool.drain_pending(
-                self._cfg,
-                self._watcher._conn,
-                notify=self._watcher._notify,
-                watcher=self._watcher,
-                limit=self._cfg.monitor.executor_max_parallel,
-            )
             now_distill = time.time()
             if now_distill - self._last_distill >= 300:
                 from media2text.agent.creator_distill.pool import resolve_distill_workers
 
-                self._distill_pool.drain_pending(
-                    self._cfg,
-                    self._watcher._conn,
-                    limit=resolve_distill_workers(self._cfg),
-                )
+                conn = open_db(self._cfg)
+                try:
+                    self._distill_pool.drain_pending(
+                        self._cfg,
+                        conn,
+                        limit=resolve_distill_workers(self._cfg),
+                    )
+                finally:
+                    conn.close()
                 self._last_distill = now_distill
             self._stop.wait(timeout=1.0)
 
@@ -191,9 +183,12 @@ class MonitorScheduler:
         )
 
         self._distill_pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
-        self._monitor_pool = MonitorExecutor(max_workers=cfg.monitor.executor_max_parallel)
+        self._monitor_pool = MonitorExecutor(
+            max_workers=max(cfg.monitor.live_worker_max_parallel, 1)
+        )
         self._live_loop: LiveTickLoop | None = None
         self._slow_loop: SlowTickLoop | None = None
+        self._scheduler_loop: TaskSchedulerLoop | None = None
 
     def start(self, *, creator_id: str | None = None) -> None:
         live_poll = _live_poll_interval(self._cfg)
@@ -205,26 +200,32 @@ class MonitorScheduler:
             archive_poll=_bilibili_archive_poll_sec(self._cfg),
             dynamic_poll=bcfg.dynamic_poll_interval_sec,
             post_process_poll=self._cfg.live.post_process_poll_interval_sec,
-            monitor_executor_parallel=self._cfg.monitor.executor_max_parallel,
+            monitor_executor_parallel=self._cfg.monitor.live_worker_max_parallel,
+            scheduler_interval_sec=self._cfg.monitor.scheduler_interval_sec,
         )
         self._live_loop = LiveTickLoop(
             self._watcher,
             self._cfg,
-            self._post_pool,
-            self._monitor_pool,
             creator_id=creator_id,
             stop=self._stop,
             on_tick=self._on_live_tick,
         )
+        self._scheduler_loop = TaskSchedulerLoop(
+            self._cfg,
+            self._watcher,
+            self._monitor_pool,
+            self._post_pool,
+            stop=self._stop,
+        )
         self._slow_loop = SlowTickLoop(
             self._watcher,
             self._cfg,
-            self._monitor_pool,
             self._distill_pool,
             creator_id=creator_id,
             stop=self._stop,
         )
         self._live_loop.start()
+        self._scheduler_loop.start()
         self._slow_loop.start()
 
     def stop(self) -> None:
@@ -234,5 +235,15 @@ class MonitorScheduler:
         self._distill_pool.shutdown(wait=False, cancel_futures=True)
         if self._live_loop is not None:
             self._live_loop.join(timeout=5.0)
+        if self._scheduler_loop is not None:
+            self._scheduler_loop.join(timeout=5.0)
         if self._slow_loop is not None:
             self._slow_loop.join(timeout=5.0)
+
+    def join(self, timeout: float | None = None) -> None:
+        if self._live_loop is not None:
+            self._live_loop.join(timeout=timeout)
+        if self._scheduler_loop is not None:
+            self._scheduler_loop.join(timeout=timeout)
+        if self._slow_loop is not None:
+            self._slow_loop.join(timeout=timeout)

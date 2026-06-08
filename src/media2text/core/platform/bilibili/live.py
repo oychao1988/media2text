@@ -6,6 +6,7 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.notify import NotifyService
 from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE_ROOT
 from media2text.core.platform.bilibili.auth import session_path
@@ -19,23 +20,36 @@ PLATFORM = "bilibili"
 
 
 class LiveWatcher:
-    def __init__(self, cfg: AppConfig) -> None:
+    def __init__(
+        self,
+        cfg: AppConfig,
+        *,
+        runtime: SessionRuntime | None = None,
+    ) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
         self._conn = open_db(cfg)
         self._creators = CreatorRepo(self._conn)
         self._sessions = LiveSessionRepo(self._conn)
         self._adapter = self._build_adapter()
-        self._processes: dict = {}
+        self._runtime = runtime or SessionRuntime()
         self._notify = NotifyService(cfg)
-        self._core = LiveRecordingCore(
-            cfg,
-            conn=self._conn,
+        self._core = self._make_core(self._conn)
+
+    def _make_core(self, conn) -> LiveRecordingCore:
+        return LiveRecordingCore(
+            self._cfg,
+            conn=conn,
             adapter=self._adapter,
             platform=PLATFORM,
-            processes=self._processes,
+            runtime=self._runtime,
             notify=self._notify,
         )
+
+    def core_for_conn(self, conn) -> LiveRecordingCore:
+        if conn is self._conn:
+            return self._core
+        return self._make_core(conn)
 
     def _build_adapter(self) -> BilibiliAdapterV1:
         session = session_path(self._ws)
@@ -44,30 +58,48 @@ class LiveWatcher:
             return BilibiliAdapterV1(client, session_path=session)
         return BilibiliAdapterV1(None, fixture_root=FIXTURE_ROOT)
 
-    def run_once(self, *, creator_id: str | None = None) -> dict:
+    def run_once(
+        self,
+        *,
+        creator_id: str | None = None,
+        conn=None,
+        deadline: float | None = None,
+    ) -> dict:
+        work_conn = conn or self._conn
+        core = self.core_for_conn(work_conn)
+        creators = CreatorRepo(work_conn)
+        sessions = LiveSessionRepo(work_conn)
         targets = [
-            c for c in self._creators.list_monitored() if c.platform == PLATFORM
+            c for c in creators.list_monitored() if c.platform == PLATFORM
         ]
         if creator_id:
-            row = self._creators.get(creator_id)
+            row = creators.get(creator_id)
             targets = [row] if row and row.platform == PLATFORM else []
 
-        finalized = self._core.poll_active_recordings()
+        if deadline is not None and time.monotonic() >= deadline:
+            return {
+                "platform": PLATFORM,
+                "skipped": "budget_exhausted",
+                "checked": len(targets),
+                "active": len(sessions.list_active()),
+            }
+
+        finalized = core.poll_active_recordings()
         started, started_ids, errors, auth_required, platform_changed = (
-            self._core.scan_and_start(creator_id=creator_id)
+            core.scan_and_start(creator_id=creator_id)
         )
         if started_ids:
             finalized.extend(
-                self._core.poll_active_recordings(skip_session_ids=started_ids)
+                core.poll_active_recordings(skip_session_ids=started_ids)
             )
-        stale = self._sessions.mark_stale_recordings_failed()
+        stale = sessions.mark_stale_recordings_failed()
         if stale:
             log.warning("bilibili_live_stale_sessions_cleared", count=stale)
         result: dict = {
             "platform": PLATFORM,
             "checked": len(targets),
             "started": started,
-            "active": len(self._sessions.list_active()),
+            "active": len(sessions.list_active()),
             "errors": errors,
             "auth_required": auth_required,
             "platform_changed": platform_changed,

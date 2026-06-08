@@ -23,6 +23,7 @@ const creator: Creator = {
   badge: '',
   badge_class: '',
   status_abbr: '播',
+  status_label: '在播未录',
   profile_url: null,
   avatar_url: 'https://example.com/a.jpg',
   signature: '直播简介',
