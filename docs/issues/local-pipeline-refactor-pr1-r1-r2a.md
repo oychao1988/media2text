@@ -71,7 +71,6 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/unit/test_live_scheduler.py tests/unit/test_task_scheduler.py tests/unit/test_session_runtime.py tests/unit/test_offline_wall_clock.py -v
 ruff check src/media2text/core/live/scheduler.py src/media2text/core/live/task_scheduler.py src/media2text/core/live/session_runtime.py src/media2text/core/live/monitor_executor.py src/media2text/core/monitor/watcher.py src/media2text/core/config.py
-media2text doctor --json
 ```
 
 ## 非目标范围
