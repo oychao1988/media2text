@@ -161,6 +161,8 @@ class MonitorWatcher:
         now = datetime.now(timezone.utc).isoformat()
         marked = 0
         for creator in targets:
+            if creator.dynamic_due_at is not None:
+                continue
             self._creators.set_dynamic_due(creator.id, now)
             marked += 1
         return {
@@ -224,8 +226,12 @@ class MonitorWatcher:
         marked = 0
         for creator in targets:
             if platform == "douyin":
+                if creator.vod_due_at is not None:
+                    continue
                 self._creators.set_vod_due(creator.id, now)
             else:
+                if creator.archive_due_at is not None:
+                    continue
                 self._creators.set_archive_due(creator.id, now)
             marked += 1
             log.info(

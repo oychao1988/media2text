@@ -164,6 +164,18 @@ class CreatorRepo:
         )
         self._conn.commit()
 
+    def schedule_vod_poll(self, creator_id: str, interval_sec: float) -> None:
+        next_at = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
+        self.set_vod_due(creator_id, next_at.isoformat())
+
+    def schedule_archive_poll(self, creator_id: str, interval_sec: float) -> None:
+        next_at = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
+        self.set_archive_due(creator_id, next_at.isoformat())
+
+    def schedule_dynamic_poll(self, creator_id: str, interval_sec: float) -> None:
+        next_at = datetime.now(timezone.utc) + timedelta(seconds=interval_sec)
+        self.set_dynamic_due(creator_id, next_at.isoformat())
+
     def update_profile(
         self,
         creator_id: str,

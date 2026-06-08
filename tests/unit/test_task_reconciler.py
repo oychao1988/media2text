@@ -106,4 +106,6 @@ def test_reconcile_content_ensure_sync_when_vod_due(tmp_path, monkeypatch) -> No
     assert MonitorTaskRepo(conn).has_active_dedupe(f"sync_catalog:{cid}")
     creator = CreatorRepo(conn).get(cid)
     assert creator is not None
-    assert creator.vod_due_at is None
+    assert creator.vod_due_at is not None
+    next_due = datetime.fromisoformat(creator.vod_due_at.replace("Z", "+00:00"))
+    assert next_due > datetime.now(timezone.utc)

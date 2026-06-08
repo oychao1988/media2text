@@ -16,6 +16,10 @@ def _parse_iso(value: str) -> datetime | None:
         return None
 
 
+def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
+    return cfg.platforms.bilibili.archive_poll_interval_sec
+
+
 def _offline_confirmed(cfg: AppConfig, row: LiveSessionRow) -> bool:
     if not row.offline_since_at:
         return False
@@ -191,7 +195,9 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
             ):
                 ensured += 1
                 if not log_only:
-                    creators_repo.clear_vod_due(creator.id)
+                    creators_repo.schedule_vod_poll(
+                        creator.id, cfg.monitor.vod_poll_interval_sec
+                    )
 
         if creator.platform != "bilibili":
             continue
@@ -212,7 +218,9 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
             ):
                 ensured += 1
                 if not log_only:
-                    creators_repo.clear_archive_due(creator.id)
+                    creators_repo.schedule_archive_poll(
+                        creator.id, _bilibili_archive_poll_sec(cfg)
+                    )
 
         if (
             creator.dynamic_due_at
@@ -229,6 +237,9 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
             ):
                 ensured += 1
                 if not log_only:
-                    creators_repo.clear_dynamic_due(creator.id)
+                    creators_repo.schedule_dynamic_poll(
+                        creator.id,
+                        cfg.platforms.bilibili.dynamic_poll_interval_sec,
+                    )
 
     return ensured
