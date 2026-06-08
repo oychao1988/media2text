@@ -13,6 +13,7 @@ from media2text.core.storage.repos import LiveSessionRepo
 
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
 from media2text.core.live.probe import run_live_probe_tick
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
@@ -64,6 +65,7 @@ class LiveTickLoop:
             self._thread.join(timeout=timeout)
 
     def _run(self) -> None:
+        NotifyDaemonGuard.enter()
         live_poll = _live_poll_interval(self._cfg)
         while not self._stop.is_set():
             if self._on_tick is not None:
@@ -129,6 +131,7 @@ class SlowTickLoop:
             self._thread.join(timeout=timeout)
 
     def _run(self) -> None:
+        NotifyDaemonGuard.enter()
         while not self._stop.is_set():
             self._watcher._run_vod_tick(creator_id=self._creator_id)
             self._watcher._run_archive_tick(creator_id=self._creator_id)

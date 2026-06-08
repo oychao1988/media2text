@@ -27,6 +27,7 @@ from media2text.api.routes import (
     sessions,
 )
 from media2text.api.services.runtime_health_loop import run_runtime_health_loop
+from media2text.api.services.notify_event_drain import run_notify_drain_loop
 from media2text.api.services.state_event_drain import run_drain_loop
 from media2text.core.config import AppConfig
 from media2text.core.runtime.supervisor import MonitorSupervisor
@@ -51,11 +52,12 @@ async def lifespan(app: FastAPI):
         supervisor.start(cfg)
     stop = asyncio.Event()
     drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
+    notify_drain_task = asyncio.create_task(run_notify_drain_loop(cfg, stop))
     health_task = asyncio.create_task(run_runtime_health_loop(app, cfg, stop))
     yield
     stop.set()
     supervisor.stop(cfg)
-    await asyncio.gather(drain_task, health_task)
+    await asyncio.gather(drain_task, notify_drain_task, health_task)
 
 
 def create_app() -> FastAPI:

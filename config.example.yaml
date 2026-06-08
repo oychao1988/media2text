@@ -175,6 +175,8 @@ aliyundrive:
 notify:
   enabled: false
   sound: true
+  # R4: daemon 路径 enqueue notify_events，由 API sidecar drain（需 media2text serve）
+  outbox_only: false
   # sound_path: /System/Library/Sounds/Glass.aiff
   events:
     live_started: true

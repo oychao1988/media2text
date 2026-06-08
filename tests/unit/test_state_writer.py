@@ -1,5 +1,6 @@
 from media2text.core.config import AppConfig
 from media2text.core.live.state_writer import StateWriter
+from media2text.core.notify.outbox import NotifyEventRepo
 from media2text.core.storage.repos import (
     CreatorRepo,
     DesktopEventRepo,
@@ -34,6 +35,7 @@ def test_set_offline_since_dual_writes_obs(tmp_path, monkeypatch) -> None:
     assert row.obs_still_live == 0
     events = PipelineEventRepo(conn).list_for_session(sid)
     assert any(e.status == "offline_pending" for e in events)
+    assert NotifyEventRepo(conn).count_pending() >= 1
 
 
 def test_clear_offline_since_restores_obs(tmp_path, monkeypatch) -> None:

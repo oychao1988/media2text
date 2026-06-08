@@ -7,6 +7,7 @@ import structlog
 
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 from media2text.core.workspace import open_db
@@ -93,6 +94,7 @@ class TaskSchedulerLoop:
         )
 
     def _run(self) -> None:
+        NotifyDaemonGuard.enter()
         while not self._stop.is_set():
             conn = open_db(self._cfg)
             try:
