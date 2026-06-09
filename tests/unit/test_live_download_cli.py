@@ -12,7 +12,7 @@ from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
-runner = CliRunner()
+runner = CliRunner(env={"NO_COLOR": "1"})
 
 
 def _seed_session(
