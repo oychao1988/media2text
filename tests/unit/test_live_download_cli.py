@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,10 @@ from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSess
 from media2text.core.workspace import open_db
 
 runner = CliRunner(env={"NO_COLOR": "1"})
+
+
+def _plain_help(text: str) -> str:
+    return re.sub(r"\x1b\[[0-9;]*m", "", text)
 
 
 def _seed_session(
@@ -119,10 +124,11 @@ def _seed_session(
 def test_live_download_help() -> None:
     result = runner.invoke(app, ["download", "--help"])
     assert result.exit_code == 0
-    assert "--parts" in result.stdout
-    assert "--merge" in result.stdout
-    assert "--keep-local" in result.stdout
-    assert "--json" in result.stdout
+    help_text = _plain_help(result.stdout)
+    assert "--parts" in help_text
+    assert "--merge" in help_text
+    assert "--keep-local" in help_text
+    assert "--json" in help_text
 
 
 def test_live_download_all_parts_local(tmp_path, monkeypatch) -> None:
