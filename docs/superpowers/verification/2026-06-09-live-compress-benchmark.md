@@ -56,6 +56,6 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ruff check scripts/benchmark_live_compress.py   # exit 0
 python scripts/benchmark_live_compress.py --help   # exit 0
-python scripts/benchmark_live_compress.py            # exit 2, prints help
+python scripts/benchmark_live_compress.py            # exit 0, prints help
 test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
 ```
