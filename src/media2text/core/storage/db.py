@@ -678,6 +678,58 @@ def _migrate_hermes_v4(conn: sqlite3.Connection) -> None:
         conn.commit()
 
 
+def _migrate_live_segment_v1(conn: sqlite3.Connection) -> None:
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS live_session_parts (
+          session_id TEXT NOT NULL,
+          part_index INTEGER NOT NULL,
+          rel_path TEXT NOT NULL,
+          state TEXT NOT NULL,
+          bytes INTEGER,
+          duration_sec REAL,
+          discontinuity_seq INTEGER NOT NULL DEFAULT 0,
+          cloud_path TEXT,
+          uploaded_at TEXT,
+          local_deleted_at TEXT,
+          error TEXT,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY (session_id, part_index),
+          FOREIGN KEY (session_id) REFERENCES live_sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_live_session_parts_session_state
+          ON live_session_parts(session_id, state);
+
+        CREATE TABLE IF NOT EXISTS segment_process_jobs (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL,
+          part_index INTEGER NOT NULL,
+          status TEXT NOT NULL,
+          attempts INTEGER NOT NULL DEFAULT 0,
+          last_error TEXT,
+          claimed_at TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          dedupe_key TEXT,
+          FOREIGN KEY (session_id) REFERENCES live_sessions(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_segment_process_jobs_status
+          ON segment_process_jobs(status, created_at);
+        """
+    )
+    live_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(live_sessions)").fetchall()
+    }
+    if "session_dir" not in live_cols:
+        conn.execute("ALTER TABLE live_sessions ADD COLUMN session_dir TEXT")
+    cloud_cols = {
+        row[1] for row in conn.execute("PRAGMA table_info(cloud_uploads)").fetchall()
+    }
+    if "part_index" not in cloud_cols:
+        conn.execute("ALTER TABLE cloud_uploads ADD COLUMN part_index INTEGER")
+    conn.commit()
+
+
 def _migrate_notify_v1(conn: sqlite3.Connection) -> None:
     conn.executescript(
         """
@@ -724,6 +776,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_hermes_v3(conn)
         _migrate_hermes_v4(conn)
         _migrate_notify_v1(conn)
+        _migrate_live_segment_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

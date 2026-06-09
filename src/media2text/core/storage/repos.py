@@ -583,6 +583,7 @@ class LiveSessionRepo:
         ffmpeg_pid: int | None = None,
         platform_live_started_at: str | None = None,
         pipeline_mode: str | None = None,
+        session_dir: str | None = None,
     ) -> str:
         sid = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
@@ -591,8 +592,8 @@ class LiveSessionRepo:
             INSERT INTO live_sessions
               (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
                first_seen_live_at, recording_started_at, platform_live_started_at,
-               pipeline_mode)
-            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?)
+               pipeline_mode, session_dir)
+            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?, ?)
             """,
             (
                 sid,
@@ -605,6 +606,7 @@ class LiveSessionRepo:
                 now,
                 platform_live_started_at,
                 pipeline_mode,
+                session_dir,
             ),
         )
         self._conn.commit()
@@ -729,6 +731,14 @@ class LiveSessionRepo:
     def delete(self, session_id: str) -> bool:
         self._conn.execute(
             "DELETE FROM cloud_uploads WHERE session_id = ?",
+            (session_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM live_session_parts WHERE session_id = ?",
+            (session_id,),
+        )
+        self._conn.execute(
+            "DELETE FROM segment_process_jobs WHERE session_id = ?",
             (session_id,),
         )
         self._conn.execute(
@@ -866,15 +876,26 @@ class LiveSessionRepo:
         *,
         ffmpeg_pid: int,
         temp_path: str,
+        session_dir: str | None = None,
     ) -> None:
-        self._conn.execute(
-            """
-            UPDATE live_sessions
-            SET ffmpeg_pid = ?, temp_path = ?
-            WHERE id = ?
-            """,
-            (ffmpeg_pid, temp_path, session_id),
-        )
+        if session_dir is not None:
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET ffmpeg_pid = ?, temp_path = ?, session_dir = ?
+                WHERE id = ?
+                """,
+                (ffmpeg_pid, temp_path, session_dir, session_id),
+            )
+        else:
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET ffmpeg_pid = ?, temp_path = ?
+                WHERE id = ?
+                """,
+                (ffmpeg_pid, temp_path, session_id),
+            )
         self._conn.commit()
 
     def list_streaming_summary_since(self, since_iso: str) -> list[dict]:
@@ -1939,14 +1960,15 @@ class CloudUploadRepo:
         local_path: str | None = None,
         size: int | None = None,
         pre_hash: str | None = None,
+        part_index: int | None = None,
     ) -> str:
         uid = str(uuid.uuid4())
         self._conn.execute(
             """
             INSERT INTO cloud_uploads
               (id, session_id, creator_id, platform, file_name, file_kind,
-               local_path, size, pre_hash, upload_status)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+               local_path, size, pre_hash, upload_status, part_index)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
             """,
             (
                 uid,
@@ -1958,6 +1980,7 @@ class CloudUploadRepo:
                 local_path,
                 size,
                 pre_hash,
+                part_index,
             ),
         )
         self._conn.commit()

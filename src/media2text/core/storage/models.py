@@ -137,6 +137,37 @@ class LiveSessionRow:
     obs_stt_alive: int | None = None
     obs_still_live: int | None = None
     obs_polled_at: str | None = None
+    session_dir: str | None = None
+
+
+@dataclass
+class LiveSessionPartRow:
+    session_id: str
+    part_index: int
+    rel_path: str
+    state: str
+    bytes: int | None = None
+    duration_sec: float | None = None
+    discontinuity_seq: int = 0
+    cloud_path: str | None = None
+    uploaded_at: str | None = None
+    local_deleted_at: str | None = None
+    error: str | None = None
+    updated_at: str | None = None
+
+
+@dataclass
+class SegmentProcessJobRow:
+    id: str
+    session_id: str
+    part_index: int
+    status: str
+    attempts: int
+    last_error: str | None
+    claimed_at: str | None
+    created_at: str
+    updated_at: str
+    dedupe_key: str | None = None
 
 
 @dataclass
@@ -215,3 +246,4 @@ class CloudUploadRow:
     upload_status: str
     uploaded_at: str | None
     error: str | None
+    part_index: int | None = None

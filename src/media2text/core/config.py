@@ -73,12 +73,42 @@ class StreamingSttConfig(BaseModel):
     partial_notify_min_finals: int = 3
 
 
+class LiveMediaConfig(BaseModel):
+    format: str = "flv"  # flv | hls
+    segment_duration_sec: int = 600
+
+
+class LiveCompressConfig(BaseModel):
+    enabled: bool = False
+    encoder: str = "videotoolbox"
+    video_bitrate: str = "2M"
+    audio_bitrate: str = "128k"
+
+
+class LiveSegmentUploadConfig(BaseModel):
+    enabled: bool = True
+    delete_local_after_upload: bool = True
+
+
+class LiveSegmentPipelineConfig(BaseModel):
+    enabled: bool = True
+    max_parallel: int = 2
+    watch_interval_sec: float = 1.0
+    stable_mtime_sec: float = 2.0
+    upload: LiveSegmentUploadConfig = Field(default_factory=LiveSegmentUploadConfig)
+
+
 class LiveConfig(BaseModel):
     pipeline_mode: str = "legacy"  # legacy | streaming
     auto_record: bool = True
     remux_on_complete: bool | None = None
     transcribe_on_complete: bool = False
     streaming_stt: StreamingSttConfig = Field(default_factory=StreamingSttConfig)
+    media: LiveMediaConfig = Field(default_factory=LiveMediaConfig)
+    compress: LiveCompressConfig = Field(default_factory=LiveCompressConfig)
+    segment_pipeline: LiveSegmentPipelineConfig = Field(
+        default_factory=LiveSegmentPipelineConfig
+    )
     ffmpeg_path: str = "ffmpeg"
     ffmpeg_stop_timeout_sec: int = 30
     temp_format: str = "flv"
@@ -108,6 +138,9 @@ class LiveConfig(BaseModel):
             self.effective_pipeline_mode() == "streaming"
             and self.streaming_stt.enabled
         )
+
+    def uses_hls_media(self) -> bool:
+        return (self.media.format or "flv").strip().lower() == "hls"
 
     def snapshot_pipeline_mode(self) -> str:
         """Value stored on live_sessions.pipeline_mode at session create."""

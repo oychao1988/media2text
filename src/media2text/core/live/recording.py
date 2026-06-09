@@ -30,6 +30,14 @@ from media2text.core.ffmpeg import (
     stop_pid,
     stop_process,
 )
+from media2text.core.live.hls_recorder import (
+    finalize_hls_endlist,
+    part_rel_path,
+    rotate_hls_after_reconnect,
+    spawn_hls_recorder,
+    stop_hls_recorder,
+)
+from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.partial_notify import PartialTranscriptNotifier
 from media2text.core.live.session_runtime import SessionRuntime
@@ -86,6 +94,8 @@ class LiveRecordingCore:
         self._streaming_transcript_anchor: dict[str, Path] = {}
         self._stt_checkpoint_counter: dict[str, int] = {}
         self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
+        self._hls_part_index: dict[str, int] = {}
+        self._hls_discontinuity_seq: dict[str, int] = {}
 
     @property
     def _processes(self) -> dict[str, Popen]:
@@ -486,6 +496,8 @@ class LiveRecordingCore:
         self._streaming_transcript_anchor.pop(session_id, None)
         self._stt_checkpoint_counter.pop(session_id, None)
         self._partial_notifiers.pop(session_id, None)
+        self._hls_part_index.pop(session_id, None)
+        self._hls_discontinuity_seq.pop(session_id, None)
 
     def _build_streaming_stt_session(
         self,
@@ -521,6 +533,59 @@ class LiveRecordingCore:
             on_first_final=on_first_final,
             on_partial_summary=on_partial_summary,
         )
+
+    def _use_hls_recording(self, session_id: str | None = None) -> bool:
+        if not self._use_streaming_pipeline(session_id):
+            return False
+        if session_id:
+            row = self._sessions.get(session_id)
+            if row and row.session_dir:
+                return True
+        return self._cfg.live.uses_hls_media()
+
+    def _resolve_session_dir(self, session_id: str) -> Path | None:
+        row = self._sessions.get(session_id)
+        if row and row.session_dir:
+            return Path(row.session_dir)
+        return None
+
+    def _close_hls_part_if_any(self, session_id: str, session_dir: Path) -> None:
+        idx = self._hls_part_index.get(session_id)
+        if idx is None:
+            return
+        repo = SegmentManifestRepo(self._conn)
+        part_path = session_dir / part_rel_path(idx)
+        size = part_path.stat().st_size if part_path.is_file() else None
+        repo.mark_closed(session_id, idx, bytes=size)
+
+    def _spawn_hls_recording(
+        self,
+        *,
+        session_id: str,
+        stream_url: str,
+        session_dir: Path,
+        part_index: int,
+        discontinuity_seq: int = 0,
+    ) -> Popen:
+        proc = spawn_hls_recorder(
+            ffmpeg=self._cfg.live.ffmpeg_path,
+            stream_url=stream_url,
+            session_dir=session_dir,
+            segment_sec=self._cfg.live.media.segment_duration_sec,
+            compress_cfg=self._cfg.live.compress,
+            start_segment_number=part_index,
+        )
+        repo = SegmentManifestRepo(self._conn)
+        repo.upsert_part(
+            session_id=session_id,
+            part_index=part_index,
+            rel_path=part_rel_path(part_index),
+            state="recording",
+            discontinuity_seq=discontinuity_seq,
+        )
+        self._hls_part_index[session_id] = part_index
+        self._hls_discontinuity_seq[session_id] = discontinuity_seq
+        return proc
 
     _STREAMING_PLATFORMS = frozenset({"douyin", "bilibili"})
 
@@ -635,11 +700,21 @@ class LiveRecordingCore:
         temp_path: str,
         old_pid: int,
     ) -> None:
+        use_hls = self._use_hls_recording(session_id)
         proc_old = self._processes.pop(session_id, None)
         if proc_old is not None:
-            stop_process(proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+            if use_hls:
+                stop_hls_recorder(
+                    proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec
+                )
+            else:
+                stop_process(proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         elif self._process_alive(old_pid):
             os.kill(old_pid, 15)
+
+        session_dir = self._resolve_session_dir(session_id)
+        if use_hls and session_dir is not None:
+            self._close_hls_part_if_any(session_id, session_dir)
 
         stt = self._stt_sessions.pop(session_id, None)
         next_offset: float | None = None
@@ -661,7 +736,8 @@ class LiveRecordingCore:
             if not streaming_merge:
                 self._mark_streaming_degraded(session_id, reason="ffmpeg_reconnect")
 
-        self._state.append_segment_path(session_id, temp_path)
+        if not use_hls:
+            self._state.append_segment_path(session_id, temp_path)
         attempt = self._state.increment_reconnect_attempts(session_id)
 
         try:
@@ -684,6 +760,77 @@ class LiveRecordingCore:
 
         if not stream_url:
             self._finalize_recording(session_id, temp_path, old_pid)
+            return None
+
+        if use_hls and session_dir is not None:
+            repo = SegmentManifestRepo(self._conn)
+            next_index = max(repo.max_part_index(session_id), 1) + 1
+            discontinuity_seq = self._hls_discontinuity_seq.get(session_id, 0) + 1
+            rotate_hls_after_reconnect(
+                conn=self._conn,
+                session_id=session_id,
+                session_dir=session_dir,
+                next_index=next_index,
+                discontinuity_seq=discontinuity_seq,
+            )
+            new_proc = self._spawn_hls_recording(
+                session_id=session_id,
+                stream_url=stream_url,
+                session_dir=session_dir,
+                part_index=next_index,
+                discontinuity_seq=discontinuity_seq,
+            )
+            master_path = str(session_dir / "master.m3u8")
+            self._state.update_recording_state(
+                session_id,
+                ffmpeg_pid=new_proc.pid,
+                temp_path=master_path,
+                session_dir=str(session_dir),
+            )
+            self._processes[session_id] = new_proc
+            self._stream_urls[session_id] = stream_url
+            time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+            if streaming_merge:
+                anchor = self._transcript_anchor(session_id, temp_path)
+                try:
+                    new_stt = self._build_streaming_stt_session(
+                        session_id,
+                        creator=creator,
+                        stream_url=stream_url,
+                        media_path=anchor,
+                        offset_sec=next_offset or 0.0,
+                    )
+                    with stage_event(
+                        self._conn, session_id=session_id, stage="streaming_stt"
+                    ):
+                        new_stt.start()
+                    self._stt_sessions[session_id] = new_stt
+                    self._state.record_pipeline_event(
+                        session_id=session_id,
+                        stage="streaming_stt",
+                        status="reconnected",
+                        detail={
+                            "reason": "hls_reconnect",
+                            "offset_sec": next_offset or 0.0,
+                        },
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "streaming_stt_reconnect_after_hls_failed",
+                        session_id=session_id,
+                        error=str(exc),
+                    )
+                    self._mark_streaming_degraded(
+                        session_id,
+                        reason="hls_reconnect_stt_failed",
+                        error=str(exc),
+                    )
+            log.info(
+                "live_recording_reconnected_hls",
+                session_id=session_id,
+                attempt=attempt,
+                part_index=next_index,
+            )
             return None
 
         live_dir = self._ws / "creators" / creator.sec_uid / "live"
@@ -751,7 +898,18 @@ class LiveRecordingCore:
         live_dir = self._ws / "creators" / sec_uid / "live"
         live_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        temp_path = live_dir / f"{stamp}.flv"
+        use_hls = (
+            self._cfg.live.is_streaming_pipeline() and self._cfg.live.uses_hls_media()
+        )
+        if use_hls:
+            session_dir = live_dir / stamp
+            session_dir.mkdir(parents=True, exist_ok=True)
+            temp_path = session_dir / "master.m3u8"
+            transcript_anchor = session_dir / f"{stamp}.flv"
+        else:
+            session_dir = None
+            temp_path = live_dir / f"{stamp}.flv"
+            transcript_anchor = temp_path
 
         session_id = self._state.create_session(
             creator_id=creator_id,
@@ -760,6 +918,7 @@ class LiveRecordingCore:
             ffmpeg_pid=None,
             platform_live_started_at=live_info.platform_live_started_at,
             pipeline_mode=self._cfg.live.snapshot_pipeline_mode(),
+            session_dir=str(session_dir) if session_dir else None,
         )
         try:
             return self._start_recording_after_session(
@@ -769,6 +928,8 @@ class LiveRecordingCore:
                 room_id=room_id,
                 live_info=live_info,
                 temp_path=temp_path,
+                transcript_anchor=transcript_anchor,
+                session_dir=session_dir,
             )
         except Exception as exc:
             self._state.update_status(
@@ -789,6 +950,8 @@ class LiveRecordingCore:
         room_id: str | None,
         live_info: LiveRoomInfo,
         temp_path: Path,
+        transcript_anchor: Path | None = None,
+        session_dir: Path | None = None,
     ) -> dict:
         self._state.record_pipeline_event(
             session_id=session_id,
@@ -812,9 +975,13 @@ class LiveRecordingCore:
         self._stream_urls[session_id] = stream_url
 
         use_streaming = self._use_streaming_pipeline(session_id)
+        use_hls = use_streaming and (
+            session_dir is not None or self._cfg.live.uses_hls_media()
+        )
+        anchor_path = transcript_anchor or temp_path
         stt_session: StreamingSttSession | None = None
         if use_streaming:
-            self._streaming_transcript_anchor[session_id] = temp_path
+            self._streaming_transcript_anchor[session_id] = anchor_path
             self._stt_checkpoint_counter[session_id] = 0
             creator_row = self._creators.get(creator_id)
             if creator_row is None:
@@ -823,18 +990,28 @@ class LiveRecordingCore:
                 session_id,
                 creator=creator_row,
                 stream_url=stream_url,
-                media_path=temp_path,
+                media_path=anchor_path,
             )
 
-        proc = record_stream_copy(
-            ffmpeg=self._cfg.live.ffmpeg_path,
-            stream_url=stream_url,
-            output_path=temp_path,
-        )
+        if use_hls:
+            hls_dir = session_dir or temp_path.parent
+            proc = self._spawn_hls_recording(
+                session_id=session_id,
+                stream_url=stream_url,
+                session_dir=hls_dir,
+                part_index=1,
+            )
+        else:
+            proc = record_stream_copy(
+                ffmpeg=self._cfg.live.ffmpeg_path,
+                stream_url=stream_url,
+                output_path=temp_path,
+            )
         self._state.update_recording_state(
             session_id,
             ffmpeg_pid=proc.pid,
             temp_path=str(temp_path),
+            session_dir=str(session_dir) if session_dir else None,
         )
         self._processes[session_id] = proc
 
@@ -1012,6 +1189,9 @@ class LiveRecordingCore:
         return False
 
     def _flv_file_growing(self, session_id: str, temp_path: str) -> bool:
+        row = self._sessions.get(session_id)
+        if row and row.session_dir:
+            return self._hls_media_growing(session_id, Path(row.session_dir))
         path = Path(temp_path)
         if not path.is_file():
             return False
@@ -1020,6 +1200,28 @@ class LiveRecordingCore:
         self._flv_size_snapshots[session_id] = size
         if prev is None:
             return size > 4096
+        return size > prev
+
+    def _hls_media_growing(self, session_id: str, session_dir: Path) -> bool:
+        parts_dir = session_dir / "parts"
+        if not parts_dir.is_dir():
+            master = session_dir / "master.m3u8"
+            if master.is_file():
+                size = master.stat().st_size
+                prev = self._flv_size_snapshots.get(session_id)
+                self._flv_size_snapshots[session_id] = size
+                return prev is None or size > prev
+            return False
+        segments = sorted(parts_dir.glob("seg-*.m4s"))
+        if not segments:
+            return False
+        latest = segments[-1]
+        size = latest.stat().st_size
+        key = f"{session_id}:{latest.name}"
+        prev = self._flv_size_snapshots.get(key)
+        self._flv_size_snapshots[key] = size
+        if prev is None:
+            return size > 0
         return size > prev
 
     def _emit_live_ended(self, creator, row) -> None:
@@ -1069,6 +1271,10 @@ class LiveRecordingCore:
     def _finalize_recording_streaming(
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
+        if self._use_hls_recording(session_id):
+            return self._finalize_recording_streaming_hls(
+                session_id, temp_path, pid
+            )
         proc = self._processes.pop(session_id, None)
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
@@ -1234,6 +1440,139 @@ class LiveRecordingCore:
                     kind=EventKind.TRANSCRIBE_COMPLETED,
                     title=label,
                     body=f"直播转录完成（deepgram streaming）\n{media_path.name}",
+                )
+            )
+        return {
+            "session_id": session_id,
+            "path": str(media_path),
+            "creator_id": creator.id,
+            "job_id": job_id,
+        }
+
+    def _finalize_recording_streaming_hls(
+        self, session_id: str, temp_path: str | None, pid: int
+    ) -> dict | None:
+        proc = self._processes.pop(session_id, None)
+        if proc is not None:
+            stop_hls_recorder(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+        elif pid and self._process_alive(pid):
+            stop_pid(pid, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+
+        stt = self._stt_sessions.pop(session_id, None)
+        self._stream_urls.pop(session_id, None)
+
+        session_dir = self._resolve_session_dir(session_id)
+        if session_dir is None and temp_path:
+            session_dir = Path(temp_path).parent
+
+        if session_dir is None:
+            self._state.update_status(
+                session_id, status="failed", error="missing session_dir", ended=True
+            )
+            self._clear_streaming_session_state(session_id)
+            return None
+
+        self._close_hls_part_if_any(session_id, session_dir)
+        finalize_hls_endlist(session_dir)
+        manifest_repo = SegmentManifestRepo(self._conn)
+        manifest_repo.export_json(session_id, session_dir=session_dir)
+
+        anchor = self._transcript_anchor(session_id, temp_path)
+        transcript_ok = False
+        try:
+            with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                trailing = None
+                if stt is not None:
+                    stt.stop(
+                        timeout=self._cfg.live.ffmpeg_stop_timeout_sec,
+                        finalize=False,
+                    )
+                    trailing = stt.writer.current_segments()
+                checkpoints = list_segment_checkpoints(anchor)
+                if checkpoints or trailing:
+                    paths = merge_transcript_checkpoints(
+                        anchor,
+                        checkpoints,
+                        trailing_segments=trailing,
+                        engine="deepgram",
+                        model=self._cfg.transcribe.deepgram.model,
+                    )
+                    transcript_ok = paths is not None
+                elif anchor.with_suffix(".transcript.json").is_file():
+                    transcript_ok = True
+                elif seal_partial_transcript(anchor) is not None:
+                    transcript_ok = True
+            self._state.record_pipeline_event(
+                session_id=session_id,
+                stage="streaming_stt",
+                status="completed" if transcript_ok else "failed",
+            )
+        except Exception as exc:  # noqa: BLE001
+            self._state.record_pipeline_event(
+                session_id=session_id,
+                stage="streaming_stt",
+                status="failed",
+                detail={"error": str(exc)},
+            )
+            log.exception("streaming_stt_finalize_failed", session_id=session_id)
+
+        self._state.record_pipeline_event(
+            session_id=session_id,
+            stage="remux",
+            status="skipped",
+            detail={"reason": "hls_segments"},
+        )
+
+        if transcript_ok:
+            index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
+
+        media_path = session_dir / "master.m3u8"
+        self._clear_streaming_session_state(session_id)
+        self._state.update_status(
+            session_id,
+            status="completed",
+            local_path=str(session_dir),
+            transcribe_status="completed" if transcript_ok else "failed",
+            ended=True,
+        )
+        self._state.clear_pid(session_id)
+        log.info(
+            "live_recording_completed_streaming_hls",
+            session_id=session_id,
+            path=str(media_path),
+        )
+
+        session = self._sessions.get(session_id)
+        if not session:
+            return None
+        creator = self._creators.get(session.creator_id)
+        if not creator:
+            return {"session_id": session_id, "path": str(media_path)}
+
+        job_id = self._jobs.enqueue(
+            session_id=session_id,
+            creator_id=creator.id,
+            mp4_path=str(media_path),
+        )
+        self._state.refresh_creator_manifest(
+            sec_uid=creator.sec_uid,
+            workspace=self._ws,
+            platform=creator.platform,
+        )
+        label = creator_label(creator)
+        self._notify.emit(
+            NotifyEvent(
+                kind=EventKind.RECORDING_COMPLETED,
+                title=label,
+                body=f"直播录制已完成（HLS）\n{session_dir.name}\n{session_dir}",
+            )
+        )
+        if transcript_ok:
+            self._notify.emit(
+                NotifyEvent(
+                    kind=EventKind.TRANSCRIBE_COMPLETED,
+                    title=label,
+                    body=f"直播转录完成（deepgram streaming）\n{session_dir.name}",
                 )
             )
         return {

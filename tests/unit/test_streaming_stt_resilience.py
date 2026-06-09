@@ -157,7 +157,7 @@ def test_streaming_finalize_merges_reconnect_segments(tmp_path, monkeypatch) -> 
         patch("media2text.core.live.recording.concat_to_flv") as mock_concat_flv,
         patch("media2text.core.live.recording.concat_to_mp4") as mock_concat_mp4,
         patch("media2text.core.live.recording.remux_to_mp4"),
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch("media2text.core.live.state_writer.refresh_manifest"),
         patch("media2text.core.live.recording.index_transcript_safe"),
     ):
         meta = core._finalize_recording(sid, str(seg1), 4242)
