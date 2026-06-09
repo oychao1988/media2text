@@ -77,6 +77,17 @@ live:
     encoder: videotoolbox          # macOS hevc_videotoolbox
     video_bitrate: 2M
     audio_bitrate: 128k
+  media:
+    format: flv                    # flv | hls — hls requires pipeline_mode=streaming
+    segment_duration_sec: 600
+  segment_pipeline:
+    enabled: true
+    max_parallel: 2
+    watch_interval_sec: 1.0
+    stable_mtime_sec: 2.0
+    upload:
+      enabled: true
+      delete_local_after_upload: true
 
 # m2t-desktop sidecar (FastAPI) — UI-only keys; daemon uses live/monitor above
 desktop:

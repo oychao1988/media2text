@@ -1,0 +1,246 @@
+from __future__ import annotations
+
+import json
+import uuid
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+@dataclass
+class LiveSessionPartRow:
+    session_id: str
+    part_index: int
+    rel_path: str
+    state: str
+    bytes: int | None = None
+    duration_sec: float | None = None
+    discontinuity_seq: int = 0
+    cloud_path: str | None = None
+    uploaded_at: str | None = None
+    local_deleted_at: str | None = None
+    error: str | None = None
+    updated_at: str | None = None
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+class SegmentManifestRepo:
+    """DB-backed manifest for HLS session parts (D14)."""
+
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def upsert_part(
+        self,
+        *,
+        session_id: str,
+        part_index: int,
+        rel_path: str,
+        state: str,
+        bytes: int | None = None,
+        duration_sec: float | None = None,
+        discontinuity_seq: int = 0,
+    ) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            INSERT INTO live_session_parts
+              (session_id, part_index, rel_path, state, bytes, duration_sec,
+               discontinuity_seq, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(session_id, part_index) DO UPDATE SET
+              rel_path = excluded.rel_path,
+              state = excluded.state,
+              bytes = COALESCE(excluded.bytes, live_session_parts.bytes),
+              duration_sec = COALESCE(excluded.duration_sec, live_session_parts.duration_sec),
+              discontinuity_seq = excluded.discontinuity_seq,
+              updated_at = excluded.updated_at
+            """,
+            (
+                session_id,
+                part_index,
+                rel_path,
+                state,
+                bytes,
+                duration_sec,
+                discontinuity_seq,
+                now,
+            ),
+        )
+        self._conn.commit()
+
+    def get_part(self, session_id: str, part_index: int) -> LiveSessionPartRow | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM live_session_parts
+            WHERE session_id = ? AND part_index = ?
+            """,
+            (session_id, part_index),
+        ).fetchone()
+        if not row:
+            return None
+        return LiveSessionPartRow(**dict(row))
+
+    def mark_closed(
+        self,
+        session_id: str,
+        part_index: int,
+        *,
+        bytes: int | None = None,
+        duration_sec: float | None = None,
+    ) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE live_session_parts
+            SET state = 'closed',
+                bytes = COALESCE(?, bytes),
+                duration_sec = COALESCE(?, duration_sec),
+                updated_at = ?
+            WHERE session_id = ? AND part_index = ?
+            """,
+            (bytes, duration_sec, now, session_id, part_index),
+        )
+        self._conn.commit()
+
+    def mark_uploaded(
+        self,
+        session_id: str,
+        part_index: int,
+        *,
+        cloud_path: str,
+    ) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE live_session_parts
+            SET state = 'uploaded',
+                cloud_path = ?,
+                uploaded_at = ?,
+                updated_at = ?
+            WHERE session_id = ? AND part_index = ?
+            """,
+            (cloud_path, now, now, session_id, part_index),
+        )
+        self._conn.commit()
+
+    def mark_local_deleted(self, session_id: str, part_index: int) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE live_session_parts
+            SET state = 'local_deleted',
+                local_deleted_at = ?,
+                updated_at = ?
+            WHERE session_id = ? AND part_index = ?
+            """,
+            (now, now, session_id, part_index),
+        )
+        self._conn.commit()
+
+    def list_parts(self, session_id: str) -> list[LiveSessionPartRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM live_session_parts
+            WHERE session_id = ?
+            ORDER BY part_index ASC
+            """,
+            (session_id,),
+        ).fetchall()
+        return [LiveSessionPartRow(**dict(r)) for r in rows]
+
+    def max_part_index(self, session_id: str) -> int:
+        row = self._conn.execute(
+            """
+            SELECT MAX(part_index) AS mx FROM live_session_parts WHERE session_id = ?
+            """,
+            (session_id,),
+        ).fetchone()
+        if not row or row["mx"] is None:
+            return 0
+        return int(row["mx"])
+
+    def export_json(self, session_id: str, *, session_dir: Path | None = None) -> dict:
+        parts = self.list_parts(session_id)
+        discontinuity_at: list[float] = []
+        offset = 0.0
+        for part in parts:
+            if part.discontinuity_seq > 0 and part.part_index > 1:
+                discontinuity_at.append(offset)
+            if part.duration_sec is not None:
+                offset += part.duration_sec
+
+        payload = {
+            "session_id": session_id,
+            "media_format": "hls",
+            "parts": [
+                {
+                    "index": p.part_index,
+                    "rel_path": p.rel_path,
+                    "state": p.state,
+                    "bytes": p.bytes,
+                    "duration_sec": p.duration_sec,
+                    "discontinuity_seq": p.discontinuity_seq,
+                    "cloud_path": p.cloud_path,
+                }
+                for p in parts
+            ],
+            "discontinuity_at": discontinuity_at,
+        }
+        if session_dir is not None:
+            manifest_path = session_dir / "session.manifest.json"
+            manifest_path.write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
+                encoding="utf-8",
+            )
+        return payload
+
+
+class SegmentProcessJobRepo:
+    def __init__(self, conn) -> None:
+        self._conn = conn
+
+    def enqueue(
+        self,
+        *,
+        session_id: str,
+        part_index: int,
+        dedupe_key: str | None = None,
+    ) -> str | None:
+        key = dedupe_key or f"segment_process:{session_id}:{part_index}"
+        existing = self._conn.execute(
+            """
+            SELECT id FROM segment_process_jobs
+            WHERE session_id = ? AND part_index = ?
+              AND status IN ('pending', 'running')
+            """,
+            (session_id, part_index),
+        ).fetchone()
+        if existing:
+            return None
+        job_id = str(uuid.uuid4())
+        now = _now_iso()
+        self._conn.execute(
+            """
+            INSERT INTO segment_process_jobs
+              (id, session_id, part_index, status, attempts, created_at, updated_at, dedupe_key)
+            VALUES (?, ?, ?, 'pending', 0, ?, ?, ?)
+            """,
+            (job_id, session_id, part_index, now, now, key),
+        )
+        self._conn.commit()
+        return job_id
+
+    def has_pending(self, session_id: str, part_index: int) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1 FROM segment_process_jobs
+            WHERE session_id = ? AND part_index = ? AND status = 'pending'
+            LIMIT 1
+            """,
+            (session_id, part_index),
+        ).fetchone()
+        return row is not None

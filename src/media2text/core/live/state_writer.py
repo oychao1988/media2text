@@ -69,6 +69,7 @@ class StateWriter:
         ffmpeg_pid: int | None = None,
         platform_live_started_at: str | None = None,
         pipeline_mode: str | None = None,
+        session_dir: str | None = None,
     ) -> str:
         return self._sessions.create(
             creator_id=creator_id,
@@ -77,6 +78,7 @@ class StateWriter:
             ffmpeg_pid=ffmpeg_pid,
             platform_live_started_at=platform_live_started_at,
             pipeline_mode=pipeline_mode,
+            session_dir=session_dir,
         )
 
     def update_status(
@@ -110,11 +112,13 @@ class StateWriter:
         *,
         ffmpeg_pid: int,
         temp_path: str,
+        session_dir: str | None = None,
     ) -> None:
         self._sessions.update_recording_state(
             session_id,
             ffmpeg_pid=ffmpeg_pid,
             temp_path=temp_path,
+            session_dir=session_dir,
         )
 
     def clear_pid(self, session_id: str) -> None:
