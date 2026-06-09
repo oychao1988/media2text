@@ -360,3 +360,85 @@ def test_streaming_stt_start_fail_keeps_recording(tmp_path, monkeypatch) -> None
     assert len(degraded) == 1
     detail = json.loads(degraded[0].detail_json or "{}")
     assert detail.get("reason") == "stt_start_failed"
+
+
+def test_stall_recovery_reconnects_stt_without_killing_ffmpeg(tmp_path, monkeypatch) -> None:
+    """Stale partial + dead STT + live ffmpeg → STT-only reconnect, not full segment reconnect."""
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(
+            pipeline_mode="streaming",
+            streaming_stt=StreamingSttConfig(enabled=True, reconnect=True),
+        ),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAASttstall",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    session_dir = tmp_path / "data/creators/MS4wLjABAAASttstall/live/20260609T124929Z"
+    session_dir.mkdir(parents=True)
+    master = session_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    anchor = session_dir / "20260609T124929Z.flv"
+    anchor.write_bytes(b"\x00")
+    partial = session_dir / "master.transcript.partial.json"
+    partial.write_text(
+        json.dumps(
+            {
+                "segments": [{"start": 0.0, "end": 120.0, "text": "hello"}],
+                "text": "hello",
+            }
+        ),
+        encoding="utf-8",
+    )
+    old = partial.stat().st_mtime
+    import os
+
+    os.utime(partial, (old - 200, old - 200))
+
+    sessions = LiveSessionRepo(conn)
+    sid = sessions.create(
+        creator_id=cid,
+        room_id="room1",
+        temp_path=str(master),
+        ffmpeg_pid=9999,
+        pipeline_mode="streaming",
+    )
+    conn.execute(
+        "UPDATE live_sessions SET session_dir = ?, reconnect_attempts = 0 WHERE id = ?",
+        (str(session_dir), sid),
+    )
+    conn.commit()
+
+    adapter = MagicMock()
+    row = sessions.get(sid)
+    creator = CreatorRepo(conn).get(cid)
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=adapter,
+        platform="douyin",
+        processes={sid: MagicMock()},
+        notify=MagicMock(),
+    )
+    core._streaming_transcript_anchor[sid] = anchor
+
+    with (
+        patch.object(core, "_reconnect_segment") as mock_segment,
+        patch.object(core, "_handle_stt_disconnect") as mock_stt,
+    ):
+        core._maybe_recover_stalled_stream(
+            row,
+            creator,
+            ffmpeg_alive=True,
+            stt_alive=False,
+        )
+
+    mock_stt.assert_called_once()
+    mock_segment.assert_not_called()
+    conn.close()

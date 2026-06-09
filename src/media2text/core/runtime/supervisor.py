@@ -305,12 +305,15 @@ class MonitorSupervisor:
     def _reset_stale_queue_work(self, cfg: AppConfig | None) -> None:
         if cfg is None:
             return
-        from media2text.core.storage.repos import MonitorTaskRepo, PostProcessJobRepo
+        from media2text.core.storage.repos import LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
         from media2text.core.workspace import open_db
 
         conn = open_db(cfg)
         try:
-            MonitorTaskRepo(conn).reset_stale_running(older_than_sec=1)
+            mt = MonitorTaskRepo(conn)
+            mt.reset_stale_running(older_than_sec=1)
+            if LiveSessionRepo(conn).list_active():
+                mt.release_running_content_tasks()
             PostProcessJobRepo(conn).reset_stale_running(older_than_sec=1)
         finally:
             conn.close()

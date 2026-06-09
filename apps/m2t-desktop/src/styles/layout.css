@@ -1563,22 +1563,85 @@ body.resize-col-active * {
   font-size: 10px;
   line-height: 1.5;
   color: var(--text-dim);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  word-break: break-word;
-  padding: 2px 0;
+  padding: 4px 0;
 }
 
 .daemon-log-line + .daemon-log-line {
   border-top: 1px solid rgba(255, 255, 255, 0.04);
 }
 
-.daemon-log-line.warn {
+.daemon-log-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+
+.daemon-log-time {
+  color: var(--text-dim);
+  white-space: nowrap;
+}
+
+.daemon-log-status {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.daemon-log-status.is-ok {
+  color: #86efac;
+}
+
+.daemon-log-status.is-active {
+  color: #93c5fd;
+}
+
+.daemon-log-status.is-warn {
   color: #fcd34d;
 }
 
+.daemon-log-status.is-error {
+  color: #fca5a5;
+}
+
+.daemon-log-status.is-stopped {
+  color: var(--text-dim);
+}
+
+.daemon-log-task {
+  color: var(--text-muted, #cbd5e1);
+  white-space: nowrap;
+}
+
+.daemon-log-task::after {
+  content: '→';
+  margin-left: 8px;
+  color: var(--text-dim);
+  font-weight: 400;
+}
+
+.daemon-log-target {
+  color: var(--text);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 4rem;
+}
+
+.daemon-log-detail {
+  margin-top: 2px;
+  padding-left: 4.5rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.daemon-log-line.warn {
+  color: var(--text-muted, #cbd5e1);
+}
+
 .daemon-log-line.ok {
-  color: #86efac;
+  color: var(--text-muted, #cbd5e1);
 }
 
 .daemon-log-empty {

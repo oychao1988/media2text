@@ -10,22 +10,14 @@ import {
   workQueueHasItems,
   type WorkQueue,
 } from './daemonHealth';
+import { DaemonLogLineView, daemonLogLineFromText } from './DaemonLogLine';
+import { entryFromApi, type DaemonLogEntry, type ParsedDaemonLogLine } from './daemonLog';
 
 const LOG_REFRESH_MS = 12_000;
-const LOG_TAIL = 6;
+const LOG_TAIL = 8;
 const WORK_QUEUE_REFRESH_MS = 15_000;
 
 type BottomPanel = 'logs' | 'tasks' | null;
-
-function logLineClass(line: string): string {
-  if (/失败|错误|lock held|已在运行|限流|过于频繁|异常退出/i.test(line)) {
-    return 'daemon-log-line warn';
-  }
-  if (/完成|已启动|ok\b/i.test(line)) {
-    return 'daemon-log-line ok';
-  }
-  return 'daemon-log-line';
-}
 
 type Props = {
   onSelectCreator?: (creatorId: string) => void;
@@ -36,7 +28,7 @@ export function DaemonCard({ onSelectCreator }: Props) {
   const [busy, setBusy] = useState(false);
   const [recoverBusy, setRecoverBusy] = useState(false);
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('logs');
-  const [logLines, setLogLines] = useState<string[]>([]);
+  const [logEntries, setLogEntries] = useState<ParsedDaemonLogLine[]>([]);
   const [workQueue, setWorkQueue] = useState<WorkQueue | null>(null);
 
   const health: RuntimeHealth = runtime?.health ?? 'stopped';
@@ -52,13 +44,18 @@ export function DaemonCard({ onSelectCreator }: Props) {
 
   const loadLogs = useCallback(async () => {
     try {
-      const res = await apiGet<{ ok: boolean; lines: string[] }>(
+      const res = await apiGet<{ ok: boolean; lines: string[]; entries?: DaemonLogEntry[] }>(
         `/api/runtime/logs?tail=${LOG_TAIL}`,
         true,
       );
-      setLogLines(res.lines ?? []);
+      const entries = (res.entries ?? []).map(entryFromApi);
+      if (entries.length > 0) {
+        setLogEntries(entries);
+        return;
+      }
+      setLogEntries((res.lines ?? []).map(daemonLogLineFromText));
     } catch {
-      setLogLines([]);
+      setLogEntries([]);
     }
   }, []);
 
@@ -228,11 +225,9 @@ export function DaemonCard({ onSelectCreator }: Props) {
 
       {bottomPanel === 'logs' ? (
         <div className="daemon-log-panel" id="daemon-log-panel" aria-label="最近运行日志">
-          {logLines.length ? (
-            logLines.map((line) => (
-              <div key={line} className={logLineClass(line)}>
-                {line}
-              </div>
+          {logEntries.length ? (
+            logEntries.map((entry, index) => (
+              <DaemonLogLineView key={`${entry.raw}-${index}`} entry={entry} />
             ))
           ) : (
             <div className="daemon-log-empty">暂无日志</div>

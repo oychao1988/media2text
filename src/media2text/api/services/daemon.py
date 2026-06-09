@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from media2text.core.config import AppConfig
-from media2text.core.runtime.log_format import format_daemon_log_lines
+from media2text.core.runtime.log_format import format_daemon_log_entries
 from media2text.core.runtime.monitor_log import is_sink_active, tail_lines
 from media2text.core.runtime.status import LOG_NAME, build_daemon_status_legacy
 from media2text.core.storage.repos import CreatorRepo
@@ -40,8 +40,10 @@ def read_daemon_logs(cfg: AppConfig, *, tail: int = 5) -> dict:
         }
     finally:
         conn.close()
+    entries = format_daemon_log_entries(raw_lines, creator_names=creator_names)
     return {
         "ok": True,
         "path": str(log_path),
-        "lines": format_daemon_log_lines(raw_lines, creator_names=creator_names),
+        "lines": [e["line"] for e in entries],
+        "entries": entries,
     }

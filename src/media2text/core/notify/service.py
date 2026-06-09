@@ -80,7 +80,13 @@ class NotifyService:
         elif self._notify.feishu.enabled and not webhook:
             log.debug("notify_feishu_skipped", reason="missing_webhook_url")
 
-        log.info("notify_delivered", kind=event.kind, title=event.title)
+        log.info(
+            "notify_delivered",
+            kind=event.kind,
+            title=event.title,
+            creator_id=event.creator_id,
+            session_id=event.session_id,
+        )
 
     def _event_enabled(self, kind: EventKind) -> bool:
         events = self._notify.events

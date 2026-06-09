@@ -7,7 +7,7 @@ from typing import Any
 
 from media2text.core.config import AppConfig
 from media2text.core.runtime.status import _age_sec, list_stale_snapshot_creators
-from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo, PostProcessJobRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
 from media2text.core.workspace import open_db
 
 TASK_TYPE_LABELS: dict[str, str] = {
@@ -86,11 +86,16 @@ def recover_stale_work(
     """Reset monitor tasks / post-process jobs stuck in ``running``."""
     conn = open_db(cfg)
     try:
-        mt_reset = MonitorTaskRepo(conn).reset_stale_running(older_than_sec=older_than_sec)
+        mt_repo = MonitorTaskRepo(conn)
+        mt_reset = mt_repo.reset_stale_running(older_than_sec=older_than_sec)
+        content_released = 0
+        if LiveSessionRepo(conn).list_active():
+            content_released = mt_repo.release_running_content_tasks()
         pp_reset = PostProcessJobRepo(conn).reset_stale_running(older_than_sec=older_than_sec)
         return {
             "ok": True,
             "monitor_tasks_reset": mt_reset,
+            "content_tasks_released": content_released,
             "post_process_reset": pp_reset,
             "older_than_sec": older_than_sec,
         }

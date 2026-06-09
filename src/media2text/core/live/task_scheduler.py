@@ -12,6 +12,7 @@ from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
 from media2text.core.live.segment_process_pool import SegmentProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
+from media2text.core.storage.repos import LiveSessionRepo
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -95,12 +96,15 @@ class TaskSchedulerLoop:
             notify=self._watcher._notify,
             limit=self._cfg.live.post_process_max_parallel,
         )
+        content_parallel = self._cfg.monitor.executor_max_parallel
+        if LiveSessionRepo(conn).list_active():
+            content_parallel = 0
         self._monitor_pool.drain_pending(
             self._cfg,
             conn,
             notify=self._watcher._notify,
             watcher=self._watcher,
-            limit=self._cfg.monitor.executor_max_parallel,
+            limit=content_parallel,
             min_priority=10,
         )
         try:

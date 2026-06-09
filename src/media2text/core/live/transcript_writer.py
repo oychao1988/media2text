@@ -31,6 +31,31 @@ def transcript_sidecar_media_paths(media_path: Path) -> list[Path]:
     return [media_path]
 
 
+def partial_segment_end_from_media(media_path: Path) -> float | None:
+    """Max segment ``end`` from any partial sidecar reachable from *media_path*."""
+    best: float | None = None
+    for candidate in transcript_sidecar_media_paths(media_path):
+        partial = candidate.with_suffix(".transcript.partial.json")
+        if not partial.is_file():
+            continue
+        try:
+            payload = json.loads(partial.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(payload, dict):
+            continue
+        for raw in payload.get("segments") or []:
+            if not isinstance(raw, dict):
+                continue
+            try:
+                end = float(raw.get("end") or 0)
+            except (TypeError, ValueError):
+                continue
+            if best is None or end > best:
+                best = end
+    return best
+
+
 def segment_checkpoint_path(media_path: Path, index: int) -> Path:
     return media_path.parent / f"{media_path.stem}.transcript.seg{index}.json"
 

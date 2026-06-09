@@ -1656,13 +1656,16 @@ class MonitorTaskRepo:
         count = 0
         for row in rows:
             started = row["started_at"]
-            if not started:
-                continue
-            try:
-                started_dt = datetime.fromisoformat(str(started).replace("Z", "+00:00"))
-            except ValueError:
-                started_dt = datetime.now(timezone.utc)
-            if started_dt.timestamp() > cutoff:
+            if started:
+                try:
+                    started_dt = datetime.fromisoformat(
+                        str(started).replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    started_dt = datetime.now(timezone.utc)
+                if started_dt.timestamp() > cutoff:
+                    continue
+            elif older_than_sec > 0:
                 continue
             self._conn.execute(
                 """
@@ -1675,6 +1678,19 @@ class MonitorTaskRepo:
             count += 1
         self._conn.commit()
         return count
+
+    def release_running_content_tasks(self) -> int:
+        """Yield Playwright to live lane while sessions are actively recording."""
+        cur = self._conn.execute(
+            """
+            UPDATE monitor_tasks
+            SET status = 'pending', started_at = NULL, error = NULL
+            WHERE status = 'running'
+              AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
+            """
+        )
+        self._conn.commit()
+        return cur.rowcount
 
     def count_by_status(self) -> dict[str, int]:
         rows = self._conn.execute(

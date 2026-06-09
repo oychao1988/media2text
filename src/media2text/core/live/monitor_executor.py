@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -10,6 +9,7 @@ import structlog
 
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.config import AppConfig
+from media2text.core.playwright_env import playwright_exclusive
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.notify.outbox import NotifyDaemonGuard
@@ -35,8 +35,14 @@ if TYPE_CHECKING:
 
 log = structlog.get_logger()
 
-_PLAYWRIGHT_SEM = threading.Semaphore(1)
-_PLAYWRIGHT_TASK_TYPES = frozenset({"sync_catalog", "download", "sync_dynamic"})
+_PLAYWRIGHT_TASK_TYPES = frozenset(
+    {
+        "sync_catalog",
+        "download",
+        "sync_dynamic",
+        "prepare_live_recording",
+    }
+)
 
 
 def run_monitor_task(
@@ -57,7 +63,7 @@ def run_monitor_task(
     notify_svc = notify or NotifyService(cfg)
     try:
         if task.task_type in _PLAYWRIGHT_TASK_TYPES:
-            with _PLAYWRIGHT_SEM:
+            with playwright_exclusive():
                 result = _dispatch_task(
                     cfg, conn, task, watcher=watcher, notify=notify_svc
                 )

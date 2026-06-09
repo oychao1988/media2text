@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -46,8 +47,11 @@ from media2text.core.live.partial_notify import PartialTranscriptNotifier
 from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.live.streaming_stt import StreamingSttSession
 from media2text.core.live.transcript_writer import (
+    hls_transcript_anchor_path,
     list_segment_checkpoints,
     merge_transcript_checkpoints,
+    partial_segment_end_from_media,
+    transcript_sidecar_media_paths,
     seal_partial_transcript,
 )
 from media2text.core.platform.douyin.models import LiveRoomInfo
@@ -55,10 +59,11 @@ from media2text.core.live.pipeline_events import stage_event
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo, PostProcessJobRepo
 
 log = structlog.get_logger()
 FFMPEG_STARTUP_GRACE_SEC = 2
+TRANSCRIPT_STALL_RECONNECT_SEC = 90
 
 
 class LiveRecordingCore:
@@ -99,6 +104,7 @@ class LiveRecordingCore:
         self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
         self._hls_part_index: dict[str, int] = {}
         self._hls_discontinuity_seq: dict[str, int] = {}
+        self._stall_recovery_inflight: set[str] = set()
 
     @property
     def _processes(self) -> dict[str, Popen]:
@@ -300,7 +306,8 @@ class LiveRecordingCore:
             raise ValueError(f"missing_stream_url:{session_id}")
 
         self._streaming_transcript_anchor.setdefault(
-            session_id, Path(row.temp_path)
+            session_id,
+            self._normalize_transcript_anchor(Path(row.temp_path)),
         )
         self._stt_checkpoint_counter.setdefault(session_id, 0)
         anchor = self._transcript_anchor(session_id, row.temp_path)
@@ -406,8 +413,172 @@ class LiveRecordingCore:
                 {"creator_id": creator.id, "error": str(exc)},
             )
 
+    def _normalize_transcript_anchor(self, media_path: Path) -> Path:
+        hls_anchor = hls_transcript_anchor_path(media_path)
+        return hls_anchor if hls_anchor is not None else media_path
+
+    def _transcript_partial_age_sec(self, row) -> float | None:
+        if not row.temp_path:
+            return None
+        anchor = self._streaming_transcript_anchor.get(row.id)
+        candidates: list[Path] = []
+        if anchor is not None:
+            candidates.append(anchor)
+        candidates.extend(transcript_sidecar_media_paths(Path(row.temp_path)))
+        freshest: float | None = None
+        for base in candidates:
+            partial = base.with_suffix(".transcript.partial.json")
+            if not partial.is_file():
+                continue
+            age = time.time() - partial.stat().st_mtime
+            if freshest is None or age < freshest:
+                freshest = age
+        return freshest
+
+    def _partial_timeline_offset_sec(self, row) -> float:
+        best = 0.0
+        media_paths: list[Path] = []
+        if row.segment_paths_json:
+            try:
+                data = json.loads(row.segment_paths_json)
+            except json.JSONDecodeError:
+                data = None
+            if isinstance(data, list):
+                media_paths.extend(Path(str(p)) for p in data if p)
+        for raw in (row.temp_path, row.local_path):
+            if raw:
+                media_paths.append(Path(raw))
+        for path in media_paths:
+            end = partial_segment_end_from_media(path)
+            if end is not None and end > best:
+                best = end
+        return best
+
+    def _resolve_live_stream_url(self, creator, *, room_id: str | None) -> str | None:
+        if room_id:
+            try:
+                url = self._adapter.resolve_stream_url(
+                    room_id=room_id,
+                    sec_uid=creator.sec_uid,
+                )
+                if url:
+                    return url
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "resolve_stream_url_failed",
+                    creator_id=creator.id,
+                    room_id=room_id,
+                    error=str(exc),
+                )
+            return None
+        try:
+            live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+            url = live_info.stream_flv_url
+            rid = room_id or live_info.room_id
+            if not url and rid:
+                url = self._adapter.resolve_stream_url(
+                    room_id=rid,
+                    sec_uid=creator.sec_uid,
+                )
+            return url or None
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "resolve_live_stream_url_failed",
+                creator_id=creator.id,
+                error=str(exc),
+            )
+            return None
+
+    def _maybe_recover_stalled_stream(
+        self,
+        row,
+        creator,
+        *,
+        ffmpeg_alive: bool,
+        stt_alive: bool | None,
+    ) -> None:
+        if row.status != "recording":
+            return
+        if row.id in self._streaming_legacy_finalize:
+            return
+        if not self._use_streaming_pipeline(row.id):
+            return
+        if row.id in self._stall_recovery_inflight:
+            return
+        attempts = row.reconnect_attempts or 0
+        if attempts >= self._cfg.live.max_reconnect_attempts:
+            return
+
+        stale_sec = self._transcript_partial_age_sec(row)
+        if stale_sec is None or stale_sec < TRANSCRIPT_STALL_RECONNECT_SEC:
+            return
+
+        if row.temp_path is None:
+            return
+
+        tasks = MonitorTaskRepo(self._conn)
+        if tasks.has_active_dedupe(f"reconnect_rec:{row.id}") or tasks.has_active_dedupe(
+            f"reconnect_stt:{row.id}"
+        ):
+            return
+
+        self._stall_recovery_inflight.add(row.id)
+        try:
+            if not ffmpeg_alive:
+                if row.ffmpeg_pid is None:
+                    return
+                log.warning(
+                    "live_stream_stall_reconnect",
+                    session_id=row.id,
+                    transcript_stale_sec=round(stale_sec, 1),
+                    stt_alive=stt_alive,
+                    mode="ffmpeg",
+                )
+                self._reconnect_segment(
+                    row.id,
+                    creator,
+                    row.temp_path,
+                    row.ffmpeg_pid,
+                )
+                return
+
+            if row.ffmpeg_pid is None:
+                return
+
+            if stt_alive is False:
+                log.warning(
+                    "live_stt_stall_reconnect",
+                    session_id=row.id,
+                    transcript_stale_sec=round(stale_sec, 1),
+                    mode="stt_only",
+                )
+                self._handle_stt_disconnect(row, creator)
+                return
+
+            log.warning(
+                "live_stream_stall_reconnect",
+                session_id=row.id,
+                transcript_stale_sec=round(stale_sec, 1),
+                stt_alive=stt_alive,
+                mode="full",
+            )
+            self._reconnect_segment(
+                row.id,
+                creator,
+                row.temp_path,
+                row.ffmpeg_pid,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "live_stream_stall_reconnect_failed",
+                session_id=row.id,
+                error=str(exc),
+            )
+        finally:
+            self._stall_recovery_inflight.discard(row.id)
+
     def poll_active_session(self, row, creator, *, state: StateWriter) -> None:
-        """LP-02: process/API obs + offline semantics only (no enqueue/reconnect)."""
+        """LP-02: obs + offline semantics; inline stall recovery when CDN URL expires."""
         if row.status != "recording" or row.ffmpeg_pid is None:
             return
 
@@ -441,6 +612,14 @@ class LiveRecordingCore:
             stt_alive=stt_alive,
             still_live=still_live,
         )
+
+        if still_live:
+            self._maybe_recover_stalled_stream(
+                row,
+                creator,
+                ffmpeg_alive=ffmpeg_alive,
+                stt_alive=stt_alive,
+            )
 
         try:
             profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
@@ -482,9 +661,9 @@ class LiveRecordingCore:
     def _transcript_anchor(self, session_id: str, temp_path: str | None) -> Path:
         anchor = self._streaming_transcript_anchor.get(session_id)
         if anchor is not None:
-            return anchor
+            return self._normalize_transcript_anchor(anchor)
         if temp_path:
-            return Path(temp_path)
+            return self._normalize_transcript_anchor(Path(temp_path))
         raise ValueError(f"missing transcript anchor for session {session_id}")
 
     def _checkpoint_streaming_stt(
@@ -629,7 +808,6 @@ class LiveRecordingCore:
     def _handle_stt_disconnect(self, row, creator) -> None:
         session_id = row.id
         stt = self._stt_sessions.pop(session_id, None)
-        offset = 0.0
         if stt is not None:
             offset = stt.writer.segment_end_sec()
             try:
@@ -640,25 +818,19 @@ class LiveRecordingCore:
                     session_id=session_id,
                     error=str(exc),
                 )
+        else:
+            offset = self._partial_timeline_offset_sec(row)
 
         if not self._cfg.live.streaming_stt.reconnect:
             self._mark_streaming_degraded(session_id, reason="stt_disconnect")
             return
 
-        stream_url = self._stream_urls.get(session_id)
-        if not stream_url and row.room_id:
-            try:
-                stream_url = self._adapter.resolve_stream_url(
-                    room_id=row.room_id,
-                    sec_uid=creator.sec_uid,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "streaming_stt_reconnect_resolve_failed",
-                    session_id=session_id,
-                    error=str(exc),
-                )
-                stream_url = None
+        stream_url = self._resolve_live_stream_url(
+            creator,
+            room_id=row.room_id,
+        )
+        if stream_url:
+            self._stream_urls[session_id] = stream_url
 
         if not stream_url or not row.temp_path:
             self._mark_streaming_degraded(
@@ -745,25 +917,15 @@ class LiveRecordingCore:
             self._state.append_segment_path(session_id, temp_path)
         attempt = self._state.increment_reconnect_attempts(session_id)
 
-        try:
-            live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-            room_id = live_info.room_id
-            stream_url = live_info.stream_flv_url
-            if not stream_url and room_id:
-                stream_url = self._adapter.resolve_stream_url(
-                    room_id=room_id,
-                    sec_uid=creator.sec_uid,
-                )
-        except Exception as exc:  # noqa: BLE001
+        sess_row = self._sessions.get(session_id)
+        room_id = sess_row.room_id if sess_row else None
+        stream_url = self._resolve_live_stream_url(creator, room_id=room_id)
+        if not stream_url:
             log.warning(
                 "live_reconnect_stream_failed",
                 session_id=session_id,
-                error=str(exc),
+                error="empty stream url after resolve",
             )
-            self._finalize_recording(session_id, temp_path, old_pid)
-            return None
-
-        if not stream_url:
             self._finalize_recording(session_id, temp_path, old_pid)
             return None
 
@@ -797,13 +959,19 @@ class LiveRecordingCore:
             time.sleep(FFMPEG_STARTUP_GRACE_SEC)
             if streaming_merge:
                 anchor = self._transcript_anchor(session_id, temp_path)
+                offset = next_offset
+                if offset is None:
+                    sess = self._sessions.get(session_id)
+                    offset = (
+                        self._partial_timeline_offset_sec(sess) if sess else 0.0
+                    )
                 try:
                     new_stt = self._build_streaming_stt_session(
                         session_id,
                         creator=creator,
                         stream_url=stream_url,
                         media_path=anchor,
-                        offset_sec=next_offset or 0.0,
+                        offset_sec=offset,
                     )
                     with stage_event(
                         self._conn, session_id=session_id, stage="streaming_stt"
@@ -816,7 +984,7 @@ class LiveRecordingCore:
                         status="reconnected",
                         detail={
                             "reason": "hls_reconnect",
-                            "offset_sec": next_offset or 0.0,
+                            "offset_sec": offset,
                         },
                     )
                 except Exception as exc:  # noqa: BLE001
@@ -856,13 +1024,17 @@ class LiveRecordingCore:
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
         if streaming_merge:
             anchor = self._transcript_anchor(session_id, temp_path)
+            offset = next_offset
+            if offset is None:
+                sess = self._sessions.get(session_id)
+                offset = self._partial_timeline_offset_sec(sess) if sess else 0.0
             try:
                 new_stt = self._build_streaming_stt_session(
                     session_id,
                     creator=creator,
                     stream_url=stream_url,
                     media_path=anchor,
-                    offset_sec=next_offset or 0.0,
+                    offset_sec=offset,
                 )
                 with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                     new_stt.start()
@@ -871,7 +1043,7 @@ class LiveRecordingCore:
                     session_id=session_id,
                     stage="streaming_stt",
                     status="reconnected",
-                    detail={"reason": "ffmpeg_reconnect", "offset_sec": next_offset or 0.0},
+                    detail={"reason": "ffmpeg_reconnect", "offset_sec": offset},
                 )
             except Exception as exc:  # noqa: BLE001
                 log.warning(
@@ -983,7 +1155,9 @@ class LiveRecordingCore:
         use_hls = use_streaming and (
             session_dir is not None or self._cfg.live.uses_hls_media()
         )
-        anchor_path = transcript_anchor or temp_path
+        anchor_path = self._normalize_transcript_anchor(
+            Path(transcript_anchor or temp_path)
+        )
         stt_session: StreamingSttSession | None = None
         if use_streaming:
             self._streaming_transcript_anchor[session_id] = anchor_path

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 
 from media2text.core.config import AppConfig
@@ -41,6 +42,24 @@ def _obs_true(val: int | None) -> bool:
 
 def _obs_false(val: int | None) -> bool:
     return val == 0
+
+
+def _pid_alive(pid: int | None) -> bool:
+    if not pid:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def _ffmpeg_obs_alive(row: LiveSessionRow) -> bool:
+    if not _obs_true(row.obs_ffmpeg_alive):
+        return False
+    if row.ffmpeg_pid and not _pid_alive(row.ffmpeg_pid):
+        return False
+    return True
 
 
 def _load_snapshots(conn) -> dict[str, CreatorLiveSnapshotRow]:
@@ -125,8 +144,10 @@ def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
 
         session_payload = json.dumps({"session_id": row.id})
         still_live = _obs_true(row.obs_still_live)
+        ffmpeg_alive = _ffmpeg_obs_alive(row)
 
-        if _obs_false(row.obs_ffmpeg_alive) and still_live:
+        if not ffmpeg_alive and still_live:
+            tasks.cancel_pending(dedupe_key=f"reconnect_stt:{row.id}")
             if _maybe_ensure(
                 tasks,
                 log_only=log_only,
@@ -141,7 +162,6 @@ def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
         if not _is_streaming_session(cfg, row):
             continue
 
-        ffmpeg_alive = _obs_true(row.obs_ffmpeg_alive)
         stt_streaming = (row.transcribe_status or "").lower() == "streaming"
 
         if _obs_false(row.obs_stt_alive) and ffmpeg_alive:
@@ -183,6 +203,9 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
     creators_repo = CreatorRepo(conn)
 
     for creator in creators_repo.list_monitored():
+        if LiveSessionRepo(conn).get_active_for_creator(creator.id):
+            continue
+
         if creator.vod_due_at and (due := _parse_iso(creator.vod_due_at)) and due <= now:
             if _maybe_ensure(
                 tasks,

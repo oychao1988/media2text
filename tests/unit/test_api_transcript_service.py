@@ -154,6 +154,65 @@ def test_hls_transcript_partial_on_anchor(api_client, workspace) -> None:
     )
 
 
+def test_hls_transcript_picks_newest_partial(api_client, workspace) -> None:
+    """When anchor and master both have partial sidecars, API returns the fresher one."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_hls_dual",
+        profile_url="https://www.douyin.com/user/sec_hls_dual",
+        platform="douyin",
+    )
+    session_dir = workspace / "creators" / "sec_hls_dual" / "live" / "20260609T124929Z"
+    session_dir.mkdir(parents=True)
+    master = session_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    anchor = session_dir / "20260609T124929Z.flv"
+    anchor.write_bytes(b"\x00")
+
+    stale = anchor.with_suffix(".transcript.partial.json")
+    stale.write_text(
+        json.dumps(
+            {
+                "text": "stale anchor",
+                "segments": [{"start": 80.0, "end": 92.9, "text": "stale anchor"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    fresh = master.with_suffix(".transcript.partial.json")
+    fresh.write_text(
+        json.dumps(
+            {
+                "text": "fresh master",
+                "segments": [
+                    {"start": 180.0, "end": 193.7, "text": "fresh master"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="room1",
+        temp_path=str(master),
+    )
+    conn.close()
+
+    tr = api_client.get(f"/api/sessions/{sid}/transcript")
+    assert tr.status_code == 200
+    body = tr.json()
+    assert body["partial"] is True
+    assert body["text"] == "fresh master"
+    assert body["segments"][-1]["end"] == pytest.approx(193.7)
+
+    detail = api_client.get(f"/api/sessions/{sid}").json()["session"]
+    assert detail["paths"]["partial_transcript_path"].endswith(
+        "master.transcript.partial.json"
+    )
+
+
 def test_transcript_not_found(api_client, workspace) -> None:
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)

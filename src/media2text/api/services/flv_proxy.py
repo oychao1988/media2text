@@ -50,18 +50,29 @@ def resolve_upstream_stream_url(
 ) -> str:
     adapter = get_adapter(platform, cfg)
     room_id = session.room_id
-    if not room_id:
-        try:
-            live_info = adapter.get_live_room(sec_uid=sec_uid)
-            room_id = live_info.room_id
-            url = live_info.stream_flv_url
-            if url:
-                return url
-        except Exception as exc:  # noqa: BLE001
+    try:
+        live_info = adapter.get_live_room(sec_uid=sec_uid)
+        if live_info.stream_flv_url:
+            return live_info.stream_flv_url
+        room_id = room_id or live_info.room_id
+    except Exception as exc:  # noqa: BLE001
+        if not room_id:
             raise HTTPException(
                 status_code=502,
                 detail={"error": "live_room_failed", "message": str(exc)},
             ) from exc
+
+    if room_id:
+        get_reflow = getattr(adapter, "get_room_reflow", None)
+        if get_reflow is not None:
+            try:
+                reflow = get_reflow(room_id=room_id, sec_uid=sec_uid)
+                if reflow.stream_flv_url:
+                    return reflow.stream_flv_url
+            except Exception:  # noqa: BLE001
+                pass
+
+    if not room_id:
         raise HTTPException(status_code=404, detail="room_id not available")
 
     try:

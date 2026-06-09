@@ -232,26 +232,41 @@ class DouyinAdapterV1:
             raise ParseFailed(f"reflow fetch failed: {exc}") from exc
 
     def _resolve_stream_url(self, *, room_id: str, sec_uid: str | None) -> str:
+        try:
+            reflow = self.get_room_reflow(room_id=room_id, sec_uid=sec_uid)
+            if reflow.stream_flv_url:
+                return reflow.stream_flv_url
+        except ParseFailed:
+            pass
+
         if self._session_path and self._session_path.is_file():
-            try:
-                from media2text.core.platform.douyin.live_enter import (
-                    resolve_stream_via_web_enter,
-                )
+            from media2text.core.platform.douyin.live_enter import (
+                resolve_stream_via_web_enter,
+            )
 
-                live_url = f"https://live.douyin.com/{room_id}"
-                stream_url, _, _ = resolve_stream_via_web_enter(
-                    self._session_path, live_url
+            live_urls = [f"https://live.douyin.com/{room_id}"]
+            if sec_uid:
+                live_urls.insert(
+                    0,
+                    f"https://www.douyin.com/follow/live/{room_id}?sec_user_id={sec_uid}",
                 )
-                return stream_url
-            except ParseFailed:
-                pass
-            except Exception:
-                pass
+            last_exc: Exception | None = None
+            for live_url in live_urls:
+                try:
+                    stream_url, _, _ = resolve_stream_via_web_enter(
+                        self._session_path,
+                        live_url,
+                        sec_user_id=sec_uid,
+                    )
+                    return stream_url
+                except ParseFailed as exc:
+                    last_exc = exc
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+            if last_exc is not None:
+                raise ParseFailed(f"stream resolve failed: {last_exc}") from last_exc
 
-        reflow = self.get_room_reflow(room_id=room_id, sec_uid=sec_uid)
-        if not reflow.stream_flv_url:
-            raise ParseFailed("stream flv url not found")
-        return reflow.stream_flv_url
+        raise ParseFailed("stream flv url not found")
 
     def list_awemes(
         self,

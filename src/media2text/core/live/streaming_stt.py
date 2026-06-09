@@ -192,7 +192,11 @@ class StreamingSttSession:
 
         self._feeder = threading.Thread(target=feed_pcm, daemon=True)
         self._feeder.start()
-        self._connection.start_listening()
+        threading.Thread(
+            target=self._connection.start_listening,
+            name=f"deepgram-listen-{self._media_path.stem}",
+            daemon=True,
+        ).start()
 
     def stop(
         self, *, timeout: float = 15.0, finalize: bool = True

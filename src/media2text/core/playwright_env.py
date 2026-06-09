@@ -4,11 +4,26 @@ from __future__ import annotations
 
 import os
 import sys
+import threading
+from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Iterator
 
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Playwright
+
+# monitor watch runs sync_catalog + prepare_live_recording concurrently; serialize
+# Chromium launches so stream resolve does not fail with launch_failed.
+_PLAYWRIGHT_EXCLUSIVE = threading.Semaphore(1)
+
+
+@contextmanager
+def playwright_exclusive() -> Iterator[None]:
+    _PLAYWRIGHT_EXCLUSIVE.acquire()
+    try:
+        yield
+    finally:
+        _PLAYWRIGHT_EXCLUSIVE.release()
 
 
 def default_browsers_path() -> Path:

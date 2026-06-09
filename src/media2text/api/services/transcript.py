@@ -54,24 +54,54 @@ def transcript_media_candidates(row: LiveSessionRow) -> list[Path]:
     return out
 
 
-def resolve_transcript_media(row: LiveSessionRow) -> Path | None:
-    """First candidate path with a partial/final/md transcript sidecar."""
+def _partial_sidecar_score(path: Path) -> tuple[float, int, float]:
+    """Rank partial sidecars: higher segment end, then count, then mtime."""
+    seg_end = 0.0
+    seg_count = 0
+    payload = _read_json_sidecar(path)
+    if payload:
+        segments = payload.get("segments") or []
+        if isinstance(segments, list):
+            seg_count = len(segments)
+            for seg in segments:
+                if not isinstance(seg, dict):
+                    continue
+                try:
+                    seg_end = max(seg_end, float(seg.get("end") or 0))
+                except (TypeError, ValueError):
+                    continue
+    return (seg_end, seg_count, path.stat().st_mtime)
+
+
+def _pick_best_transcript_media(row: LiveSessionRow) -> Path | None:
+    """Choose the media path whose transcript sidecar is most up to date."""
+    best_score: tuple[float, int, float] | None = None
+    best_media: Path | None = None
+
     for media in transcript_media_candidates(row):
-        if _transcript_sidecar_exists(media):
-            return media
+        for candidate in transcript_sidecar_media_paths(media):
+            partial = candidate.with_suffix(".transcript.partial.json")
+            if not partial.is_file():
+                continue
+            score = _partial_sidecar_score(partial)
+            if best_score is None or score > best_score:
+                best_score = score
+                best_media = candidate
+
+    if best_media is not None:
+        return best_media
+
+    for media in transcript_media_candidates(row):
+        for candidate in transcript_sidecar_media_paths(media):
+            for suffix in (".transcript.json", ".transcript.md"):
+                if candidate.with_suffix(suffix).is_file():
+                    return candidate
     return None
 
 
-def _transcript_sidecar_exists(media_path: Path) -> bool:
-    for candidate in transcript_sidecar_media_paths(media_path):
-        for suffix in (
-            ".transcript.partial.json",
-            ".transcript.json",
-            ".transcript.md",
-        ):
-            if candidate.with_suffix(suffix).is_file():
-                return True
-    return False
+def resolve_transcript_media(row: LiveSessionRow) -> Path | None:
+    """Media path for the freshest partial (or final/md) transcript sidecar."""
+    return _pick_best_transcript_media(row)
 
 
 def _read_json_sidecar(path: Path) -> dict[str, Any] | None:
@@ -129,18 +159,11 @@ def read_transcript_payload(media_path: Path) -> dict[str, Any]:
 
 
 def read_transcript_for_session(row: LiveSessionRow) -> dict[str, Any]:
-    """Load transcript for a session; follows streaming anchor across reconnects."""
-    last_exc: HTTPException | None = None
-    for media in transcript_media_candidates(row):
-        try:
-            return read_transcript_payload(media)
-        except HTTPException as exc:
-            if exc.status_code != 404:
-                raise
-            last_exc = exc
-    if last_exc is not None:
-        raise last_exc
-    raise HTTPException(status_code=404, detail="transcript not found")
+    """Load transcript for a session; picks the freshest sidecar across anchors."""
+    media = resolve_transcript_media(row)
+    if media is None:
+        raise HTTPException(status_code=404, detail="transcript not found")
+    return read_transcript_payload(media)
 
 
 def transcript_mtime(row: LiveSessionRow) -> float | None:
@@ -148,11 +171,12 @@ def transcript_mtime(row: LiveSessionRow) -> float | None:
     if media is None:
         return None
     mtimes: list[float] = []
-    for candidate in transcript_sidecar_media_paths(media):
-        for suffix in (".transcript.partial.json", ".transcript.json"):
-            path = candidate.with_suffix(suffix)
-            if path.is_file():
-                mtimes.append(path.stat().st_mtime)
+    partial = media.with_suffix(".transcript.partial.json")
+    if partial.is_file():
+        mtimes.append(partial.stat().st_mtime)
+    final = media.with_suffix(".transcript.json")
+    if final.is_file():
+        mtimes.append(final.stat().st_mtime)
     return max(mtimes) if mtimes else None
 
 
@@ -182,11 +206,10 @@ def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
     media_s = str(media) if media is not None else str(transcript_media)
     transcript_s = str(transcript_media) if transcript_media is not None else media_s
     partial_path: Path | None = None
-    for candidate in transcript_sidecar_media_paths(Path(transcript_s)):
-        candidate_partial = candidate.with_suffix(".transcript.partial.json")
+    if transcript_media is not None:
+        candidate_partial = transcript_media.with_suffix(".transcript.partial.json")
         if candidate_partial.is_file():
             partial_path = candidate_partial
-            break
     return {
         "media_path": media_s,
         "transcript_path": _transcript_sidecar_path(transcript_s),

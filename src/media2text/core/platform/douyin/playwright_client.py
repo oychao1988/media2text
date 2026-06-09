@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 from playwright.sync_api import Response, sync_playwright
 
 from media2text.core.errors import AuthRequired, ParseFailed
-from media2text.core.playwright_env import launch_chromium
+from media2text.core.playwright_env import launch_chromium, playwright_exclusive
 from media2text.core.platform.douyin.parse import _user_sec_uid, map_http_error
 
 _PROFILE_API_MARKER = "user/profile/other"
@@ -102,30 +102,32 @@ def fetch_json(
     if params:
         url = f"{url}?{urlencode(params)}"
 
-    with sync_playwright() as p:
-        browser = launch_chromium(p, headless=True)
-        context = browser.new_context(storage_state=str(session_path))
-        try:
-            response = context.request.get(
-                url,
-                headers={
-                    "Referer": referer,
-                    "User-Agent": (
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-                    ),
-                },
-            )
-            body = response.text()
-            if response.status >= 400:
-                raise map_http_error(response.status, body)
-            data = response.json()
-            if not isinstance(data, dict):
-                raise ParseFailed("expected JSON object")
-            return data
-        finally:
-            context.close()
-            browser.close()
+    with playwright_exclusive():
+        with sync_playwright() as p:
+            browser = launch_chromium(p, headless=True)
+            context = browser.new_context(storage_state=str(session_path))
+            try:
+                response = context.request.get(
+                    url,
+                    headers={
+                        "Referer": referer,
+                        "User-Agent": (
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/122.0.0.0 Safari/537.36"
+                        ),
+                    },
+                )
+                body = response.text()
+                if response.status >= 400:
+                    raise map_http_error(response.status, body)
+                data = response.json()
+                if not isinstance(data, dict):
+                    raise ParseFailed("expected JSON object")
+                return data
+            finally:
+                context.close()
+                browser.close()
 
 
 def _profile_payload_from_response(response: Response) -> dict | None:

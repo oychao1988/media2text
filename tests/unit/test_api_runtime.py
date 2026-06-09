@@ -24,7 +24,9 @@ def test_runtime_logs_tail(api_client, workspace) -> None:
     log.write_text("a\nb\nc\n", encoding="utf-8")
     r = api_client.get("/api/runtime/logs?tail=2")
     assert r.status_code == 200
-    assert r.json()["lines"] == ["b", "c"]
+    body = r.json()
+    assert body["lines"] == ["信息 · 系统 · — · b", "信息 · 系统 · — · c"]
+    assert len(body["entries"]) == 2
 
 
 def test_runtime_logs_formats_json(api_client, workspace) -> None:
@@ -45,9 +47,12 @@ def test_runtime_logs_formats_json(api_client, workspace) -> None:
     )
     r = api_client.get("/api/runtime/logs?tail=1")
     assert r.status_code == 200
-    line = r.json()["lines"][0]
+    body = r.json()
+    line = body["lines"][0]
     assert line.startswith("[")
-    assert "直播收尾完成 2 场" in line
+    assert "直播收尾" in line
+    assert "2 场" in line
+    assert body["entries"][0]["task"] == "直播收尾"
 
 
 def test_runtime_start_stop(api_client, workspace) -> None:
