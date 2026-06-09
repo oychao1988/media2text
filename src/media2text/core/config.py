@@ -93,6 +93,7 @@ class LiveSegmentUploadConfig(BaseModel):
 class LiveSegmentPipelineConfig(BaseModel):
     enabled: bool = True
     max_parallel: int = 2
+    max_attempts: int = 5
     watch_interval_sec: float = 1.0
     stable_mtime_sec: float = 2.0
     upload: LiveSegmentUploadConfig = Field(default_factory=LiveSegmentUploadConfig)
