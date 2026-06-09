@@ -45,16 +45,31 @@ def _part_index_from_uri(uri: str) -> int | None:
     return int(match.group(1))
 
 
+def _rewrite_init_uri(session_id: str, line: str) -> str | None:
+    stripped = line.strip()
+    if stripped.startswith("#EXT-X-MAP:") and "init.mp4" in stripped:
+        return re.sub(
+            r'URI="init\.mp4"',
+            f'URI="/api/sessions/{session_id}/init.mp4"',
+            line,
+        )
+    if _INIT_URI_RE.fullmatch(stripped) or stripped.endswith("/init.mp4"):
+        return f"/api/sessions/{session_id}/init.mp4"
+    return None
+
+
 def _rewrite_m3u8(
     text: str,
     *,
     session_id: str,
-    session_dir: Path,
-    workspace,
 ) -> str:
     out_lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
+        init_line = _rewrite_init_uri(session_id, line)
+        if init_line is not None:
+            out_lines.append(init_line)
+            continue
         if not stripped or stripped.startswith("#"):
             out_lines.append(line)
             continue
@@ -62,13 +77,6 @@ def _rewrite_m3u8(
         if part_index is not None:
             out_lines.append(f"/api/sessions/{session_id}/parts/{part_index}")
             continue
-        if _INIT_URI_RE.fullmatch(stripped) or stripped.endswith("/init.mp4"):
-            init_path = session_dir / "init.mp4"
-            if init_path.is_file():
-                rel = workspace_rel(workspace, str(init_path))
-                if rel:
-                    out_lines.append(f"/api/media?path={rel}")
-                    continue
         out_lines.append(line)
     body = "\n".join(out_lines)
     if not body.endswith("\n"):
@@ -109,6 +117,40 @@ def _cloud_part_redirect(cfg: AppConfig, conn, *, session_id: str, part_index: i
     return RedirectResponse(url=url, status_code=302)
 
 
+def _cloud_init_redirect(cfg: AppConfig, conn, *, session_id: str):
+    upload = None
+    for row in CloudUploadRepo(conn).list_for_session(session_id):
+        if (
+            row.upload_status == "done"
+            and row.cloud_file_id
+            and row.file_kind == "init_mp4"
+        ):
+            upload = row
+            break
+    if upload is None:
+        for row in CloudUploadRepo(conn).list_for_session(session_id):
+            if (
+                row.upload_status == "done"
+                and row.cloud_file_id
+                and row.file_name == "init.mp4"
+            ):
+                upload = row
+                break
+    if upload is None or not upload.cloud_file_id:
+        return None
+    if not cfg.aliyundrive.enabled:
+        return None
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return None
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            url = client.get_download_url(str(upload.cloud_file_id))
+    except Exception:  # noqa: BLE001
+        return None
+    return RedirectResponse(url=url, status_code=302)
+
+
 @router.get("/{session_id}/playback.m3u8")
 def get_playback_m3u8(
     session_id: str,
@@ -126,13 +168,7 @@ def get_playback_m3u8(
         raise HTTPException(status_code=404, detail="playlist not found")
 
     raw = master.read_text(encoding="utf-8")
-    ws = cfg.ensure_workspace()
-    rewritten = _rewrite_m3u8(
-        raw,
-        session_id=session_id,
-        session_dir=session_dir,
-        workspace=ws,
-    )
+    rewritten = _rewrite_m3u8(raw, session_id=session_id)
     return Response(
         content=rewritten,
         media_type="application/vnd.apple.mpegurl",
@@ -194,3 +230,32 @@ def get_playback_part(
             return redirect
 
     raise HTTPException(status_code=404, detail="part not found")
+
+
+@router.get("/{session_id}/init.mp4", response_model=None)
+def get_playback_init(
+    session_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> FileResponse | RedirectResponse:
+    row = LiveSessionRepo(conn).get(session_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    session_dir = _resolve_session_dir(row)
+    if session_dir is None:
+        raise HTTPException(status_code=404, detail="session_dir not found")
+
+    init_path = session_dir / "init.mp4"
+    if init_path.is_file():
+        return FileResponse(
+            path=init_path,
+            media_type="video/mp4",
+            headers={"Accept-Ranges": "bytes"},
+        )
+
+    redirect = _cloud_init_redirect(cfg, conn, session_id=session_id)
+    if redirect is not None:
+        return redirect
+
+    raise HTTPException(status_code=404, detail="init not found")
