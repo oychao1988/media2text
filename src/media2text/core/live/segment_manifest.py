@@ -6,7 +6,11 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+import structlog
+
 from media2text.core.storage.models import SegmentProcessJobRow
+
+log = structlog.get_logger()
 
 
 @dataclass
@@ -351,3 +355,51 @@ class SegmentProcessJobRepo:
         if count:
             self._conn.commit()
         return count
+
+    def reset_failed_to_pending(self, *, max_attempts: int) -> int:
+        rows = self._conn.execute(
+            """
+            SELECT id, attempts, last_error FROM segment_process_jobs
+            WHERE status = 'failed'
+            """
+        ).fetchall()
+        now = _now_iso()
+        reset = 0
+        for row in rows:
+            attempts = int(row["attempts"] or 0)
+            if attempts >= max_attempts:
+                log.warning(
+                    "segment_process_retry_exhausted",
+                    job_id=row["id"],
+                    attempts=attempts,
+                    max_attempts=max_attempts,
+                    last_error=row["last_error"],
+                )
+                continue
+            cur = self._conn.execute(
+                """
+                UPDATE segment_process_jobs
+                SET status = 'pending', updated_at = ?
+                WHERE id = ? AND status = 'failed'
+                """,
+                (now, row["id"]),
+            )
+            if cur.rowcount:
+                reset += 1
+        if reset:
+            self._conn.commit()
+        return reset
+
+    def retry_failed(self, job_id: str) -> bool:
+        """Manual retry: reset failed job to pending regardless of attempts."""
+        now = _now_iso()
+        cur = self._conn.execute(
+            """
+            UPDATE segment_process_jobs
+            SET status = 'pending', updated_at = ?
+            WHERE id = ? AND status = 'failed'
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+        return cur.rowcount == 1
