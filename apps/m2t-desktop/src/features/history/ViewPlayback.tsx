@@ -144,6 +144,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     mediaPath && session?.media_available && !mediaMissing && isGallery,
   );
   const discontinuityAt = session?.discontinuity_at;
+  const partDurations = session?.part_durations;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -185,7 +186,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
 
     const handleVideoTimeUpdate = () => {
       if (onTimeUpdate) {
-        onTimeUpdate(alignPlaybackTime(video.currentTime, discontinuityAt));
+        onTimeUpdate(alignPlaybackTime(video.currentTime, discontinuityAt, partDurations));
       }
     };
     video.addEventListener('timeupdate', handleVideoTimeUpdate);

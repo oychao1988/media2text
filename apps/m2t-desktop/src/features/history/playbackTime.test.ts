@@ -7,7 +7,15 @@ describe('alignPlaybackTime', () => {
     expect(alignPlaybackTime(42.5, [])).toBe(42.5);
   });
 
-  it('keeps continuous HLS media time across discontinuity markers', () => {
+  it('maps media time across reconnect part boundaries', () => {
+    const discontinuityAt = [120];
+    const partDurations = [120, 50];
+    expect(alignPlaybackTime(100, discontinuityAt, partDurations)).toBe(100);
+    expect(alignPlaybackTime(120, discontinuityAt, partDurations)).toBe(120);
+    expect(alignPlaybackTime(145, discontinuityAt, partDurations)).toBe(145);
+  });
+
+  it('falls back to discontinuity boundaries without part durations', () => {
     expect(alignPlaybackTime(100, [120])).toBe(100);
     expect(alignPlaybackTime(130, [120])).toBe(130);
   });

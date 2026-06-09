@@ -11,7 +11,7 @@ from pathlib import Path
 import structlog
 
 from media2text.core.config import AppConfig
-from media2text.core.live.hls_recorder import part_rel_path
+from media2text.core.live.hls_recorder import mark_closed_with_duration, part_rel_path
 from media2text.core.live.segment_manifest import SegmentManifestRepo, SegmentProcessJobRepo
 from media2text.core.storage.repos import LiveSessionRepo
 from media2text.core.workspace import open_db
@@ -82,7 +82,9 @@ class SegmentWatcher:
                     rel_path=part_rel_path(idx),
                     state="recording",
                 )
-            repo.mark_closed(session_id, idx, bytes=size)
+            mark_closed_with_duration(
+                repo, session_id, idx, session_dir, bytes=size
+            )
             jobs.enqueue(session_id=session_id, part_index=idx)
 
     def tick_once(self, conn) -> None:
@@ -178,7 +180,9 @@ class SegmentWatcher:
                     rel_path=part_rel_path(idx),
                     state="recording",
                 )
-            repo.mark_closed(session_id, idx, bytes=size)
+            mark_closed_with_duration(
+                repo, session_id, idx, session_dir, bytes=size
+            )
             job_id = jobs.enqueue(session_id=session_id, part_index=idx)
             if job_id:
                 log.info(

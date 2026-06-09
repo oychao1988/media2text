@@ -323,19 +323,26 @@ def _hls_playback_fields(ws: Path, media_path: str | None, row_data: dict[str, A
         except HTTPException:
             master = None
     if master is None:
-        return {"media_format": None, "discontinuity_at": []}
+        return {"media_format": None, "discontinuity_at": [], "part_durations": []}
 
     manifest = _load_session_manifest_json(master.parent)
-    discontinuity_at: list[float] = []
     media_format = "hls"
+    discontinuity_at: list[float] = []
+    part_durations: list[float] = []
     if manifest:
         media_format = str(manifest.get("media_format") or "hls")
         raw_disc = manifest.get("discontinuity_at") or []
         if isinstance(raw_disc, list):
             discontinuity_at = [float(x) for x in raw_disc if isinstance(x, (int, float))]
+        raw_parts = manifest.get("parts") or []
+        if isinstance(raw_parts, list):
+            for item in raw_parts:
+                if isinstance(item, dict) and item.get("duration_sec") is not None:
+                    part_durations.append(float(item["duration_sec"]))
     return {
         "media_format": media_format,
         "discontinuity_at": discontinuity_at,
+        "part_durations": part_durations,
         "media_path": workspace_rel(ws, str(master)) or media_path,
     }
 
