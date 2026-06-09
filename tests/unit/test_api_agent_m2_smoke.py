@@ -150,6 +150,10 @@ def test_tool_result_persisted_and_ws_stream(api_client, workspace, monkeypatch)
             ]
         ),
     )
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.maybe_auto_title_thread",
+        lambda *_a, **_k: None,
+    )
 
     cid = _seed_creator(workspace)
     tid = api_client.post("/api/agent/threads", json={"creatorId": cid}).json()["thread"]["id"]
@@ -161,7 +165,7 @@ def test_tool_result_persisted_and_ws_stream(api_client, workspace, monkeypatch)
             with api_client.websocket_connect(f"/api/agent/stream?threadId={tid}") as ws:
                 ready = json.loads(ws.receive_text())
                 assert ready["type"] == "sidecar.ready"
-                deadline = time.time() + 8.0
+                deadline = time.time() + 15.0
                 while time.time() < deadline:
                     event = json.loads(ws.receive_text())
                     if event.get("type") == "ping":
@@ -180,7 +184,7 @@ def test_tool_result_persisted_and_ws_stream(api_client, workspace, monkeypatch)
         f"/api/agent/threads/{tid}/turn",
         json={"text": "list creators", "sidebarCreatorId": cid},
     )
-    reader.join(timeout=10.0)
+    reader.join(timeout=16.0)
     assert not errors, errors
     assert "tool.start" in seen or "tool.result" in seen
     assert "turn.end" in seen

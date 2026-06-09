@@ -183,6 +183,21 @@
 |------|--------|-----|------|------|
 | 1 | [#178](https://github.com/oychao1988/media2text/issues/178) | [#179](https://github.com/oychao1988/media2text/pull/179) | [m2t-desktop-transcript-session-monitor-ux.md](./m2t-desktop-transcript-session-monitor-ux.md) | `issue-178-m2t-desktop-transcript-session-monitor-ux` |
 
+### m2t-desktop Agent 上下文与多文档附件（2026-06-09）
+
+规格：[2026-06-09-m2t-desktop-agent-context-attachments-design.md](../superpowers/specs/2026-06-09-m2t-desktop-agent-context-attachments-design.md)
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| P0 | [#254](https://github.com/oychao1988/media2text/issues/254) | [#260](https://github.com/oychao1988/media2text/pull/260) | [p0-creator-draft-link](./m2t-desktop-agent-context-p0-creator-draft-link.md) | `issue-254-agent-context-p0-creator-draft` |
+| P1 | [#255](https://github.com/oychao1988/media2text/issues/255) | [#261](https://github.com/oychao1988/media2text/pull/261) | [p1-attachments-chips](./m2t-desktop-agent-context-p1-attachments-chips-binding.md) | `issue-255-agent-context-p1-attachments` |
+| P1b | [#256](https://github.com/oychao1988/media2text/issues/256) | [#262](https://github.com/oychao1988/media2text/pull/262) | [p1b-context-mode-tab](./m2t-desktop-agent-context-p1b-context-mode-tab.md) | `issue-256-agent-context-p1b-context-mode` |
+| P2 | [#257](https://github.com/oychao1988/media2text/issues/257) | [#263](https://github.com/oychao1988/media2text/pull/263) | [p2-mention-popover](./m2t-desktop-agent-context-p2-mention-popover.md) | `issue-257-agent-context-p2-mention-popover` |
+| sidecar | [#258](https://github.com/oychao1988/media2text/issues/258) | [#264](https://github.com/oychao1988/media2text/pull/264) | [p2-sidecar-sync](./m2t-desktop-agent-context-p2-sidecar-sync.md) | `issue-258-agent-context-sidecar-sync` |
+| P2c | [#259](https://github.com/oychao1988/media2text/issues/259) | （本 PR） | [p2c-epic-acceptance](./m2t-desktop-agent-context-p2c-epic-acceptance.md) | `issue-259-agent-context-epic-acceptance` |
+
+**合并顺序**：#254 → #255 → #256 → #257 → Epic 验收 #259；#258 非闸门（sidecar 过渡）。Epic 验收：[agent-context-attachments-acceptance](../superpowers/verification/2026-06-09-m2t-desktop-agent-context-attachments-acceptance.md) · `python scripts/epic_verify.py agent-context-attachments`
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)
