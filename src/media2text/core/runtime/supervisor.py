@@ -277,6 +277,8 @@ class MonitorSupervisor:
         cfg = self._cfg
         if cfg is None:
             return
+        # Orphaned ``running`` rows block the single worker after crash/restart.
+        self._reset_stale_queue_work(cfg)
         watcher: MonitorWatcher | None = None
         try:
             watcher = MonitorWatcher(cfg)
@@ -296,6 +298,7 @@ class MonitorSupervisor:
                     watcher._conn.close()
                 except Exception:
                     pass
+            self._reset_stale_queue_work(cfg)
             self._release_lock()
             self._thread = None
 
