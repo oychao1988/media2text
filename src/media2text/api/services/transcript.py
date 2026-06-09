@@ -8,6 +8,7 @@ from typing import Any
 
 from fastapi import HTTPException
 
+from media2text.core.live.transcript_writer import transcript_sidecar_media_paths
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.models import LiveSessionRow
 
@@ -35,16 +36,21 @@ def transcript_media_candidates(row: LiveSessionRow) -> list[Path]:
     """FLV paths that may host transcript sidecars (anchor first, then current)."""
     seen: set[str] = set()
     out: list[Path] = []
+
+    def add(path: Path) -> None:
+        for candidate in transcript_sidecar_media_paths(path):
+            key = str(candidate)
+            if key in seen:
+                continue
+            seen.add(key)
+            out.append(candidate)
+
     for raw in _parse_segment_paths(row):
-        if raw in seen:
-            continue
-        seen.add(raw)
-        out.append(Path(raw))
+        add(Path(raw))
     for raw in (row.temp_path, row.local_path):
-        if not raw or raw in seen:
+        if not raw:
             continue
-        seen.add(raw)
-        out.append(Path(raw))
+        add(Path(raw))
     return out
 
 
@@ -57,13 +63,14 @@ def resolve_transcript_media(row: LiveSessionRow) -> Path | None:
 
 
 def _transcript_sidecar_exists(media_path: Path) -> bool:
-    for suffix in (
-        ".transcript.partial.json",
-        ".transcript.json",
-        ".transcript.md",
-    ):
-        if media_path.with_suffix(suffix).is_file():
-            return True
+    for candidate in transcript_sidecar_media_paths(media_path):
+        for suffix in (
+            ".transcript.partial.json",
+            ".transcript.json",
+            ".transcript.md",
+        ):
+            if candidate.with_suffix(suffix).is_file():
+                return True
     return False
 
 
@@ -140,12 +147,12 @@ def transcript_mtime(row: LiveSessionRow) -> float | None:
     media = resolve_transcript_media(row)
     if media is None:
         return None
-    partial = media.with_suffix(".transcript.partial.json")
-    final_json = media.with_suffix(".transcript.json")
     mtimes: list[float] = []
-    for path in (partial, final_json):
-        if path.is_file():
-            mtimes.append(path.stat().st_mtime)
+    for candidate in transcript_sidecar_media_paths(media):
+        for suffix in (".transcript.partial.json", ".transcript.json"):
+            path = candidate.with_suffix(suffix)
+            if path.is_file():
+                mtimes.append(path.stat().st_mtime)
     return max(mtimes) if mtimes else None
 
 
@@ -174,12 +181,17 @@ def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
         }
     media_s = str(media) if media is not None else str(transcript_media)
     transcript_s = str(transcript_media) if transcript_media is not None else media_s
-    partial = Path(transcript_s).with_suffix(".transcript.partial.json")
+    partial_path: Path | None = None
+    for candidate in transcript_sidecar_media_paths(Path(transcript_s)):
+        candidate_partial = candidate.with_suffix(".transcript.partial.json")
+        if candidate_partial.is_file():
+            partial_path = candidate_partial
+            break
     return {
         "media_path": media_s,
         "transcript_path": _transcript_sidecar_path(transcript_s),
         "summary_path": _summary_sidecar_path(transcript_s),
-        "partial_transcript_path": str(partial) if partial.is_file() else None,
+        "partial_transcript_path": str(partial_path) if partial_path else None,
     }
 
 

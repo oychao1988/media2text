@@ -109,6 +109,51 @@ def test_transcript_after_ffmpeg_reconnect(api_client, workspace) -> None:
     assert detail["paths"]["partial_transcript_path"] is not None
 
 
+def test_hls_transcript_partial_on_anchor(api_client, workspace) -> None:
+    """HLS temp_path is master.m3u8; streaming STT writes sidecars on virtual anchor FLV."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_hls",
+        profile_url="https://www.douyin.com/user/sec_hls",
+        platform="douyin",
+    )
+    session_dir = workspace / "creators" / "sec_hls" / "live" / "20260609T120716Z"
+    session_dir.mkdir(parents=True)
+    master = session_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    anchor = session_dir / "20260609T120716Z.flv"
+    anchor.write_bytes(b"\x00")
+    partial = anchor.with_suffix(".transcript.partial.json")
+    partial.write_text(
+        json.dumps(
+            {
+                "text": "hls partial",
+                "segments": [{"start": 0.0, "end": 2.0, "text": "hls partial"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="room1",
+        temp_path=str(master),
+    )
+    conn.close()
+
+    tr = api_client.get(f"/api/sessions/{sid}/transcript")
+    assert tr.status_code == 200
+    body = tr.json()
+    assert body["partial"] is True
+    assert body["text"] == "hls partial"
+
+    detail = api_client.get(f"/api/sessions/{sid}").json()["session"]
+    assert detail["paths"]["partial_transcript_path"] is not None
+    assert detail["paths"]["partial_transcript_path"].endswith(
+        "20260609T120716Z.transcript.partial.json"
+    )
+
+
 def test_transcript_not_found(api_client, workspace) -> None:
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)

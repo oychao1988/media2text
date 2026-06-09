@@ -15,6 +15,22 @@ from media2text.core.transcribe.whisper import write_transcript_outputs
 _SEG_CHECKPOINT_RE = re.compile(r"\.transcript\.seg(\d+)\.json$")
 
 
+def hls_transcript_anchor_path(media_path: Path) -> Path | None:
+    """Virtual FLV anchor for streaming STT sidecars when media is an HLS master playlist."""
+    if media_path.name.lower() != "master.m3u8":
+        return None
+    session_dir = media_path.parent
+    return session_dir / f"{session_dir.name}.flv"
+
+
+def transcript_sidecar_media_paths(media_path: Path) -> list[Path]:
+    """Media paths that may host transcript sidecars (HLS anchor before playlist)."""
+    anchor = hls_transcript_anchor_path(media_path)
+    if anchor is not None:
+        return [anchor, media_path]
+    return [media_path]
+
+
 def segment_checkpoint_path(media_path: Path, index: int) -> Path:
     return media_path.parent / f"{media_path.stem}.transcript.seg{index}.json"
 
@@ -95,20 +111,18 @@ def count_transcript_segments(media_path: str | Path | None) -> int | None:
     if not media_path:
         return None
     base = Path(media_path)
-    for name in (
-        f"{base.stem}.transcript.json",
-        f"{base.stem}.transcript.partial.json",
-    ):
-        sidecar = base.parent / name
-        if not sidecar.is_file():
-            continue
-        try:
-            payload = json.loads(sidecar.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            continue
-        segments = payload.get("segments")
-        if isinstance(segments, list):
-            return len(segments)
+    for candidate in transcript_sidecar_media_paths(base):
+        for suffix in (".transcript.json", ".transcript.partial.json"):
+            sidecar = candidate.with_suffix(suffix)
+            if not sidecar.is_file():
+                continue
+            try:
+                payload = json.loads(sidecar.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            segments = payload.get("segments")
+            if isinstance(segments, list):
+                return len(segments)
     return None
 
 

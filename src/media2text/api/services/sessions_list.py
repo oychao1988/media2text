@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from media2text.api.security import safe_workspace_path, workspace_rel
+from media2text.core.live.transcript_writer import transcript_sidecar_media_paths
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.repos import AwemeRepo, CloudUploadRepo, CreatorRepo
 
@@ -220,13 +221,10 @@ def _has_transcript(media_path: str | None, manifest_entry: dict | None) -> bool
     if not media_path:
         return False
     base = Path(media_path)
-    for name in (
-        f"{base.stem}.transcript.json",
-        f"{base.stem}.transcript.partial.json",
-        f"{base.stem}.transcript.md",
-    ):
-        if (base.parent / name).is_file():
-            return True
+    for candidate in transcript_sidecar_media_paths(base):
+        for suffix in (".transcript.json", ".transcript.partial.json", ".transcript.md"):
+            if candidate.with_suffix(suffix).is_file():
+                return True
     return _transcript_sidecar_path(media_path) is not None
 
 
