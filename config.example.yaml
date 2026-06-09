@@ -66,6 +66,17 @@ live:
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
+  # HLS segment pipeline (LSM-1+): live.media.format / segment_pipeline — see
+  # docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
+  compress:
+    # PoC gate (LSM-0 / S6): run scripts/benchmark_live_compress.py on a real
+    # FLV/TS sample before enabling. Record results in:
+    # docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
+    # Keep enabled: false until size_ratio <= 0.40 AND encode_realtime_factor >= 1.0.
+    enabled: false
+    encoder: videotoolbox          # macOS hevc_videotoolbox
+    video_bitrate: 2M
+    audio_bitrate: 128k
 
 # m2t-desktop sidecar (FastAPI) — UI-only keys; daemon uses live/monitor above
 desktop:
