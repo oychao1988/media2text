@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
+from media2text.core.storage.models import SegmentProcessJobRow
+
 
 @dataclass
 class LiveSessionPartRow:
@@ -244,3 +246,108 @@ class SegmentProcessJobRepo:
             (session_id, part_index),
         ).fetchone()
         return row is not None
+
+    def get(self, job_id: str) -> SegmentProcessJobRow | None:
+        row = self._conn.execute(
+            "SELECT * FROM segment_process_jobs WHERE id = ?",
+            (job_id,),
+        ).fetchone()
+        return SegmentProcessJobRow(**dict(row)) if row else None
+
+    def claim_pending(self, *, limit: int = 1) -> list[SegmentProcessJobRow]:
+        claimed: list[SegmentProcessJobRow] = []
+        now = _now_iso()
+        for _ in range(limit):
+            row = self._conn.execute(
+                """
+                SELECT id FROM segment_process_jobs
+                WHERE status = 'pending'
+                ORDER BY created_at ASC
+                LIMIT 1
+                """
+            ).fetchone()
+            if not row:
+                break
+            cur = self._conn.execute(
+                """
+                UPDATE segment_process_jobs
+                SET status = 'running', claimed_at = ?, updated_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now, now, row["id"]),
+            )
+            if cur.rowcount != 1:
+                continue
+            job = self.get(row["id"])
+            if job:
+                claimed.append(job)
+        self._conn.commit()
+        return claimed
+
+    def mark_running(self, job_id: str) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE segment_process_jobs
+            SET status = 'running', updated_at = ?
+            WHERE id = ?
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+
+    def mark_done(self, job_id: str) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE segment_process_jobs
+            SET status = 'done', updated_at = ?
+            WHERE id = ?
+            """,
+            (now, job_id),
+        )
+        self._conn.commit()
+
+    def mark_failed(self, job_id: str, *, error: str) -> None:
+        now = _now_iso()
+        self._conn.execute(
+            """
+            UPDATE segment_process_jobs
+            SET status = 'failed',
+                last_error = ?,
+                attempts = attempts + 1,
+                updated_at = ?
+            WHERE id = ?
+            """,
+            (error, now, job_id),
+        )
+        self._conn.commit()
+
+    def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
+        cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
+        rows = self._conn.execute(
+            "SELECT id, updated_at FROM segment_process_jobs WHERE status = 'running'"
+        ).fetchall()
+        count = 0
+        now = _now_iso()
+        for row in rows:
+            try:
+                updated = datetime.fromisoformat(
+                    str(row["updated_at"]).replace("Z", "+00:00")
+                )
+            except ValueError:
+                updated = datetime.now(timezone.utc)
+            if updated.timestamp() > cutoff:
+                continue
+            self._conn.execute(
+                """
+                UPDATE segment_process_jobs
+                SET status = 'pending', updated_at = ?
+                WHERE id = ?
+                """,
+                (now, row["id"]),
+            )
+            count += 1
+        if count:
+            self._conn.commit()
+        return count

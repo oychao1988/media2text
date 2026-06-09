@@ -86,7 +86,283 @@ def _media_file_kind(media: Path) -> str:
     ext = media.suffix.lower()
     if ext == ".flv":
         return "flv"
+    if ext == ".m3u8":
+        return "m3u8"
+    if ext == ".m4s":
+        return "m4s"
     return "mp4"
+
+
+def _hls_cloud_folder(
+    cfg: AppConfig,
+    *,
+    creator: CreatorRow,
+    creator_key: str,
+    session_dir: Path,
+) -> tuple[str, str]:
+    ad = cfg.aliyundrive
+    rel_base = f"{ad.root_folder}/{creator.platform}/{creator_key}/live/{session_dir.name}"
+    return rel_base, session_dir.name
+
+
+def _upload_file_to_cloud(
+    client: AliyunDriveClient,
+    *,
+    cfg: AppConfig,
+    conn,
+    session_id: str,
+    creator: CreatorRow,
+    folder_id: str,
+    rel_base: str,
+    local_path: Path,
+    file_kind: str,
+    part_index: int | None = None,
+) -> dict[str, str]:
+    ad = cfg.aliyundrive
+    uploads = CloudUploadRepo(conn)
+    size = local_path.stat().st_size
+    pre_hash = compute_pre_hash(local_path)
+    upload_id = uploads.create(
+        session_id=session_id,
+        creator_id=creator.id,
+        platform=creator.platform,
+        file_name=local_path.name,
+        file_kind=file_kind,
+        local_path=str(local_path),
+        size=size,
+        pre_hash=pre_hash,
+        part_index=part_index,
+    )
+    rel_path = f"{rel_base}/{local_path.name}"
+    if part_index is not None and local_path.parent.name == "parts":
+        rel_path = f"{rel_base}/parts/{local_path.name}"
+    check_mode, replace_id = _check_name_mode_for_upload(
+        client, parent_file_id=folder_id, local_path=local_path
+    )
+    attempt = 0
+    last_error: str | None = None
+    while attempt <= ad.upload_retries:
+        try:
+            result = client.upload_file_streaming(
+                local_path,
+                parent_file_id=folder_id,
+                remote_name=local_path.name,
+                check_name_mode=check_mode,
+                replace_file_id=replace_id,
+            )
+            file_id_raw = result.get("file_id")
+            if not file_id_raw:
+                remote = client.find_exact_name_in_parent(
+                    local_path.name, parent_file_id=folder_id
+                )
+                file_id_raw = remote["file_id"] if remote else None
+            file_id = str(file_id_raw or "")
+            uploads.mark_done(
+                upload_id,
+                cloud_file_id=file_id,
+                cloud_relative_path=rel_path,
+            )
+            return {"cloud_file_id": file_id, "cloud_path": rel_path}
+        except Exception as exc:  # noqa: BLE001
+            last_error = str(exc)
+            attempt += 1
+            if attempt > ad.upload_retries:
+                uploads.mark_failed(upload_id, error=last_error)
+                raise
+    raise RuntimeError(last_error or "upload_failed")
+
+
+def upload_live_part(
+    cfg: AppConfig,
+    conn,
+    *,
+    session_id: str,
+    session_dir: Path,
+    part_index: int,
+    part_path: Path,
+    creator: CreatorRow,
+    notify: NotifyService | None = None,
+) -> dict[str, Any]:
+    """Upload a single HLS .m4s part and refresh master.m3u8 (D16)."""
+    ad = cfg.aliyundrive
+    if not ad.enabled:
+        return {"ok": False, "error": "aliyundrive_disabled"}
+
+    notify = notify or NotifyService(cfg)
+    creator_key, skip_reason = _resolve_creator_key(cfg, conn, creator)
+    if not creator_key:
+        return {"ok": False, "error": skip_reason or "profile_not_synced"}
+
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return {"ok": False, "error": "token_missing"}
+
+    rel_base, _ = _hls_cloud_folder(
+        cfg, creator=creator, creator_key=creator_key, session_dir=session_dir
+    )
+    master = session_dir / "master.m3u8"
+    total_size = part_path.stat().st_size + (
+        master.stat().st_size if master.is_file() else 0
+    )
+
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            cap = client.get_account_capacity()
+            if cap.free < max(ad.min_free_bytes, total_size):
+                deleted = rolling_cleanup(
+                    client,
+                    cfg=cfg,
+                    conn=conn,
+                    needed_bytes=max(ad.min_free_bytes, total_size),
+                )
+                if deleted and notify.enabled:
+                    lines = "\n".join(f"- {name}" for name in deleted)
+                    notify.emit(
+                        NotifyEvent(
+                            kind=EventKind.UPLOAD_CLEANUP,
+                            title=creator_label(creator),
+                            body=f"云盘滚动清理，已删除 {len(deleted)} 个文件：\n{lines}",
+                        )
+                    )
+                cap = client.get_account_capacity()
+                if cap.free < max(ad.min_free_bytes, total_size):
+                    return {"ok": False, "error": "insufficient_space"}
+
+            live_folder = [ad.root_folder, creator.platform, creator_key, "live", session_dir.name]
+            folder_id = client.ensure_folder_path(
+                live_folder,
+                parent_file_id=ad.parent_file_id,
+            )
+            parts_folder_id = client.ensure_folder_path(
+                ["parts"],
+                parent_file_id=folder_id,
+            )
+
+            part_result = _upload_file_to_cloud(
+                client,
+                cfg=cfg,
+                conn=conn,
+                session_id=session_id,
+                creator=creator,
+                folder_id=parts_folder_id,
+                rel_base=rel_base,
+                local_path=part_path,
+                file_kind="m4s",
+                part_index=part_index,
+            )
+
+            if master.is_file():
+                _upload_file_to_cloud(
+                    client,
+                    cfg=cfg,
+                    conn=conn,
+                    session_id=session_id,
+                    creator=creator,
+                    folder_id=folder_id,
+                    rel_base=rel_base,
+                    local_path=master,
+                    file_kind="m3u8",
+                    part_index=None,
+                )
+
+            return {"ok": True, **part_result}
+    except Exception as exc:  # noqa: BLE001
+        log.exception(
+            "upload_live_part_failed",
+            session_id=session_id,
+            part_index=part_index,
+            error=str(exc),
+        )
+        return {"ok": False, "error": str(exc)}
+
+
+def upload_hls_session_sidecars(
+    cfg: AppConfig,
+    conn,
+    *,
+    session_id: str,
+    session_dir: Path,
+    anchor: Path,
+    creator: CreatorRow,
+    notify: NotifyService | None = None,
+) -> dict[str, Any]:
+    """Finalize: single upload of transcript/summary/manifest sidecars (D15)."""
+    ad = cfg.aliyundrive
+    if not ad.enabled or not ad.upload_on_live_complete:
+        return {}
+
+    notify = notify or NotifyService(cfg)
+    creator_key, skip_reason = _resolve_creator_key(cfg, conn, creator)
+    if not creator_key:
+        return {"upload_skipped": True, "upload_skip_reason": skip_reason}
+
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return {"upload_skipped": True, "upload_skip_reason": "token_missing"}
+
+    rel_base, _ = _hls_cloud_folder(
+        cfg, creator=creator, creator_key=creator_key, session_dir=session_dir
+    )
+    sidecar_paths: list[tuple[Path, str]] = []
+    manifest = session_dir / "session.manifest.json"
+    if manifest.is_file():
+        sidecar_paths.append((manifest, "manifest_json"))
+    if ad.upload_transcripts:
+        for path, kind in [
+            (anchor.with_suffix(".transcript.json"), "transcript_json"),
+            (anchor.with_suffix(".transcript.md"), "transcript_md"),
+        ]:
+            if path.is_file():
+                sidecar_paths.append((path, kind))
+        summary_md, summary_json = summary_paths_for_media(anchor)
+        if summary_md.is_file():
+            sidecar_paths.append((summary_md, "summary_md"))
+        if summary_json.is_file():
+            sidecar_paths.append((summary_json, "summary_json"))
+
+    if not sidecar_paths:
+        return {}
+
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            folder_id = client.ensure_folder_path(
+                [ad.root_folder, creator.platform, creator_key, "live", session_dir.name],
+                parent_file_id=ad.parent_file_id,
+            )
+            uploaded: list[str] = []
+            for local_path, file_kind in sidecar_paths:
+                _upload_file_to_cloud(
+                    client,
+                    cfg=cfg,
+                    conn=conn,
+                    session_id=session_id,
+                    creator=creator,
+                    folder_id=folder_id,
+                    rel_base=rel_base,
+                    local_path=local_path,
+                    file_kind=file_kind,
+                    part_index=None,
+                )
+                uploaded.append(local_path.name)
+            sessions = LiveSessionRepo(conn)
+            sessions.update_status(session_id, cloud_upload_status="done")
+            if uploaded:
+                notify.emit(
+                    NotifyEvent(
+                        kind=EventKind.UPLOAD_COMPLETED,
+                        title=creator_label(creator),
+                        body=f"直播 sidecar 云备份完成\n{session_dir.name}\n{', '.join(uploaded)}",
+                    )
+                )
+            return {"upload_completed": True, "files": uploaded}
+    except Exception as exc:  # noqa: BLE001
+        log.exception("upload_hls_sidecars_failed", session_id=session_id, error=str(exc))
+        LiveSessionRepo(conn).update_status(session_id, cloud_upload_status="failed")
+        return {"upload_failed": True, "upload_error": str(exc)}
+
+
+def is_hls_session_media(media: Path) -> bool:
+    return media.suffix.lower() == ".m3u8" or media.name == "master.m3u8"
 
 
 def _upload_paths(cfg: AppConfig, mp4: Path) -> list[tuple[Path, str]]:

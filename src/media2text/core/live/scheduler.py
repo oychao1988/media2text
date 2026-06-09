@@ -15,6 +15,11 @@ from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
+from media2text.core.live.segment_process_pool import (
+    SegmentProcessExecutor,
+    resolve_segment_process_workers,
+)
+from media2text.core.live.segment_watcher import SegmentWatcher, set_segment_watcher
 from media2text.core.live.probe import run_live_probe_tick
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.workspace import open_db
@@ -171,6 +176,10 @@ class MonitorScheduler:
         self._stop = threading.Event()
         max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
+        seg_workers = resolve_segment_process_workers(cfg)
+        self._segment_pool = SegmentProcessExecutor(max_workers=seg_workers)
+        self._segment_watcher = SegmentWatcher(cfg, stop=self._stop)
+        set_segment_watcher(self._segment_watcher)
         from media2text.agent.creator_distill.pool import (
             CreatorAgentJobPool,
             resolve_distill_workers,
@@ -214,8 +223,10 @@ class MonitorScheduler:
             self._watcher,
             self._monitor_pool,
             self._post_pool,
+            segment_pool=self._segment_pool,
             stop=self._stop,
         )
+        self._segment_watcher.start()
         self._slow_loop = SlowTickLoop(
             self._watcher,
             self._cfg,
@@ -231,6 +242,8 @@ class MonitorScheduler:
         self._stop.set()
         self._monitor_pool.shutdown(wait=False, cancel_futures=True)
         self._post_pool.shutdown(wait=False, cancel_futures=True)
+        self._segment_pool.shutdown(wait=False, cancel_futures=True)
+        set_segment_watcher(None)
         self._distill_pool.shutdown(wait=False, cancel_futures=True)
         if self._live_loop is not None:
             self._live_loop.join(timeout=5.0)

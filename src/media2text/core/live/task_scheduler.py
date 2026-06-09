@@ -10,6 +10,7 @@ from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.notify.drain import drain_once
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
+from media2text.core.live.segment_process_pool import SegmentProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 from media2text.core.workspace import open_db
 
@@ -32,12 +33,14 @@ class TaskSchedulerLoop:
         monitor_pool: MonitorExecutor,
         post_pool: PostProcessExecutor,
         *,
+        segment_pool: SegmentProcessExecutor | None = None,
         stop: threading.Event,
     ) -> None:
         self._cfg = cfg
         self._watcher = watcher
         self._monitor_pool = monitor_pool
         self._post_pool = post_pool
+        self._segment_pool = segment_pool
         self._stop = stop
         self._thread: threading.Thread | None = None
 
@@ -79,6 +82,13 @@ class TaskSchedulerLoop:
             min_priority=1,
             max_priority=9,
         )
+        if self._segment_pool is not None and self._cfg.live.segment_pipeline.enabled:
+            self._segment_pool.drain_pending(
+                self._cfg,
+                conn,
+                notify=self._watcher._notify,
+                limit=self._cfg.live.segment_pipeline.max_parallel,
+            )
         self._post_pool.drain_pending(
             self._cfg,
             conn,

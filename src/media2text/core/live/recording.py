@@ -37,7 +37,9 @@ from media2text.core.live.hls_recorder import (
     spawn_hls_recorder,
     stop_hls_recorder,
 )
+from media2text.core.cloud.live_upload import upload_hls_session_sidecars
 from media2text.core.live.segment_manifest import SegmentManifestRepo
+from media2text.core.live.segment_watcher import get_segment_watcher
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.partial_notify import PartialTranscriptNotifier
 from media2text.core.live.session_runtime import SessionRuntime
@@ -1472,7 +1474,11 @@ class LiveRecordingCore:
             self._clear_streaming_session_state(session_id)
             return None
 
-        self._close_hls_part_if_any(session_id, session_dir)
+        seg_watcher = get_segment_watcher()
+        if seg_watcher is not None:
+            seg_watcher.force_close_session(self._conn, session_id, session_dir)
+        else:
+            self._close_hls_part_if_any(session_id, session_dir)
         finalize_hls_endlist(session_dir)
         manifest_repo = SegmentManifestRepo(self._conn)
         manifest_repo.export_json(session_id, session_dir=session_dir)
@@ -1526,6 +1532,19 @@ class LiveRecordingCore:
         if transcript_ok:
             index_transcript_safe(self._cfg, anchor.with_suffix(".transcript.json"))
 
+        session = self._sessions.get(session_id)
+        creator = self._creators.get(session.creator_id) if session else None
+        if creator and self._cfg.aliyundrive.enabled:
+            upload_hls_session_sidecars(
+                self._cfg,
+                self._conn,
+                session_id=session_id,
+                session_dir=session_dir,
+                anchor=anchor,
+                creator=creator,
+                notify=self._notify,
+            )
+
         media_path = session_dir / "master.m3u8"
         self._clear_streaming_session_state(session_id)
         self._state.update_status(
@@ -1542,18 +1561,18 @@ class LiveRecordingCore:
             path=str(media_path),
         )
 
-        session = self._sessions.get(session_id)
         if not session:
             return None
-        creator = self._creators.get(session.creator_id)
         if not creator:
             return {"session_id": session_id, "path": str(media_path)}
 
-        job_id = self._jobs.enqueue(
-            session_id=session_id,
-            creator_id=creator.id,
-            mp4_path=str(media_path),
-        )
+        job_id = None
+        if self._cfg.summarize.enabled and self._cfg.summarize.on_transcribe_complete:
+            job_id = self._jobs.enqueue(
+                session_id=session_id,
+                creator_id=creator.id,
+                mp4_path=str(media_path),
+            )
         self._state.refresh_creator_manifest(
             sec_uid=creator.sec_uid,
             workspace=self._ws,

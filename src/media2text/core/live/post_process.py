@@ -7,6 +7,7 @@ import structlog
 
 from media2text.core.archive.hook import index_transcript_safe
 from media2text.core.cloud.live_upload import (
+    is_hls_session_media,
     maybe_upload_live_to_aliyundrive,
     upload_summary_sidecars_if_needed,
 )
@@ -190,12 +191,13 @@ def run_post_process_job(
             finally:
                 wconn.close()
 
-        if creator and (has_transcript or cfg.aliyundrive.enabled):
+        hls_session = is_hls_session_media(media)
+        if creator and (has_transcript or (cfg.aliyundrive.enabled and not hls_session)):
             futures = {}
             with ThreadPoolExecutor(max_workers=2) as pool:
                 if has_transcript and cfg.summarize.enabled and cfg.summarize.on_transcribe_complete:
                     futures[pool.submit(_run_summarize)] = "summarize"
-                if cfg.aliyundrive.enabled:
+                if cfg.aliyundrive.enabled and not hls_session:
                     futures[pool.submit(_run_upload)] = "upload"
                 for fut in as_completed(futures):
                     key = futures[fut]
