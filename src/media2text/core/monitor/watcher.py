@@ -10,6 +10,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.live.monitor_executor import run_monitor_task
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.live.task_reconciler import bootstrap_streaming_stt
 from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.notify import EventKind, NotifyService
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
@@ -111,6 +112,12 @@ class MonitorWatcher:
         on_live_tick: Callable[[], None] | None = None,
         stop_event: threading.Event | None = None,
     ) -> None:
+        try:
+            recovered = bootstrap_streaming_stt(self._cfg, self)
+            if recovered:
+                log.info("bootstrap_streaming_stt_on_daemon_start", recovered=recovered)
+        except Exception as exc:  # noqa: BLE001
+            log.warning("bootstrap_streaming_stt_failed", error=str(exc))
         scheduler = MonitorScheduler(self, self._cfg, on_live_tick=on_live_tick)
         scheduler.start(creator_id=creator_id)
         try:

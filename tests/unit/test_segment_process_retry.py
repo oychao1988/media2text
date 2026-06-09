@@ -64,7 +64,7 @@ def test_reset_failed_keeps_exhausted_jobs(tmp_path, monkeypatch) -> None:
     assert reset == 0
     row = jobs.get(job_id)
     assert row is not None
-    assert row.status == "failed"
+    assert row.status == "exhausted"
 
 
 def test_retry_failed_manual_resets_job(tmp_path, monkeypatch) -> None:

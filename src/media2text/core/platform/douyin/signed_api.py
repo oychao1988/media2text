@@ -68,6 +68,17 @@ def _default_query(cookies: dict[str, str]) -> dict[str, Any]:
     }
 
 
+def sign_get_url(
+    base_url: str,
+    params: dict[str, Any],
+    *,
+    user_agent: str = _UA,
+) -> tuple[str, str]:
+    """Sign a GET URL with a_bogus (fallback X-Bogus). Returns (signed_url, user_agent)."""
+    query = urlencode(params)
+    return _sign_url(f"{base_url}?{query}", user_agent=user_agent)
+
+
 def _sign_url(url: str, *, user_agent: str) -> tuple[str, str]:
     try:
         browser_fp = BrowserFingerprintGenerator.generate_fingerprint("Chrome")

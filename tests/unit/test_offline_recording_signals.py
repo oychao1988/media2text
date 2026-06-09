@@ -101,6 +101,48 @@ def test_profile_offline_still_finalizes_when_no_signals(tmp_path, monkeypatch) 
         assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
 
 
+def test_profile_offline_hls_growth_does_not_block_offline(tmp_path, monkeypatch) -> None:
+    core, sid, _flv, notify, adapter = _core(tmp_path, monkeypatch)
+    m3u8 = tmp_path / "data/creators/MS4wLjABAAAAflake/live/sess/master.m3u8"
+    m3u8.parent.mkdir(parents=True, exist_ok=True)
+    parts = m3u8.parent / "parts"
+    parts.mkdir()
+    seg = parts / "seg-00001.m4s"
+    seg.write_bytes(b"x" * 8192)
+    m3u8.write_text("#EXTM3U\nseg-00001.m4s\n", encoding="utf-8")
+    core._conn.execute(
+        "UPDATE live_sessions SET temp_path = ?, session_dir = ? WHERE id = ?",
+        (str(m3u8), str(m3u8.parent), sid),
+    )
+    core._conn.commit()
+    adapter.get_room_reflow.return_value = LiveRoomInfo(
+        room_id="666198550100",
+        is_live=False,
+        stream_flv_url=None,
+    )
+    core._cfg.live.offline_flv_stall_polls = 2
+
+    with (
+        patch.object(core, "_process_alive", return_value=True),
+        patch.object(core, "_finalize_recording") as mock_fin,
+    ):
+        core.poll_active_recordings()
+        notify.emit.assert_called_once()
+        assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
+        row = core._sessions.get(sid)
+        assert row is not None
+        assert row.offline_since_at is not None
+
+        notify.reset_mock()
+        seg.write_bytes(b"x" * 16384)
+        core.poll_active_recordings()
+        notify.emit.assert_not_called()
+        mock_fin.assert_not_called()
+        row = core._sessions.get(sid)
+        assert row is not None
+        assert row.offline_since_at is not None
+
+
 def test_profile_offline_after_flv_stall_ignores_reflow(tmp_path, monkeypatch) -> None:
     core, sid, _flv, notify, adapter = _core(tmp_path, monkeypatch)
     adapter.get_room_reflow.return_value = LiveRoomInfo(

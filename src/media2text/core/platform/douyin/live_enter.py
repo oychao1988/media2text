@@ -1,14 +1,20 @@
-"""Resolve Douyin live FLV pull URL via webcast/room/web/enter (Playwright)."""
+"""Resolve Douyin live FLV via webcast/room/web/enter (signed HTTP or Playwright)."""
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from urllib.parse import urlencode
 
-from media2text.core.errors import ParseFailed
+import httpx
 from playwright.sync_api import sync_playwright
 
+from media2text.core.errors import ParseFailed
+from media2text.core.platform.douyin.signed_api import _UA, _false_ms_token, sign_get_url
 from media2text.core.playwright_env import launch_chromium, playwright_exclusive
+
+_ENTER_BASE = "https://live.douyin.com/webcast/room/web/enter/"
+_WEB_RID_RE = re.compile(r'web_rid["\']?\s*[:=]\s*["\']?(\d+)')
 
 
 def flv_from_room_dict(room: dict) -> str | None:
@@ -38,6 +44,142 @@ def room_from_enter_payload(payload: dict) -> dict | None:
     return room if isinstance(room, dict) else None
 
 
+def resolve_web_rid_from_live_page(client: httpx.Client, profile_room_id: str) -> str | None:
+    """Best-effort web_rid from live.douyin.com HTML (unreliable; prefer profile page)."""
+    response = client.get(
+        f"https://live.douyin.com/{profile_room_id}",
+        headers={"Referer": f"https://live.douyin.com/{profile_room_id}"},
+    )
+    if response.status_code >= 400:
+        return None
+    match = _WEB_RID_RE.search(response.text)
+    return match.group(1) if match else None
+
+
+def resolve_web_rid_from_profile_page(client: httpx.Client, sec_uid: str) -> str | None:
+    """Resolve web_rid from creator profile HTML live badge link."""
+    from media2text.core.platform.douyin.http_live import fetch_profile_page
+    from media2text.core.platform.douyin.parse import parse_profile_html
+
+    html = fetch_profile_page(client, sec_uid)
+    info = parse_profile_html(html)
+    if info.is_live and info.web_rid:
+        return info.web_rid
+    return None
+
+
+def resolve_web_rid_for_enter(
+    client: httpx.Client,
+    profile_room_id: str,
+    *,
+    sec_user_id: str | None = None,
+    web_rid: str | None = None,
+) -> str:
+    if web_rid:
+        return web_rid
+    if sec_user_id:
+        from_profile = resolve_web_rid_from_profile_page(client, sec_user_id)
+        if from_profile:
+            return from_profile
+    from_live_page = resolve_web_rid_from_live_page(client, profile_room_id)
+    if from_live_page:
+        return from_live_page
+    raise ParseFailed(
+        f"could not resolve web_rid for profile room_id={profile_room_id}"
+    )
+
+
+def _enter_query_params(
+    web_rid: str,
+    *,
+    sec_user_id: str | None = None,
+    ms_token: str | None = None,
+) -> dict[str, str]:
+    params: dict[str, str] = {
+        "aid": "6383",
+        "app_name": "douyin_web",
+        "live_id": "1",
+        "device_platform": "web",
+        "language": "zh-CN",
+        "enter_from": "web_live",
+        "cookie_enabled": "true",
+        "screen_width": "1920",
+        "screen_height": "1080",
+        "browser_language": "zh-CN",
+        "browser_platform": "Win32",
+        "browser_name": "Chrome",
+        "browser_version": "139.0.0.0",
+        "web_rid": web_rid,
+        "enter_source": "",
+        "is_need_double_stream": "false",
+        "msToken": ms_token or _false_ms_token(),
+    }
+    if sec_user_id:
+        params["sec_user_id"] = sec_user_id
+    return params
+
+
+def fetch_signed_web_enter_payload(
+    client: httpx.Client,
+    web_rid: str,
+    *,
+    sec_user_id: str | None = None,
+) -> dict:
+    """Signed HTTP GET to webcast/room/web/enter (no browser)."""
+    ms_token = (client.cookies.get("msToken") or "").strip() or None
+    params = _enter_query_params(web_rid, sec_user_id=sec_user_id, ms_token=ms_token)
+    signed_url, ua = sign_get_url(_ENTER_BASE, params, user_agent=_UA)
+    response = client.get(
+        signed_url,
+        headers={
+            "User-Agent": ua,
+            "Referer": f"https://live.douyin.com/{web_rid}",
+        },
+    )
+    if response.status_code >= 400:
+        raise ParseFailed(f"web/enter HTTP {response.status_code}")
+    body = response.content
+    if not body:
+        raise ParseFailed("web/enter empty body")
+    try:
+        payload = response.json()
+    except ValueError as exc:
+        raise ParseFailed("web/enter expected JSON object") from exc
+    if not isinstance(payload, dict):
+        raise ParseFailed("web/enter expected JSON object")
+    return payload
+
+
+def resolve_stream_via_signed_http_enter(
+    client: httpx.Client,
+    profile_room_id: str,
+    *,
+    sec_user_id: str | None = None,
+    web_rid: str | None = None,
+) -> str:
+    """Resolve FLV via signed enter; profile_room_id is internal id from profile/other."""
+    resolved_web_rid = resolve_web_rid_for_enter(
+        client,
+        profile_room_id,
+        sec_user_id=sec_user_id,
+        web_rid=web_rid,
+    )
+    payload = fetch_signed_web_enter_payload(
+        client, resolved_web_rid, sec_user_id=sec_user_id
+    )
+    room = room_from_enter_payload(payload)
+    if not room:
+        code = payload.get("status_code")
+        raise ParseFailed(f"enter response has no room payload (status_code={code})")
+    status = room.get("status")
+    stream_flv_url = flv_from_room_dict(room)
+    if status != 2 or not stream_flv_url:
+        raise ParseFailed(
+            f"enter room not streaming (status={status}, flv={bool(stream_flv_url)})"
+        )
+    return stream_flv_url
+
+
 def _room_id_from_live_url(live_url: str) -> str:
     return live_url.rstrip("/").split("/")[-1]
 
@@ -63,7 +205,7 @@ def fetch_web_enter_payload(
     room_id: str,
     sec_user_id: str | None = None,
 ) -> dict:
-    """Call webcast/room/web/enter directly (no page navigation)."""
+    """Call webcast/room/web/enter via Playwright request context (legacy fallback)."""
     params = {
         "web_rid": room_id,
         "room_id_str": room_id,
@@ -73,7 +215,7 @@ def fetch_web_enter_payload(
     }
     if sec_user_id:
         params["sec_user_id"] = sec_user_id
-    url = f"https://live.douyin.com/webcast/room/web/enter/?{urlencode(params)}"
+    url = f"{_ENTER_BASE}?{urlencode(params)}"
 
     with playwright_exclusive():
         with sync_playwright() as p:

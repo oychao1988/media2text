@@ -368,13 +368,22 @@ class SegmentProcessJobRepo:
         for row in rows:
             attempts = int(row["attempts"] or 0)
             if attempts >= max_attempts:
-                log.warning(
-                    "segment_process_retry_exhausted",
-                    job_id=row["id"],
-                    attempts=attempts,
-                    max_attempts=max_attempts,
-                    last_error=row["last_error"],
+                cur = self._conn.execute(
+                    """
+                    UPDATE segment_process_jobs
+                    SET status = 'exhausted', updated_at = ?
+                    WHERE id = ? AND status = 'failed'
+                    """,
+                    (now, row["id"]),
                 )
+                if cur.rowcount:
+                    log.warning(
+                        "segment_process_retry_exhausted",
+                        job_id=row["id"],
+                        attempts=attempts,
+                        max_attempts=max_attempts,
+                        last_error=row["last_error"],
+                    )
                 continue
             cur = self._conn.execute(
                 """
@@ -391,13 +400,13 @@ class SegmentProcessJobRepo:
         return reset
 
     def retry_failed(self, job_id: str) -> bool:
-        """Manual retry: reset failed job to pending regardless of attempts."""
+        """Manual retry: reset failed/exhausted job to pending regardless of attempts."""
         now = _now_iso()
         cur = self._conn.execute(
             """
             UPDATE segment_process_jobs
             SET status = 'pending', updated_at = ?
-            WHERE id = ? AND status = 'failed'
+            WHERE id = ? AND status IN ('failed', 'exhausted')
             """,
             (now, job_id),
         )

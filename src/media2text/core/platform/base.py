@@ -16,7 +16,13 @@ class PlatformAdapter(Protocol):
 
     def resolve_room_id(self, *, sec_uid: str) -> str | None: ...
 
-    def resolve_stream_url(self, *, room_id: str, sec_uid: str | None = None) -> str: ...
+    def resolve_stream_url(
+        self,
+        *,
+        room_id: str,
+        sec_uid: str | None = None,
+        web_rid: str | None = None,
+    ) -> str: ...
 
     def list_awemes(
         self,

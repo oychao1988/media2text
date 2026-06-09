@@ -198,3 +198,49 @@ def test_reconnect_streaming_stt_task(tmp_path, monkeypatch) -> None:
     assert result["ok"] is True
     assert result.get("stt_reconnect_attempted") is True
     mock_stt_reconnect.assert_called_once()
+
+
+def test_live_worker_core_uses_watcher_conn_not_worker_conn(tmp_path, monkeypatch) -> None:
+    """STT tasks must not bind callbacks to the worker conn closed after task return."""
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(
+            pipeline_mode="streaming",
+            streaming_stt=StreamingSttConfig(enabled=True, reconnect=True),
+        ),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAworker",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    flv = tmp_path / "data/creators/MS4wLjABAAAAworker/live/live.flv"
+    flv.parent.mkdir(parents=True, exist_ok=True)
+    flv.write_bytes(b"x" * 64)
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="88",
+        temp_path=str(flv),
+        ffmpeg_pid=4444,
+        pipeline_mode="streaming",
+    )
+    task_id = _enqueue_and_claim(
+        conn,
+        creator_id=cid,
+        task_type="reconnect_streaming_stt",
+        payload={"session_id": sid},
+    )
+
+    watcher = MonitorWatcher(cfg)
+    with (
+        patch.object(watcher, "core_for_platform", wraps=watcher.core_for_platform) as mock_core,
+        patch.object(LiveRecordingCore, "_handle_stt_disconnect"),
+    ):
+        run_monitor_task(cfg, conn, task_id=task_id, watcher=watcher)
+
+    mock_core.assert_called_once()
+    assert mock_core.call_args.args[0] is watcher._conn

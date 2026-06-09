@@ -15,6 +15,44 @@ from media2text.core.platform.douyin.parse import _user_sec_uid, map_http_error
 
 _PROFILE_API_MARKER = "user/profile/other"
 _AWEME_POST_MARKER = "aweme/v1/web/aweme/post"
+_DOUYIN_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/139.0.0.0 Safari/537.36"
+)
+
+
+def _is_verify_challenge_page(content: str) -> bool:
+    if not content:
+        return False
+    if "验证码中间页" in content:
+        return True
+    lowered = content.lower()
+    if "验证码" in content and ("captcha" in lowered or "bdturing" in lowered):
+        return True
+    if "安全验证" in content and "验证码" in content:
+        return True
+    return False
+
+
+def _warmup_douyin_home(page) -> None:
+    try:
+        page.goto(
+            "https://www.douyin.com/?recommend=1",
+            wait_until="domcontentloaded",
+            timeout=30_000,
+        )
+        page.wait_for_timeout(1200)
+    except Exception:
+        pass
+
+
+def _new_douyin_context(browser, session_path: Path):
+    return browser.new_context(
+        storage_state=str(session_path),
+        user_agent=_DOUYIN_UA,
+        locale="zh-CN",
+        viewport={"width": 1920, "height": 1080},
+    )
 
 
 def _scroll_aweme_post_feed(page) -> None:
@@ -161,8 +199,8 @@ def _matching_profile_payload(responses: list[Response], sec_uid: str) -> dict |
     return None
 
 
-def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
-    """Load the profile page in-browser and capture the signed profile/other XHR."""
+def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, str]:
+    """Open profile in Chromium; return captured profile/other JSON (if any) and final HTML."""
     url = f"https://www.douyin.com/user/{sec_uid}"
     captured: list[Response] = []
 
@@ -172,16 +210,18 @@ def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
 
     with sync_playwright() as p:
         browser = launch_chromium(p, headless=True)
-        context = browser.new_context(storage_state=str(session_path))
+        context = _new_douyin_context(browser, session_path)
         page = context.new_page()
         page.on("response", on_response)
         try:
+            _warmup_douyin_home(page)
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             deadline = time.monotonic() + 20.0
+            payload: dict | None = None
             while time.monotonic() < deadline:
                 payload = _matching_profile_payload(captured, sec_uid)
                 if payload:
-                    return payload
+                    break
                 page.wait_for_timeout(500)
             try:
                 content = page.content()
@@ -189,10 +229,25 @@ def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
                 content = ""
             if "登录" in content and "passport" in content:
                 raise AuthRequired("login required on profile page")
+            if _is_verify_challenge_page(content):
+                raise ParseFailed("douyin verify challenge on profile page")
+            return payload, content
         finally:
             context.close()
             browser.close()
 
+
+def capture_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, str]:
+    """One browser visit: warm session on home, then profile XHR capture + HTML."""
+    with playwright_exclusive():
+        return _visit_profile_page(session_path, sec_uid)
+
+
+def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
+    """Load the profile page in-browser and capture the signed profile/other XHR."""
+    payload, _ = capture_profile_page(session_path, sec_uid)
+    if payload:
+        return payload
     raise ParseFailed("profile API response not captured from page")
 
 
@@ -324,17 +379,5 @@ def fetch_aweme_post_via_page(
 
 
 def fetch_profile_html(session_path: Path, sec_uid: str) -> str:
-    url = f"https://www.douyin.com/user/{sec_uid}"
-    with sync_playwright() as p:
-        browser = launch_chromium(p, headless=True)
-        context = browser.new_context(storage_state=str(session_path))
-        page = context.new_page()
-        try:
-            page.goto(url, wait_until="domcontentloaded", timeout=60_000)
-            content = page.content()
-            if "登录" in content and "passport" in content:
-                raise AuthRequired("login required on profile page")
-            return content
-        finally:
-            context.close()
-            browser.close()
+    _, content = capture_profile_page(session_path, sec_uid)
+    return content

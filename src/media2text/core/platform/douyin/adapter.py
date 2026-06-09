@@ -58,10 +58,17 @@ class DouyinAdapterV1:
 
     def _live_room_via_playwright(self, session: Path, sec_uid: str) -> LiveRoomInfo:
         from media2text.core.platform.douyin.parse import parse_profile_html
+        from media2text.core.platform.douyin.playwright_client import capture_profile_page
 
         try:
-            html = fetch_profile_html(session, sec_uid)
-            return parse_profile_html(html)
+            payload, html = capture_profile_page(session, sec_uid)
+            if payload:
+                try:
+                    return parse_profile_live(payload)
+                except ParseFailed:
+                    pass
+            if html:
+                return parse_profile_html(html)
         except (ParseFailed, AuthRequired):
             pass
 
@@ -138,28 +145,35 @@ class DouyinAdapterV1:
                 info.stream_flv_url = reflow.stream_flv_url
             return info
 
-        if not self._client:
+        if not self._client and not (
+            self._session_path and self._session_path.is_file()
+        ):
             raise AuthRequired("no session")
 
         session = self._session_path if self._session_path and self._session_path.is_file() else None
-        try:
-            info = resolve_live_via_http(self._client, sec_uid)
-        except AuthRequired:
-            raise
-        except (ParseFailed, httpx.HTTPError, JSONDecodeError):
-            if not session:
-                raise
-            return self._live_room_via_playwright(session, sec_uid)
+        http_exc: Exception | None = None
 
-        if (not info.is_live or not info.room_id) and session:
+        if self._client:
             try:
-                pw_info = self._live_room_via_playwright(session, sec_uid)
-                if pw_info.is_live and pw_info.room_id:
-                    return pw_info
-            except Exception:  # noqa: BLE001 — Playwright page/navigation flakes
-                pass
+                return resolve_live_via_http(self._client, sec_uid)
+            except AuthRequired:
+                raise
+            except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
+                http_exc = exc
 
-        return info
+        if session:
+            try:
+                return self._live_room_via_playwright(session, sec_uid)
+            except AuthRequired:
+                raise
+            except (ParseFailed, httpx.HTTPError, JSONDecodeError, RuntimeError):
+                if http_exc is not None:
+                    raise http_exc
+                raise
+
+        if http_exc is not None:
+            raise http_exc
+        raise AuthRequired("no session")
 
     def is_live(self, *, sec_uid: str, room_id: str | None = None) -> bool:
         if room_id == "offline":
@@ -169,14 +183,24 @@ class DouyinAdapterV1:
     def resolve_room_id(self, *, sec_uid: str) -> str | None:
         return self.get_live_room(sec_uid=sec_uid).room_id
 
-    def resolve_stream_url(self, *, room_id: str, sec_uid: str | None = None) -> str:
+    def resolve_stream_url(
+        self,
+        *,
+        room_id: str,
+        sec_uid: str | None = None,
+        web_rid: str | None = None,
+    ) -> str:
         if self._fixture_root:
             reflow = parse_reflow_room(self._load_fixture("reflow_live.json"))
             if reflow.stream_flv_url:
                 return reflow.stream_flv_url
             raise ParseFailed("missing stream_url in fixture")
 
-        return self._resolve_stream_url(room_id=room_id, sec_uid=sec_uid)
+        return self._resolve_stream_url(
+            room_id=room_id,
+            sec_uid=sec_uid,
+            web_rid=web_rid,
+        )
 
     def get_room_reflow(self, *, room_id: str, sec_uid: str | None = None) -> LiveRoomInfo:
         return parse_reflow_room(
@@ -231,7 +255,28 @@ class DouyinAdapterV1:
         except Exception as exc:
             raise ParseFailed(f"reflow fetch failed: {exc}") from exc
 
-    def _resolve_stream_url(self, *, room_id: str, sec_uid: str | None) -> str:
+    def _resolve_stream_url(
+        self,
+        *,
+        room_id: str,
+        sec_uid: str | None,
+        web_rid: str | None = None,
+    ) -> str:
+        if self._client:
+            from media2text.core.platform.douyin.live_enter import (
+                resolve_stream_via_signed_http_enter,
+            )
+
+            try:
+                return resolve_stream_via_signed_http_enter(
+                    self._client,
+                    room_id,
+                    sec_user_id=sec_uid,
+                    web_rid=web_rid,
+                )
+            except ParseFailed:
+                pass
+
         try:
             reflow = self.get_room_reflow(room_id=room_id, sec_uid=sec_uid)
             if reflow.stream_flv_url:
@@ -244,7 +289,10 @@ class DouyinAdapterV1:
                 resolve_stream_via_web_enter,
             )
 
-            live_urls = [f"https://live.douyin.com/{room_id}"]
+            live_urls: list[str] = []
+            if web_rid:
+                live_urls.append(f"https://live.douyin.com/{web_rid}")
+            live_urls.append(f"https://live.douyin.com/{room_id}")
             if sec_uid:
                 live_urls.insert(
                     0,

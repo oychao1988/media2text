@@ -93,8 +93,14 @@ class BilibiliAdapterV1:
     def resolve_room_id(self, *, sec_uid: str) -> str | None:
         return self.get_live_room(sec_uid=sec_uid).room_id
 
-    def resolve_stream_url(self, *, room_id: str, sec_uid: str | None = None) -> str:
-        del sec_uid
+    def resolve_stream_url(
+        self,
+        *,
+        room_id: str,
+        sec_uid: str | None = None,
+        web_rid: str | None = None,
+    ) -> str:
+        del sec_uid, web_rid
         if self._fixture_root:
             return parse_play_url(self._load_fixture("play_url.json"))
 

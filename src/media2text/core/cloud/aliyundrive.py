@@ -141,6 +141,10 @@ def save_token(token: dict[str, Any], path: Path) -> None:
 
 
 def _part_info_list(file_size: int, *, chunk_size: int = UPLOAD_CHUNK_SIZE) -> list[dict[str, int]]:
+    if file_size <= 0:
+        return [{"part_number": 1}]
+    if chunk_size <= 0:
+        chunk_size = UPLOAD_CHUNK_SIZE
     count = max(1, math.ceil(file_size / chunk_size))
     return [{"part_number": i + 1} for i in range(count)]
 

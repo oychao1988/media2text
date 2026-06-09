@@ -327,6 +327,7 @@ class LiveRecordingCore:
             status="started",
             detail={"task": "start_streaming_stt"},
         )
+        self._write_stt_obs_if_alive(session_id)
         return {"started": True, "session_id": session_id}
 
     def run_reconnect_recording(self, session_id: str) -> dict:
@@ -362,6 +363,7 @@ class LiveRecordingCore:
             raise ValueError(f"creator_not_found:{row.creator_id}")
 
         self._handle_stt_disconnect(row, creator)
+        self._write_stt_obs_if_alive(session_id)
         return {"session_id": session_id, "stt_reconnect_attempted": True}
 
     @staticmethod
@@ -454,12 +456,33 @@ class LiveRecordingCore:
                 best = end
         return best
 
-    def _resolve_live_stream_url(self, creator, *, room_id: str | None) -> str | None:
+    def _resolve_live_stream_url(
+        self,
+        creator,
+        *,
+        room_id: str | None,
+        web_rid: str | None = None,
+    ) -> str | None:
         if room_id:
+            try:
+                live_info = self._adapter.get_live_room(sec_uid=creator.sec_uid)
+                if live_info.room_id == room_id:
+                    if live_info.stream_flv_url:
+                        return live_info.stream_flv_url
+                    if not web_rid:
+                        web_rid = live_info.web_rid
+            except Exception as exc:  # noqa: BLE001
+                log.debug(
+                    "resolve_live_stream_prefetch_failed",
+                    creator_id=creator.id,
+                    room_id=room_id,
+                    error=str(exc),
+                )
             try:
                 url = self._adapter.resolve_stream_url(
                     room_id=room_id,
                     sec_uid=creator.sec_uid,
+                    web_rid=web_rid,
                 )
                 if url:
                     return url
@@ -479,6 +502,7 @@ class LiveRecordingCore:
                 url = self._adapter.resolve_stream_url(
                     room_id=rid,
                     sec_uid=creator.sec_uid,
+                    web_rid=live_info.web_rid,
                 )
             return url or None
         except Exception as exc:  # noqa: BLE001
@@ -803,6 +827,17 @@ class LiveRecordingCore:
             stage="streaming_stt",
             status="degraded",
             detail=detail,
+        )
+
+    def _write_stt_obs_if_alive(self, session_id: str) -> None:
+        stt = self._stt_sessions.get(session_id)
+        if stt is None or not stt.is_alive():
+            return
+        self._state.write_obs(
+            session_id,
+            ffmpeg_alive=None,
+            stt_alive=True,
+            still_live=None,
         )
 
     def _handle_stt_disconnect(self, row, creator) -> None:
@@ -1145,6 +1180,7 @@ class LiveRecordingCore:
                 stream_url = self._adapter.resolve_stream_url(
                     room_id=room_id,
                     sec_uid=sec_uid,
+                    web_rid=live_info.web_rid,
                 )
             if not stream_url:
                 raise ValueError("empty stream url after resolve")
@@ -1312,29 +1348,49 @@ class LiveRecordingCore:
             profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
         except Exception:
             if self._cfg.live.offline_trust_recording_signals:
-                return self._infer_live_from_recording(row, creator)
+                return self._infer_live_from_recording(row, creator, platform_offline=False)
             raise
 
         if profile.is_live:
             return True
         if not self._cfg.live.offline_trust_recording_signals:
             return False
-        return self._infer_live_from_recording(row, creator)
+        return self._infer_live_from_recording(row, creator, platform_offline=True)
 
-    def _infer_live_from_recording(self, row, creator) -> bool:
+    @staticmethod
+    def _is_hls_session(row) -> bool:
+        temp_path = row.temp_path or ""
+        if temp_path.endswith(".m3u8"):
+            return True
+        session_dir = getattr(row, "session_dir", None)
+        if not session_dir:
+            return False
+        base = Path(session_dir)
+        return (base / "master.m3u8").is_file() or (base / "parts").is_dir()
+
+    def _infer_live_from_recording(
+        self, row, creator, *, platform_offline: bool = False
+    ) -> bool:
         pid = row.ffmpeg_pid
         if pid is None or not self._process_alive(pid):
             self._flv_stall_polls.pop(row.id, None)
             return False
         temp_path = row.temp_path
         if temp_path and self._flv_file_growing(row.id, temp_path):
-            self._flv_stall_polls.pop(row.id, None)
-            log.debug(
-                "live_offline_ignored_flv_growing",
-                session_id=row.id,
-                creator_id=row.creator_id,
-            )
-            return True
+            if platform_offline and self._is_hls_session(row):
+                log.debug(
+                    "live_offline_hls_tail_ignored_for_growth",
+                    session_id=row.id,
+                    creator_id=row.creator_id,
+                )
+            else:
+                self._flv_stall_polls.pop(row.id, None)
+                log.debug(
+                    "live_offline_ignored_flv_growing",
+                    session_id=row.id,
+                    creator_id=row.creator_id,
+                )
+                return True
         stall = self._flv_stall_polls.get(row.id, 0) + 1
         self._flv_stall_polls[row.id] = stall
         stall_limit = max(1, self._cfg.live.offline_flv_stall_polls)

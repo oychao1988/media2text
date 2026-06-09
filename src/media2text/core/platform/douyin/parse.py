@@ -104,6 +104,32 @@ def parse_profile_html_user(payload: dict, *, sec_uid: str) -> UserProfile | Non
         return None
 
 
+def _coerce_room_data(raw: Any) -> dict | None:
+    if isinstance(raw, dict):
+        return raw
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return None
+        return parsed if isinstance(parsed, dict) else None
+    return None
+
+
+def _flv_from_room_stream(room: dict) -> str | None:
+    stream_url = room.get("stream_url") or {}
+    flv_pull = stream_url.get("flv_pull_url")
+    if isinstance(flv_pull, dict) and flv_pull:
+        for key in ("HD1", "SD1", "FULL_HD1"):
+            url = flv_pull.get(key)
+            if isinstance(url, str) and url:
+                return url
+        return next((v for v in flv_pull.values() if isinstance(v, str) and v), None)
+    if isinstance(flv_pull, str) and flv_pull:
+        return flv_pull
+    return None
+
+
 def parse_profile_live(payload: dict) -> LiveRoomInfo:
     user = payload.get("user") or _dig(payload, "data", "user")
     if not user:
@@ -117,10 +143,28 @@ def parse_profile_live(payload: dict) -> LiveRoomInfo:
     live_status = user.get("live_status")
     is_live = live_status in (1, "1", True) or bool(room_id_str)
 
+    web_rid: str | None = None
+    stream_flv_url: str | None = None
+    title = user.get("nickname")
+    room_data = _coerce_room_data(user.get("room_data"))
+    if room_data:
+        owner = room_data.get("owner")
+        if isinstance(owner, dict):
+            wr = owner.get("web_rid")
+            if wr not in (None, "", 0, "0"):
+                web_rid = str(wr)
+        if room_data.get("status") == 2:
+            stream_flv_url = _flv_from_room_stream(room_data)
+            room_title = room_data.get("title")
+            if isinstance(room_title, str) and room_title:
+                title = room_title
+
     return LiveRoomInfo(
         room_id=room_id_str,
         is_live=is_live,
-        title=user.get("nickname"),
+        stream_flv_url=stream_flv_url,
+        web_rid=web_rid,
+        title=title,
         platform_live_started_at=optional_platform_live_started_at(user),
     )
 
@@ -152,12 +196,16 @@ def parse_reflow_room(payload: dict) -> LiveRoomInfo:
 
 def _live_room_from_profile_html(html: str) -> LiveRoomInfo | None:
     live_link = re.search(
-        r"https?://live\.douyin\.com/(\d{6,})(?:[/?\"&#]|$)",
+        r"https?://live\.douyin\.com/(\d{6,})(?:[^\"']*)",
         html,
     )
-    if live_link:
-        return LiveRoomInfo(room_id=live_link.group(1), is_live=True)
-    return None
+    if not live_link:
+        return None
+    web_rid = live_link.group(1)
+    fragment = live_link.group(0)
+    room_id_match = re.search(r"room_id=(\d+)", fragment)
+    room_id = room_id_match.group(1) if room_id_match else web_rid
+    return LiveRoomInfo(room_id=room_id, web_rid=web_rid, is_live=True)
 
 
 def parse_profile_html(html: str) -> LiveRoomInfo:

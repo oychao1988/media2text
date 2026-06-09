@@ -50,6 +50,7 @@ def resolve_upstream_stream_url(
 ) -> str:
     adapter = get_adapter(platform, cfg)
     room_id = session.room_id
+    live_info = None
     try:
         live_info = adapter.get_live_room(sec_uid=sec_uid)
         if live_info.stream_flv_url:
@@ -76,7 +77,11 @@ def resolve_upstream_stream_url(
         raise HTTPException(status_code=404, detail="room_id not available")
 
     try:
-        return adapter.resolve_stream_url(room_id=room_id, sec_uid=sec_uid)
+        return adapter.resolve_stream_url(
+            room_id=room_id,
+            sec_uid=sec_uid,
+            web_rid=live_info.web_rid if live_info else None,
+        )
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(
             status_code=502,

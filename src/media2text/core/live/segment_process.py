@@ -54,6 +54,9 @@ def run_segment_process_job(
     if not part_path.is_file():
         jobs.mark_failed(job_id, error="part_file_missing")
         return {"ok": False, "error": "part_file_missing"}
+    if part_path.stat().st_size == 0:
+        jobs.mark_failed(job_id, error="part_file_empty")
+        return {"ok": False, "error": "part_file_empty"}
 
     upload_cfg = cfg.live.segment_pipeline.upload
     if not upload_cfg.enabled or not cfg.aliyundrive.enabled:

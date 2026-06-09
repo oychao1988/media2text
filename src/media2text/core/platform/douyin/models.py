@@ -17,6 +17,7 @@ class LiveRoomInfo:
     room_id: str | None
     is_live: bool
     stream_flv_url: str | None = None
+    web_rid: str | None = None
     title: str | None = None
     platform_live_started_at: str | None = None
 

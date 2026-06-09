@@ -130,7 +130,10 @@ def _core_for_task(
     creator = CreatorRepo(conn).get(task.creator_id)
     if not creator:
         raise ValueError(f"creator_not_found:{task.creator_id}")
-    return watcher.core_for_platform(conn, creator.platform)
+    # Worker `conn` is closed when run_monitor_task returns. STT/ffmpeg side
+    # effects started from live worker tasks outlive the task, so bind
+    # LiveRecordingCore to the watcher's long-lived connection.
+    return watcher.core_for_platform(watcher._conn, creator.platform)
 
 
 def _run_prepare_live_recording(
