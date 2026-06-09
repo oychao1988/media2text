@@ -108,6 +108,23 @@ class LiveRecordingCore:
             self._state.update_snapshot(creator.id, live_info)
         return live_info, None
 
+    def _observe_for_probe(self, creator) -> tuple[LiveRoomInfo | None, dict | None]:
+        """Thread-safe live probe: each worker gets its own SQLite connection."""
+        from media2text.core.workspace import open_db
+
+        conn = open_db(self._cfg)
+        try:
+            core = LiveRecordingCore(
+                self._cfg,
+                conn=conn,
+                adapter=self._adapter,
+                platform=self._platform,
+                notify=self._notify,
+            )
+            return core.observe_live_state(creator)
+        finally:
+            conn.close()
+
     def probe_live(
         self,
         *,
@@ -138,7 +155,7 @@ class LiveRecordingCore:
         workers = probe_workers(self._cfg, len(scan_targets))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(self.observe_live_state, creator): creator
+                pool.submit(self._observe_for_probe, creator): creator
                 for creator in scan_targets
             }
             for future in as_completed(futures):

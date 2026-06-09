@@ -652,7 +652,9 @@ class LiveSessionRepo:
                     started = now
                 age_sec = (now - started).total_seconds()
                 temp_missing = not row.temp_path or not Path(row.temp_path).is_file()
-                if age_sec > 10 and temp_missing:
+                # Stream resolve + streaming STT startup can exceed 10s; avoid
+                # marking failed while prepare_live_recording is still in flight.
+                if age_sec > 60 and temp_missing:
                     self.update_status(
                         row.id,
                         status="failed",

@@ -49,7 +49,9 @@ async def lifespan(app: FastAPI):
     if api_app is not None:
         api_app.state.supervisor = supervisor
     if cfg.desktop.auto_start_monitor:
-        supervisor.start(cfg)
+        start_result = supervisor.start(cfg)
+        if start_result.get("already_running_external"):
+            supervisor.takeover(cfg)
     stop = asyncio.Event()
     drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
     notify_drain_task = asyncio.create_task(run_notify_drain_loop(cfg, stop))
