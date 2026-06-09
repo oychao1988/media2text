@@ -170,7 +170,7 @@ class SegmentManifestRepo:
         discontinuity_at: list[float] = []
         offset = 0.0
         for part in parts:
-            if part.discontinuity_seq > 0 and part.part_index > 1:
+            if part.discontinuity_seq > 0:
                 discontinuity_at.append(offset)
             if part.duration_sec is not None:
                 offset += part.duration_sec

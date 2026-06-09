@@ -32,6 +32,7 @@ from media2text.core.ffmpeg import (
 )
 from media2text.core.live.hls_recorder import (
     finalize_hls_endlist,
+    mark_closed_with_duration,
     part_rel_path,
     rotate_hls_after_reconnect,
     spawn_hls_recorder,
@@ -558,7 +559,9 @@ class LiveRecordingCore:
         repo = SegmentManifestRepo(self._conn)
         part_path = session_dir / part_rel_path(idx)
         size = part_path.stat().st_size if part_path.is_file() else None
-        repo.mark_closed(session_id, idx, bytes=size)
+        mark_closed_with_duration(
+            repo, session_id, idx, session_dir, bytes=size
+        )
 
     def _spawn_hls_recording(
         self,

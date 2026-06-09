@@ -2,15 +2,45 @@
 export function alignPlaybackTime(
   mediaTime: number,
   discontinuityAt: number[] | undefined,
+  partDurations?: number[],
 ): number {
-  if (!discontinuityAt?.length || mediaTime <= 0) {
+  if (mediaTime <= 0) {
+    return 0;
+  }
+
+  if (partDurations?.length) {
+    let mediaCursor = 0;
+    let transcriptTime = 0;
+    for (const raw of partDurations) {
+      const dur = Number(raw);
+      if (!Number.isFinite(dur) || dur <= 0) {
+        continue;
+      }
+      const partEnd = mediaCursor + dur;
+      if (mediaTime <= partEnd) {
+        return transcriptTime + (mediaTime - mediaCursor);
+      }
+      transcriptTime += dur;
+      mediaCursor = partEnd;
+    }
+    return transcriptTime + Math.max(0, mediaTime - mediaCursor);
+  }
+
+  if (!discontinuityAt?.length) {
     return mediaTime;
   }
-  // HLS event playlists expose a continuous media timeline; discontinuity_at
-  // records reconnect boundaries for transcript alignment (S4). Offline-gap
-  // compensation needs per-part durations from session.manifest.json (future).
-  void discontinuityAt;
-  return mediaTime;
+
+  const bounds = [...discontinuityAt].sort((a, b) => a - b);
+  let transcriptTime = 0;
+  let prevBound = 0;
+  for (const bound of bounds) {
+    if (mediaTime < bound) {
+      return transcriptTime + (mediaTime - prevBound);
+    }
+    transcriptTime = bound;
+    prevBound = bound;
+  }
+  return transcriptTime + (mediaTime - prevBound);
 }
 
 export function sessionUsesHls(session: {

@@ -10,7 +10,7 @@
 | S1 | 本地磁盘峰值 ≤ 2×segment_size | segment watcher + 段上传删本地；`test_task_scheduler_segment_order.py` | [x] unit |
 | S2 | 段闭合 → 上传完成 P95 | `test_segment_process.py`；生产 `live stats` | [x] unit |
 | S3 | STT finalize 封存 ≤10s | `test_streaming_stt_resilience.py` / `test_segment_finalize_sidecar.py` | [x] unit |
-| S4 | 播放 seek 与转写对齐 | `test_playback_api.py`；Desktop `playbackTime.test.ts` | [x] unit |
+| S4 | 播放 seek 与转写对齐 | `test_segment_duration_parse.py` + `test_segment_duration_close.py`；Desktop `playbackTime.test.ts`（G2：`duration_sec` → `discontinuity_at` + part 边界映射） | [x] unit (G2) |
 | S5 | upload/compress 失败不停录 | `test_segment_process.py` 失败重试 | [x] unit |
 | S6 | 压缩 PoC 门禁 | `scripts/benchmark_live_compress.py` + [compress benchmark](./2026-06-09-live-compress-benchmark.md) | [ ] 人工 PoC |
 | S7 | `live download --merge` 可还原 MP4 | `test_live_download_cli.py` | [x] unit |
@@ -33,3 +33,9 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 python scripts/epic_verify.py live-segment-media
 ```
+
+**结果（2026-06-09）**：`epic_verify: live-segment-media PASS`（本地 dev 环境；S6 未纳入自动化闸门）。
+
+## VERDICT
+
+**PASS**（S6 压缩 PoC  deferred：需在 Apple Silicon + `hevc_videotoolbox` 环境人工跑 `scripts/benchmark_live_compress.py`；不影响 Epic 代码交付与 S1–S5 / S7 自动化验收。）

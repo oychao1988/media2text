@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 
@@ -134,3 +135,47 @@ def rotate_hls_after_reconnect(
 ) -> None:
     del conn, session_id, next_index, discontinuity_seq  # spawn path owns DB upsert
     append_discontinuity_to_playlist(session_dir)
+
+
+_EXTINF_RE = re.compile(r"#EXTINF:([\d.]+(?:,.*)?)")
+
+
+def parse_part_duration_sec(session_dir: Path, part_index: int) -> float | None:
+    """Sum #EXTINF durations for segments referencing parts/seg-{index}.m4s."""
+    master = session_dir / "master.m3u8"
+    if not master.is_file():
+        return None
+    target = part_rel_path(part_index)
+    alt = f"seg-{part_index:05d}.m4s"
+    total = 0.0
+    pending: float | None = None
+    for line in master.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#EXT-X-DISCONTINUITY"):
+            continue
+        m = _EXTINF_RE.match(stripped)
+        if m:
+            pending = float(m.group(1).split(",")[0])
+            continue
+        if pending is not None and not stripped.startswith("#"):
+            if stripped == target or stripped.endswith(alt):
+                total += pending
+            pending = None
+    return total if total > 0 else None
+
+
+def mark_closed_with_duration(
+    repo,
+    session_id: str,
+    part_index: int,
+    session_dir: Path,
+    *,
+    bytes: int | None = None,
+) -> None:
+    duration_sec = parse_part_duration_sec(session_dir, part_index)
+    repo.mark_closed(
+        session_id,
+        part_index,
+        bytes=bytes,
+        duration_sec=duration_sec,
+    )
