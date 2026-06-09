@@ -99,3 +99,26 @@ def test_profile_offline_still_finalizes_when_no_signals(tmp_path, monkeypatch) 
         mock_fin.assert_not_called()
         notify.emit.assert_called_once()
         assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED
+
+
+def test_profile_offline_after_flv_stall_ignores_reflow(tmp_path, monkeypatch) -> None:
+    core, sid, _flv, notify, adapter = _core(tmp_path, monkeypatch)
+    adapter.get_room_reflow.return_value = LiveRoomInfo(
+        room_id="666198550100",
+        is_live=True,
+        stream_flv_url="https://example.com/x.flv",
+    )
+    core._cfg.live.offline_flv_stall_polls = 3
+
+    with (
+        patch.object(core, "_process_alive", return_value=True),
+        patch.object(core, "_flv_file_growing", return_value=False),
+        patch.object(core, "_finalize_recording") as mock_fin,
+    ):
+        core.poll_active_recordings()
+        core.poll_active_recordings()
+        notify.emit.assert_not_called()
+        core.poll_active_recordings()
+        mock_fin.assert_not_called()
+        notify.emit.assert_called_once()
+        assert notify.emit.call_args[0][0].kind == EventKind.LIVE_ENDED

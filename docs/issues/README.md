@@ -198,6 +198,20 @@
 
 **合并顺序**：#254 → #255 → #256 → #257 → Epic 验收 #259；#258 非闸门（sidecar 过渡）。Epic 验收：[agent-context-attachments-acceptance](../superpowers/verification/2026-06-09-m2t-desktop-agent-context-attachments-acceptance.md) · `python scripts/epic_verify.py agent-context-attachments`
 
+### Local Pipeline Spec Gap Fix（2026-06-09）
+
+计划：[m2t-local-pipeline-spec-gap-fix](../superpowers/plans/2026-06-09-m2t-local-pipeline-spec-gap-fix.md)
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| GF-1 | [#246](https://github.com/oychao1988/media2text/issues/246) | [gf1-reconciler-scheduler](./local-pipeline-gap-fix-gf1-reconciler-scheduler.md) | `issue-246-local-pipeline-gap-fix-gf1` |
+| GF-2 | [#247](https://github.com/oychao1988/media2text/issues/247) | [gf2-notify-outbox](./local-pipeline-gap-fix-gf2-notify-outbox.md) | `issue-247-local-pipeline-gap-fix-gf2` |
+| GF-3 | [#248](https://github.com/oychao1988/media2text/issues/248) | [gf3-conn-dead-code](./local-pipeline-gap-fix-gf3-conn-dead-code.md) | `issue-248-local-pipeline-gap-fix-gf3` |
+| GF-4 | [#249](https://github.com/oychao1988/media2text/issues/249) | [gf4-statewriter-config](./local-pipeline-gap-fix-gf4-statewriter-config.md) | `issue-249-local-pipeline-gap-fix-gf4` |
+| GF-5 | [#266](https://github.com/oychao1988/media2text/issues/266) | [gf5-live-worker-decouple](./local-pipeline-gap-fix-gf5-live-worker-decouple.md) | `issue-266-local-pipeline-gap-fix-gf5` |
+
+**合并顺序**：#246 → #247 → #248 → #249 → #266（GF-5 依赖 GF-4）。
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)

@@ -80,6 +80,7 @@ class LiveRecordingCore:
         self._runtime = runtime
         self._notify = notify
         self._flv_size_snapshots: dict[str, int] = {}
+        self._flv_stall_polls: dict[str, int] = {}
         self._stream_urls: dict[str, str] = {}
         self._streaming_legacy_finalize: set[str] = set()
         self._streaming_transcript_anchor: dict[str, Path] = {}
@@ -107,6 +108,23 @@ class LiveRecordingCore:
         if live_info is not None:
             self._state.update_snapshot(creator.id, live_info)
         return live_info, None
+
+    def _observe_for_probe(self, creator) -> tuple[LiveRoomInfo | None, dict | None]:
+        """Thread-safe live probe: each worker gets its own SQLite connection."""
+        from media2text.core.workspace import open_db
+
+        conn = open_db(self._cfg)
+        try:
+            core = LiveRecordingCore(
+                self._cfg,
+                conn=conn,
+                adapter=self._adapter,
+                platform=self._platform,
+                notify=self._notify,
+            )
+            return core.observe_live_state(creator)
+        finally:
+            conn.close()
 
     def probe_live(
         self,
@@ -138,7 +156,7 @@ class LiveRecordingCore:
         workers = probe_workers(self._cfg, len(scan_targets))
         with ThreadPoolExecutor(max_workers=workers) as pool:
             futures = {
-                pool.submit(self.observe_live_state, creator): creator
+                pool.submit(self._observe_for_probe, creator): creator
                 for creator in scan_targets
             }
             for future in as_completed(futures):
@@ -820,73 +838,31 @@ class LiveRecordingCore:
         )
         self._processes[session_id] = proc
 
-        stt_failed = False
-        stt_error = ""
-        if stt_session is not None:
-            try:
-                with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
-                    stt_session.start()
-                self._stt_sessions[session_id] = stt_session
-                self._state.update_status(session_id, transcribe_status="streaming")
-                self._state.record_pipeline_event(
-                    session_id=session_id,
-                    stage="streaming_stt",
-                    status="started",
-                )
-            except Exception as exc:  # noqa: BLE001
-                stt_failed = True
-                stt_error = str(exc)
-                log.error(
-                    "streaming_stt_start_failed",
-                    session_id=session_id,
-                    error=stt_error,
-                )
-                self._state.record_pipeline_event(
-                    session_id=session_id,
-                    stage="streaming_stt",
-                    status="failed",
-                    detail={"error": stt_error},
-                )
-
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
         exit_code = proc.poll()
-        if exit_code is not None or stt_failed:
+        if exit_code is not None:
             err_tail = ""
             if proc.stderr is not None:
                 err_tail = proc.stderr.read().decode(errors="replace")[-500:]
-            if stt_session is not None and session_id in self._stt_sessions:
-                self._stt_sessions.pop(session_id, None)
-                try:
-                    stt_session.stop(timeout=5)
-                except Exception:  # noqa: BLE001
-                    pass
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
             self._processes.pop(session_id, None)
-            err_parts = []
-            if exit_code is not None:
-                err_parts.append(f"ffmpeg_exited_early:{exit_code}:{err_tail}")
-            if stt_failed:
-                err_parts.append(f"streaming_stt_failed:{stt_error}")
+            err_parts = [f"ffmpeg_exited_early:{exit_code}:{err_tail}"]
             self._state.update_status(
                 session_id,
                 status="failed",
-                error="; ".join(err_parts) or "live_start_failed",
+                error="; ".join(err_parts),
                 ended=True,
             )
             log.error(
                 "live_start_failed",
                 session_id=session_id,
                 exit_code=exit_code,
-                stt_failed=stt_failed,
+                stt_failed=False,
             )
             creator = self._creators.get(creator_id)
             if creator:
                 label = creator_label(creator)
-                body = f"room_id: {room_id or '—'}\n"
-                if exit_code is not None:
-                    body = f"ffmpeg 启动失败（exit {exit_code}）\n" + body
-                if stt_failed:
-                    body = f"流式转写启动失败：{stt_error}\n" + body
+                body = f"ffmpeg 启动失败（exit {exit_code}）\nroom_id: {room_id or '—'}"
                 self._notify.emit(
                     NotifyEvent(
                         kind=EventKind.LIVE_START_FAILED,
@@ -922,8 +898,57 @@ class LiveRecordingCore:
                         f"room_id: {room_id or '—'}\n"
                         f"文件: {temp_path.name}"
                     ),
+                    creator_id=creator_id,
+                    session_id=session_id,
                 )
             )
+
+        stt_failed = False
+        stt_error = ""
+        if stt_session is not None:
+            try:
+                with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
+                    stt_session.start()
+                self._stt_sessions[session_id] = stt_session
+                self._state.update_status(session_id, transcribe_status="streaming")
+                self._state.record_pipeline_event(
+                    session_id=session_id,
+                    stage="streaming_stt",
+                    status="started",
+                )
+            except Exception as exc:  # noqa: BLE001
+                stt_failed = True
+                stt_error = str(exc)
+                log.error(
+                    "streaming_stt_start_failed",
+                    session_id=session_id,
+                    error=stt_error,
+                )
+                self._state.record_pipeline_event(
+                    session_id=session_id,
+                    stage="streaming_stt",
+                    status="failed",
+                    detail={"error": stt_error},
+                )
+
+        if stt_failed:
+            if stt_session is not None and session_id in self._stt_sessions:
+                self._stt_sessions.pop(session_id, None)
+                try:
+                    stt_session.stop(timeout=5)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._mark_streaming_degraded(
+                session_id,
+                reason="stt_start_failed",
+                error=stt_error or None,
+            )
+            return {
+                "session_id": session_id,
+                "temp_path": str(temp_path),
+                "pid": proc.pid,
+            }
+
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
     def _recording_still_live(self, creator, row) -> bool:
@@ -943,15 +968,28 @@ class LiveRecordingCore:
     def _infer_live_from_recording(self, row, creator) -> bool:
         pid = row.ffmpeg_pid
         if pid is None or not self._process_alive(pid):
+            self._flv_stall_polls.pop(row.id, None)
             return False
         temp_path = row.temp_path
         if temp_path and self._flv_file_growing(row.id, temp_path):
+            self._flv_stall_polls.pop(row.id, None)
             log.debug(
                 "live_offline_ignored_flv_growing",
                 session_id=row.id,
                 creator_id=row.creator_id,
             )
             return True
+        stall = self._flv_stall_polls.get(row.id, 0) + 1
+        self._flv_stall_polls[row.id] = stall
+        stall_limit = max(1, self._cfg.live.offline_flv_stall_polls)
+        if stall >= stall_limit:
+            log.info(
+                "live_offline_flv_stalled",
+                session_id=row.id,
+                creator_id=row.creator_id,
+                stall_polls=stall,
+            )
+            return False
         reflow_getter = getattr(self._adapter, "get_room_reflow", None)
         room_id = row.room_id
         if room_id and callable(reflow_getter):

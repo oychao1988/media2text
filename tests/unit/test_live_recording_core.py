@@ -1,7 +1,9 @@
 from unittest.mock import MagicMock, patch
+import json
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, LiveConfig, StreamingSttConfig
 from media2text.core.live.recording import LiveRecordingCore
+from media2text.core.notify.events import EventKind
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import (
     CreatorRepo,
@@ -210,3 +212,151 @@ def test_start_recording_stream_resolve_event(tmp_path, monkeypatch) -> None:
     assert "detected_live" in stages
     assert "stream_resolve" in stages
     assert "recording" in stages
+
+
+def _streaming_core(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(
+            pipeline_mode="streaming",
+            streaming_stt=StreamingSttConfig(enabled=True, reconnect=True),
+        ),
+    )
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAstream",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    flv = tmp_path / "data/creators/MS4wLjABAAAAstream/live/part.flv"
+    flv.parent.mkdir(parents=True, exist_ok=True)
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="88",
+        temp_path=str(flv),
+        ffmpeg_pid=None,
+        pipeline_mode="streaming",
+    )
+    adapter = MagicMock()
+    adapter.resolve_stream_url.return_value = "https://example.com/live.flv"
+    notify = MagicMock()
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=adapter,
+        platform="douyin",
+        processes={},
+        notify=notify,
+    )
+    live_info = LiveRoomInfo(
+        room_id="88",
+        is_live=True,
+        stream_flv_url="https://example.com/live.flv",
+    )
+    mock_proc = MagicMock()
+    mock_proc.pid = 7777
+    mock_proc.poll.return_value = None
+    mock_proc.stderr = None
+    return core, conn, sid, flv, live_info, notify, mock_proc, cid
+
+
+def test_live_started_emitted_before_streaming_stt_blocks(
+    tmp_path, monkeypatch
+) -> None:
+    core, _conn, sid, flv, live_info, notify, mock_proc, cid = _streaming_core(
+        tmp_path, monkeypatch
+    )
+    call_order: list[str] = []
+
+    mock_stt = MagicMock()
+
+    def _stt_start() -> None:
+        call_order.append("stt_start")
+        assert "live_started" in call_order
+
+    mock_stt.start.side_effect = _stt_start
+
+    def _track_emit(event) -> None:
+        if event.kind == EventKind.LIVE_STARTED:
+            call_order.append("live_started")
+
+    notify.emit.side_effect = _track_emit
+
+    with (
+        patch(
+            "media2text.core.live.recording.record_stream_copy",
+            return_value=mock_proc,
+        ),
+        patch("media2text.core.live.recording.time.sleep"),
+        patch.object(core, "_build_streaming_stt_session", return_value=mock_stt),
+    ):
+        core._start_recording_after_session(
+            sid,
+            creator_id=cid,
+            sec_uid="MS4wLjABAAAAstream",
+            room_id="88",
+            live_info=live_info,
+            temp_path=flv,
+        )
+
+    assert call_order.index("live_started") < call_order.index("stt_start")
+    live_started_calls = [
+        c
+        for c in notify.emit.call_args_list
+        if c[0][0].kind == EventKind.LIVE_STARTED
+    ]
+    assert len(live_started_calls) == 1
+    evt = live_started_calls[0][0][0]
+    assert evt.creator_id == cid
+    assert evt.session_id == sid
+
+
+def test_streaming_stt_start_fail_keeps_recording(tmp_path, monkeypatch) -> None:
+    core, conn, sid, flv, live_info, notify, mock_proc, cid = _streaming_core(
+        tmp_path, monkeypatch
+    )
+    mock_stt = MagicMock()
+    mock_stt.start.side_effect = RuntimeError("deepgram unavailable")
+
+    with (
+        patch(
+            "media2text.core.live.recording.record_stream_copy",
+            return_value=mock_proc,
+        ),
+        patch("media2text.core.live.recording.time.sleep"),
+        patch(
+            "media2text.core.live.recording.stop_process",
+        ) as mock_stop,
+        patch.object(core, "_build_streaming_stt_session", return_value=mock_stt),
+    ):
+        core._start_recording_after_session(
+            sid,
+            creator_id=cid,
+            sec_uid="MS4wLjABAAAAstream",
+            room_id="88",
+            live_info=live_info,
+            temp_path=flv,
+        )
+
+    row = LiveSessionRepo(conn).get(sid)
+    assert row is not None
+    assert row.status == "recording"
+    mock_stop.assert_not_called()
+    assert sid in core._processes
+    failed_kinds = [
+        c[0][0].kind for c in notify.emit.call_args_list
+    ]
+    assert EventKind.LIVE_START_FAILED not in failed_kinds
+    assert EventKind.LIVE_STARTED in failed_kinds
+    events = PipelineEventRepo(conn).list_for_session(sid)
+    degraded = [
+        e
+        for e in events
+        if e.stage == "streaming_stt" and e.status == "degraded"
+    ]
+    assert len(degraded) == 1
+    detail = json.loads(degraded[0].detail_json or "{}")
+    assert detail.get("reason") == "stt_start_failed"
