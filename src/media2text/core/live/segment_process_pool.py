@@ -54,6 +54,7 @@ class SegmentProcessExecutor:
     ) -> None:
         jobs = SegmentProcessJobRepo(conn)
         jobs.reset_stale_running(older_than_sec=cfg.live.post_process_stale_running_sec)
+        jobs.reset_failed_to_pending(max_attempts=cfg.live.segment_pipeline.max_attempts)
         claimed = jobs.claim_pending(limit=limit)
         for job in claimed:
             self.submit(cfg, job_id=job.id, notify=notify)

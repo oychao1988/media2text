@@ -83,6 +83,7 @@ live:
   segment_pipeline:
     enabled: true
     max_parallel: 2
+    max_attempts: 5
     watch_interval_sec: 1.0
     stable_mtime_sec: 2.0
     upload:
