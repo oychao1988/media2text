@@ -66,6 +66,10 @@ def test_streaming_missing_sidecar_forces_rest_despite_transcribe_off(
     )
     with (
         patch(
+            "media2text.core.transcribe.factory.transcribe_engine_available",
+            return_value=(True, None),
+        ),
+        patch(
             "media2text.core.transcribe.factory.create_transcribe_backend",
             return_value=mock_backend,
         ),
@@ -156,6 +160,10 @@ def test_degraded_event_forces_rest(tmp_path, monkeypatch) -> None:
         text="ok", segments=[], engine="whisper", model="tiny"
     )
     with (
+        patch(
+            "media2text.core.transcribe.factory.transcribe_engine_available",
+            return_value=(True, None),
+        ),
         patch(
             "media2text.core.transcribe.factory.create_transcribe_backend",
             return_value=mock_backend,
