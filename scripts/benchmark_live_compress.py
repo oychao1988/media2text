@@ -198,7 +198,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.sample is None:
         parser.print_help()
-        return 2
+        return 0
 
     if shutil.which(args.ffmpeg) is None:
         print(f"ffmpeg not found: {args.ffmpeg}", file=sys.stderr)

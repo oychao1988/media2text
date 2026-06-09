@@ -42,10 +42,10 @@ plan: docs/superpowers/plans/2026-06-09-live-segment-media-pipeline.md
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev]"
-# 有样本时（路径按本机 data 调整）
-python scripts/benchmark_live_compress.py --sample data/creators/<sec_uid>/live/<file>.flv --json
-test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
 ruff check scripts/benchmark_live_compress.py
+python scripts/benchmark_live_compress.py --help
+python scripts/benchmark_live_compress.py
+test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
 ```
 
 ## 非目标范围
