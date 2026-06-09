@@ -67,10 +67,20 @@ def test_yellow_when_offline_since_even_if_ffmpeg_alive() -> None:
     assert out["is_live"] is False
 
 
-def test_yellow_when_active_session_without_ffmpeg() -> None:
+def test_yellow_startup_when_session_before_ffmpeg_pid() -> None:
     out = compute_status_light(
         active_session=_session(ffmpeg_pid=None, status="recording"),
-        snapshot=CreatorLiveSnapshotRow("c1", 0, None, None, "2026-01-01T00:00:00Z"),
+        snapshot=CreatorLiveSnapshotRow("c1", 1, "r1", "t", "2026-01-01T00:00:00Z"),
+    )
+    assert out["status_light"] == "yellow"
+    assert out["status_label"] == "启动中"
+    assert out["status_abbr"] == "启"
+
+
+def test_yellow_when_active_session_with_dead_ffmpeg() -> None:
+    out = compute_status_light(
+        active_session=_session(ffmpeg_pid=99_999_999, status="recording"),
+        snapshot=CreatorLiveSnapshotRow("c1", 1, "r1", "t", "2026-01-01T00:00:00Z"),
     )
     assert out["status_light"] == "yellow"
     assert out["status_label"] == "录制异常"

@@ -68,6 +68,16 @@ def _yellow_meta(session: LiveSessionRow) -> dict[str, str]:
             badge_class="badge-live",
             status_abbr="封",
         )
+    # Session row is created before ffmpeg pid is assigned (stream resolve window).
+    if session.status == "recording" and (
+        session.ffmpeg_pid is None or session.ffmpeg_pid <= 0
+    ):
+        return _meta(
+            light="yellow",
+            badge="🟡 启动中",
+            badge_class="badge-live",
+            status_abbr="启",
+        )
     return _meta(
         light="yellow",
         badge="🟡 录制异常",
