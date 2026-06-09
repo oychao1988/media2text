@@ -1,8 +1,10 @@
 import flvjs from 'flv.js';
+import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
-import { listGalleryImages, mediaUrl } from '../../lib/api';
+import { listGalleryImages, mediaUrl, playbackM3u8Url } from '../../lib/api';
 import type { LiveSessionSummary } from '../../lib/types';
 import { useLayoutStore } from '../layout/useLayoutStore';
+import { alignPlaybackTime, sessionUsesHls } from './playbackTime';
 import {
   sessionIsGallery,
   sessionIsListedPending,
@@ -106,7 +108,8 @@ function GalleryPlayback({ dirPath, active }: { dirPath: string; active?: boolea
 export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Props) {
   const { backToHistory } = useLayoutStore();
   const videoRef = useRef<HTMLVideoElement>(null);
-  const playerRef = useRef<flvjs.Player | null>(null);
+  const flvPlayerRef = useRef<flvjs.Player | null>(null);
+  const hlsPlayerRef = useRef<Hls | null>(null);
   const [src, setSrc] = useState<string | null>(null);
   const [error, setError] = useState(false);
 
@@ -114,13 +117,33 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
   const mediaMissing = session ? sessionMediaMissing(session) : false;
   const isGallery = session ? sessionIsGallery(session) : false;
   const isListed = session ? sessionIsListedPending(session) : false;
+  const isHls = session ? sessionUsesHls(session) : false;
+  const cloudOnly = Boolean(
+    session && sessionCloudAvailable(session) && !session.media_available,
+  );
+  const canPlayHls = Boolean(
+    session?.session_id &&
+      isHls &&
+      !isGallery &&
+      !isListed &&
+      (session.media_available || session.cloud_available),
+  );
   const canPlayVideo = Boolean(
-    mediaPath && session?.media_available && !mediaMissing && !isGallery && !isListed,
+    (canPlayHls || (session?.media_available && !mediaMissing)) &&
+      !isGallery &&
+      !isListed &&
+      session?.session_id,
+  );
+  const canPlayFlv = Boolean(
+    canPlayVideo && mediaPath && !isHls && mediaPath.toLowerCase().endsWith('.flv'),
+  );
+  const canPlayNative = Boolean(
+    canPlayVideo && !isHls && !canPlayFlv && mediaPath && session?.media_available,
   );
   const canShowGallery = Boolean(
     mediaPath && session?.media_available && !mediaMissing && isGallery,
   );
-  const isFlv = Boolean(mediaPath?.toLowerCase().endsWith('.flv'));
+  const discontinuityAt = session?.discontinuity_at;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -132,18 +155,25 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
   }, [active, backToHistory]);
 
   useEffect(() => {
-    if (!canPlayVideo || !mediaPath) {
+    if (!canPlayVideo || !session) {
       setSrc(null);
       return undefined;
     }
     let cancelled = false;
-    void mediaUrl(mediaPath).then((url) => {
-      if (!cancelled) setSrc(url);
-    });
+    void (async () => {
+      try {
+        const url = isHls
+          ? await playbackM3u8Url(session.session_id)
+          : await mediaUrl(mediaPath!);
+        if (!cancelled) setSrc(url);
+      } catch {
+        if (!cancelled) setError(true);
+      }
+    })();
     return () => {
       cancelled = true;
     };
-  }, [mediaPath, canPlayVideo]);
+  }, [canPlayVideo, isHls, mediaPath, session]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -155,39 +185,110 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
 
     const handleVideoTimeUpdate = () => {
       if (onTimeUpdate) {
-        onTimeUpdate(video.currentTime);
+        onTimeUpdate(alignPlaybackTime(video.currentTime, discontinuityAt));
       }
     };
     video.addEventListener('timeupdate', handleVideoTimeUpdate);
 
-    if (isFlv && flvjs.isSupported()) {
-      const player = flvjs.createPlayer({ type: 'flv', url: src });
-      player.attachMediaElement(video);
-      player.load();
-      player.play().catch(() => undefined);
-      player.on(flvjs.Events.ERROR, () => setError(true));
-      playerRef.current = player;
+    const destroyFlv = () => {
+      if (flvPlayerRef.current) {
+        flvPlayerRef.current.destroy();
+        flvPlayerRef.current = null;
+      }
+    };
+    const destroyHls = () => {
+      if (hlsPlayerRef.current) {
+        hlsPlayerRef.current.destroy();
+        hlsPlayerRef.current = null;
+      }
+    };
+
+    if (canPlayHls && Hls.isSupported()) {
+      destroyFlv();
+      const hls = new Hls({ enableWorker: false });
+      hls.loadSource(src);
+      hls.attachMedia(video);
+      hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (data.fatal) setError(true);
+      });
+      hlsPlayerRef.current = hls;
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        void playPromise.catch(() => undefined);
+      }
       return () => {
         video.removeEventListener('error', onVideoError);
         video.removeEventListener('timeupdate', handleVideoTimeUpdate);
-        player.destroy();
-        playerRef.current = null;
+        destroyHls();
       };
     }
 
-    video.src = src;
-    try {
-      video.load();
-    } catch {
-      /* jsdom lacks HTMLMediaElement.load */
+    if (canPlayHls && video.canPlayType('application/vnd.apple.mpegurl')) {
+      destroyFlv();
+      destroyHls();
+      video.src = src;
+      try {
+        video.load();
+      } catch {
+        /* jsdom lacks HTMLMediaElement.load */
+      }
+      const nativePlay = video.play();
+      if (nativePlay && typeof nativePlay.catch === 'function') {
+        void nativePlay.catch(() => undefined);
+      }
+      return () => {
+        video.removeEventListener('error', onVideoError);
+        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+      };
+    }
+
+    if (canPlayFlv && flvjs.isSupported()) {
+      destroyHls();
+      const player = flvjs.createPlayer({ type: 'flv', url: src });
+      player.attachMediaElement(video);
+      player.load();
+      const flvPlay = player.play();
+      if (flvPlay && typeof flvPlay.catch === 'function') {
+        void flvPlay.catch(() => undefined);
+      }
+      player.on(flvjs.Events.ERROR, () => setError(true));
+      flvPlayerRef.current = player;
+      return () => {
+        video.removeEventListener('error', onVideoError);
+        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+        destroyFlv();
+      };
+    }
+
+    destroyFlv();
+    destroyHls();
+    if (canPlayNative) {
+      video.src = src;
+      try {
+        video.load();
+      } catch {
+        /* jsdom lacks HTMLMediaElement.load */
+      }
     }
     return () => {
       video.removeEventListener('error', onVideoError);
       video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+      destroyFlv();
+      destroyHls();
     };
-  }, [src, isFlv, active, canPlayVideo, onTimeUpdate]);
+  }, [
+    src,
+    canPlayVideo,
+    canPlayHls,
+    canPlayFlv,
+    canPlayNative,
+    active,
+    onTimeUpdate,
+    discontinuityAt,
+  ]);
 
   const breadcrumb = session ? sessionPlaybackLabel(session) : '—';
+
   return (
     <div className={`center-view${active ? ' active' : ''}`} id="view-playback">
       <div className="breadcrumb-bar">
@@ -221,7 +322,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
               </div>
             ) : canShowGallery && mediaPath ? (
               <GalleryPlayback dirPath={mediaPath} active={active} />
-            ) : !mediaPath ? (
+            ) : !mediaPath && !isHls ? (
               <div className="video-placeholder">
                 <div className="play-icon" aria-hidden="true">
                   ▶
@@ -229,12 +330,12 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
                 <p>历史录播</p>
                 <p className="video-placeholder-hint">选择历史场次以回放</p>
               </div>
-            ) : mediaMissing || !session.media_available ? (
+            ) : (mediaMissing || !session.media_available) && !canPlayHls ? (
               <div className="video-placeholder">
-                <p>视频文件缺失</p>
+                <p>{cloudOnly ? '仅云端可用' : '视频文件缺失'}</p>
                 <p className="video-placeholder-hint">
-                  {sessionCloudAvailable(session)
-                    ? '本地文件已删除，可在历史列表从云端下载'
+                  {cloudOnly
+                    ? '本地分段已删除，播放将尝试云端回退；若失败请使用「从云端下载」'
                     : '录制路径存在但文件不可用，仍可查看转写与摘要'}
                 </p>
               </div>
