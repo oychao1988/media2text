@@ -82,6 +82,8 @@ def run_segment_process_job(
             cloud_path=cloud_path,
         )
 
+        # delete_local_after_upload removes only the closed .m4s part — not init.mp4,
+        # master.m3u8, session.manifest.json, or transcript/summary sidecars.
         if upload_cfg.delete_local_after_upload:
             part_path.unlink(missing_ok=True)
             parts_repo.mark_local_deleted(job.session_id, job.part_index)
