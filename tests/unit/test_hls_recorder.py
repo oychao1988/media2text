@@ -140,9 +140,44 @@ def test_hls_reconnect_appends_discontinuity_and_new_index(
     assert row.discontinuity_seq == 1
 
 
-def test_append_discontinuity_idempotent(tmp_path) -> None:
+def test_append_discontinuity_appends_each_reconnect(tmp_path) -> None:
     master = tmp_path / "master.m3u8"
     master.write_text("#EXTM3U\n", encoding="utf-8")
     append_discontinuity_to_playlist(tmp_path)
     append_discontinuity_to_playlist(tmp_path)
-    assert master.read_text(encoding="utf-8").count("#EXT-X-DISCONTINUITY") == 1
+    assert master.read_text(encoding="utf-8").count("#EXT-X-DISCONTINUITY") == 2
+
+
+def test_append_discontinuity_before_endlist(tmp_path) -> None:
+    master = tmp_path / "master.m3u8"
+    master.write_text("#EXTM3U\n#EXT-X-ENDLIST\n", encoding="utf-8")
+    append_discontinuity_to_playlist(tmp_path)
+    text = master.read_text(encoding="utf-8")
+    lines = text.strip().splitlines()
+    assert lines[-1] == "#EXT-X-ENDLIST"
+    assert lines[-2] == "#EXT-X-DISCONTINUITY"
+
+
+def test_rotate_hls_after_reconnect_twice_appends_two_markers(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    master = session_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    rotate_hls_after_reconnect(
+        conn=None,
+        session_id="s1",
+        session_dir=session_dir,
+        next_index=2,
+        discontinuity_seq=1,
+    )
+    rotate_hls_after_reconnect(
+        conn=None,
+        session_id="s1",
+        session_dir=session_dir,
+        next_index=3,
+        discontinuity_seq=2,
+    )
+    assert master.read_text(encoding="utf-8").count("#EXT-X-DISCONTINUITY") == 2
