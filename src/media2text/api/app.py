@@ -22,6 +22,7 @@ from media2text.api.routes import (
     live,
     media,
     monitor_tasks,
+    playback,
     post_process,
     runtime,
     sessions,
@@ -73,6 +74,7 @@ def create_app() -> FastAPI:
     api.include_router(creators.router)
     api.include_router(auth.router)
     api.include_router(sessions.router)
+    api.include_router(playback.router)
     api.include_router(media.router)
     api.include_router(live.router)
     api.include_router(post_process.router)

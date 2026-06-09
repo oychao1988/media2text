@@ -131,6 +131,8 @@ export type LiveSessionSummary = {
   has_transcript: boolean;
   has_summary: boolean;
   media_available: boolean;
+  media_format?: string | null;
+  discontinuity_at?: number[];
   transcript_path: string | null;
   summary_path: string | null;
 };

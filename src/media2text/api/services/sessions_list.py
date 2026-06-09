@@ -125,6 +125,8 @@ def _build_live_item(
     ht = _has_transcript(media_path, m_entry)
     hs = _has_summary(ws, media_path, m_entry)
     cloud = _merge_cloud_fields(conn, sid, data, m_entry)
+    hls_fields = _hls_playback_fields(ws, media_path, data)
+    resolved_media_path = hls_fields.pop("media_path", None) or media_path
 
     return {
         "kind": "live",
@@ -138,11 +140,14 @@ def _build_live_item(
         "status": data.get("status"),
         "local_path": workspace_rel(ws, data.get("local_path")),
         "temp_path": workspace_rel(ws, data.get("temp_path")),
-        "media_path": workspace_rel(ws, media_path),
-        "media_available": _media_available(ws, media_path),
+        "media_path": workspace_rel(ws, resolved_media_path),
+        "media_available": _media_available(ws, resolved_media_path)
+        or _media_available(ws, data.get("local_path"))
+        or _media_available(ws, data.get("temp_path")),
         "pipeline_mode": data.get("pipeline_mode"),
         "transcribe_status": data.get("transcribe_status"),
         **cloud,
+        **hls_fields,
         "has_transcript": ht,
         "has_summary": hs,
         "transcript_path": _resolve_sidecar_rel(
@@ -263,15 +268,76 @@ def _has_summary(
 _GALLERY_SUFFIXES = frozenset({".jpg", ".jpeg", ".png", ".webp", ".gif"})
 
 
+def _hls_master_path(target: Path) -> Path | None:
+    if target.is_file() and target.name == "master.m3u8":
+        return target
+    if target.is_dir():
+        master = target / "master.m3u8"
+        if master.is_file():
+            return master
+    return None
+
+
 def _path_has_local_media(target: Path) -> bool:
     if target.is_file():
         return True
     if target.is_dir():
+        if _hls_master_path(target) is not None:
+            return True
         return any(
             child.is_file() and child.suffix.lower() in _GALLERY_SUFFIXES
             for child in target.iterdir()
         )
     return False
+
+
+def _load_session_manifest_json(session_dir: Path) -> dict[str, Any] | None:
+    manifest_path = session_dir / "session.manifest.json"
+    if not manifest_path.is_file():
+        return None
+    try:
+        data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _hls_playback_fields(ws: Path, media_path: str | None, row_data: dict[str, Any]) -> dict[str, Any]:
+    session_dir_raw = row_data.get("session_dir") or row_data.get("local_path")
+    master: Path | None = None
+    if session_dir_raw:
+        try:
+            target = Path(session_dir_raw)
+            if not target.is_absolute():
+                rel = workspace_rel(ws, session_dir_raw)
+                if rel:
+                    target = safe_workspace_path(ws, rel)
+            master = _hls_master_path(target)
+        except HTTPException:
+            master = None
+    if master is None and media_path:
+        try:
+            rel = workspace_rel(ws, media_path)
+            if rel:
+                master = _hls_master_path(safe_workspace_path(ws, rel))
+        except HTTPException:
+            master = None
+    if master is None:
+        return {"media_format": None, "discontinuity_at": []}
+
+    manifest = _load_session_manifest_json(master.parent)
+    discontinuity_at: list[float] = []
+    media_format = "hls"
+    if manifest:
+        media_format = str(manifest.get("media_format") or "hls")
+        raw_disc = manifest.get("discontinuity_at") or []
+        if isinstance(raw_disc, list):
+            discontinuity_at = [float(x) for x in raw_disc if isinstance(x, (int, float))]
+    return {
+        "media_format": media_format,
+        "discontinuity_at": discontinuity_at,
+        "media_path": workspace_rel(ws, str(master)) or media_path,
+    }
 
 
 def _media_available(workspace: Path, media_path: str | None) -> bool:
