@@ -1,0 +1,37 @@
+# Epic verification — Live Segment Media Pipeline (LSM-0..5)
+# Run: python scripts/epic_verify.py live-segment-media
+name: live-segment-media
+spec: docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
+plan: docs/superpowers/plans/2026-06-09-live-segment-media-pipeline.md
+acceptance_doc: docs/superpowers/verification/2026-06-09-live-segment-media-acceptance.md
+readme_section: Live Segment Media Pipeline
+depends_on_epic: local-pipeline-spec-gap-fix
+issues: [269, 270, 271, 272, 273, 274]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: issue-269
+    run: python scripts/issue_verify.py --issue 269
+
+  - name: issue-270
+    run: python scripts/issue_verify.py --issue 270
+
+  - name: issue-271
+    run: python scripts/issue_verify.py --issue 271
+
+  - name: issue-272
+    run: python scripts/issue_verify.py --issue 272
+
+  - name: issue-273
+    run: python scripts/issue_verify.py --issue 273
+
+  - name: issue-274
+    run: python scripts/issue_verify.py --issue 274
+
+  - name: segment-scheduler-regression
+    run: pytest tests/unit/test_task_scheduler_segment_order.py tests/unit/test_streaming_stt_resilience.py -v --tb=short -q
+
+  - name: desktop-playback
+    run: pytest tests/unit/test_playback_api.py tests/unit/test_api_* -v -m desktop --tb=short -q

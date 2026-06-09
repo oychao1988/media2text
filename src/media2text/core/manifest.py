@@ -5,6 +5,7 @@ import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 
+from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, DynamicRepo
 
 
@@ -24,6 +25,29 @@ def _summary_sidecar_path(media_path: str | None) -> str | None:
     else:
         summary = p.with_suffix(".summary.md")
     return str(summary) if summary.is_file() else None
+
+
+def _playback_mode_from_path(local_path: str | None) -> str:
+    if not local_path:
+        return "flv"
+    p = Path(local_path)
+    if p.suffix.lower() == ".m3u8" or p.name == "master.m3u8":
+        return "hls"
+    return "flv"
+
+
+def _live_parts_summary(conn, session_id: str) -> list[dict]:
+    parts = SegmentManifestRepo(conn).list_parts(session_id)
+    summary: list[dict] = []
+    for part in parts:
+        entry: dict = {
+            "index": part.part_index,
+            "state": part.state,
+        }
+        if part.cloud_path:
+            entry["cloud_path"] = part.cloud_path
+        summary.append(entry)
+    return summary
 
 
 def _discover_live_groups(live_dir: Path) -> list[dict]:
@@ -142,6 +166,13 @@ def refresh_manifest(
             entry["cloud_relative_path"] = data["cloud_relative_path"]
         if data.get("cloud_upload_status"):
             entry["cloud_upload_status"] = data["cloud_upload_status"]
+        playback_mode = _playback_mode_from_path(local_path)
+        parts = _live_parts_summary(conn, data["id"])
+        if parts and playback_mode == "flv":
+            playback_mode = "hls"
+        entry["playback_mode"] = playback_mode
+        if parts:
+            entry["parts"] = parts
         live_items.append(entry)
 
     dynamic_items: list[dict] = []
