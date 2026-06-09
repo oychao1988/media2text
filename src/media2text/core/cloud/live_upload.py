@@ -17,6 +17,7 @@ from media2text.core.config import AppConfig
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.platform.profile import is_profile_stale, sync_creator_profile
+from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.storage.models import CreatorRow
 from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.summarize.writer import summary_paths_for_media
@@ -201,9 +202,11 @@ def upload_live_part(
         cfg, creator=creator, creator_key=creator_key, session_dir=session_dir
     )
     master = session_dir / "master.m3u8"
-    total_size = part_path.stat().st_size + (
-        master.stat().st_size if master.is_file() else 0
-    )
+    init_mp4 = session_dir / "init.mp4"
+    total_size = part_path.stat().st_size
+    for extra in (master, init_mp4):
+        if extra.is_file():
+            total_size += extra.stat().st_size
 
     try:
         with AliyunDriveClient.open(token_path) as client:
@@ -250,6 +253,36 @@ def upload_live_part(
                 file_kind="m4s",
                 part_index=part_index,
             )
+
+            if init_mp4.is_file():
+                _upload_file_to_cloud(
+                    client,
+                    cfg=cfg,
+                    conn=conn,
+                    session_id=session_id,
+                    creator=creator,
+                    folder_id=folder_id,
+                    rel_base=rel_base,
+                    local_path=init_mp4,
+                    file_kind="init_mp4",
+                    part_index=None,
+                )
+
+            SegmentManifestRepo(conn).export_json(session_id, session_dir=session_dir)
+            manifest_json = session_dir / "session.manifest.json"
+            if manifest_json.is_file():
+                _upload_file_to_cloud(
+                    client,
+                    cfg=cfg,
+                    conn=conn,
+                    session_id=session_id,
+                    creator=creator,
+                    folder_id=folder_id,
+                    rel_base=rel_base,
+                    local_path=manifest_json,
+                    file_kind="manifest_json",
+                    part_index=None,
+                )
 
             if master.is_file():
                 _upload_file_to_cloud(
