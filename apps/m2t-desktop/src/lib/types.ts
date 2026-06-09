@@ -133,6 +133,7 @@ export type LiveSessionSummary = {
   media_available: boolean;
   media_format?: string | null;
   discontinuity_at?: number[];
+  part_durations?: number[];
   transcript_path: string | null;
   summary_path: string | null;
 };
