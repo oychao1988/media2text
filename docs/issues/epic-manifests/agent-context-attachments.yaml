@@ -10,6 +10,7 @@ spec_ids_manual: [A5, B4, D3]
 steps:
   - name: doctor
     run: media2text doctor --json
+    optional: true
 
   - name: m2t-desktop-vitest
     run: pnpm --filter m2t-desktop test

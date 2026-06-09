@@ -150,6 +150,10 @@ def test_tool_result_persisted_and_ws_stream(api_client, workspace, monkeypatch)
             ]
         ),
     )
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.maybe_auto_title_thread",
+        lambda *_a, **_k: None,
+    )
 
     cid = _seed_creator(workspace)
     tid = api_client.post("/api/agent/threads", json={"creatorId": cid}).json()["thread"]["id"]

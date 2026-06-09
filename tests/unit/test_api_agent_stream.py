@@ -29,6 +29,10 @@ def test_agent_stream_turn_sequence(api_client, workspace, monkeypatch) -> None:
         "media2text.agent.ai_agent.build_openai_client",
         lambda *_a, **_k: MockChatClient([LlmCompletion(content="stream ok")]),
     )
+    monkeypatch.setattr(
+        "media2text.agent.ai_agent.maybe_auto_title_thread",
+        lambda *_a, **_k: None,
+    )
 
     cid = _seed_creator(workspace)
     r = api_client.post("/api/agent/threads", json={"creatorId": cid})

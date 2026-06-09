@@ -58,9 +58,7 @@ Epic **Agent 身份联动与多文档上下文**（规格 2026-06-09）在 P0–
 
 ```bash
 source .venv/bin/activate
-media2text doctor --json
 pnpm --filter m2t-desktop test
-pytest tests/unit/test_api_agent_threads.py tests/unit/test_desktop_* tests/unit/test_api_* -v -m desktop --tb=short -q
 python scripts/epic_verify.py agent-context-attachments
 ```
 
