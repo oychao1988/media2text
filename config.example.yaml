@@ -61,7 +61,8 @@ live:
   post_process_poll_interval_sec: 10
   post_process_max_parallel: 0         # 0 = auto: min(2, max(1, cpu_count // 2))
   scan_concurrency: 4                   # parallel get_live_room for creators without active session
-  offline_trust_recording_signals: true # while ffmpeg writes / room reflow says live, ignore profile offline
+  offline_trust_recording_signals: true # profile offline 时仍信任 ffmpeg/reflow，直到 FLV stall 或 confirm
+  offline_flv_stall_polls: 3           # 与上项配合：profile 已 offline 且 FLV 连续 N 次 obs poll 不增长 → 不再信任 reflow/ffmpeg
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv

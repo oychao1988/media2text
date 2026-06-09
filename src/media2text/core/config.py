@@ -95,6 +95,9 @@ class LiveConfig(BaseModel):
     # During active recording, treat profile API offline as inconclusive when ffmpeg
     # is still writing or the room reflow API reports live (Douyin profile often flakes).
     offline_trust_recording_signals: bool = True
+    # Consecutive obs polls with profile offline and FLV not growing before ending
+    # recording trust (guards zombie ffmpeg after stream ends).
+    offline_flv_stall_polls: int = 3
 
     def effective_pipeline_mode(self) -> str:
         mode = (self.pipeline_mode or "legacy").strip().lower()
