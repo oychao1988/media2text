@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import typer
 
 from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
+from media2text.core.live.download import download_live_session
 from media2text.core.live.status import build_live_status
 from media2text.core.live.streaming_benchmark import (
     check_streaming_targets,
@@ -132,4 +134,49 @@ def stats_cmd(
 
     emit(payload, as_json=json_out)
     if gate is not None and not gate["passed"]:
+        raise typer.Exit(1)
+
+
+@app.command("download")
+def download_cmd(
+    session_id: str = typer.Argument(..., help="Live session id"),
+    parts: str = typer.Option(
+        "all",
+        "--parts",
+        help="Part indices: all or comma-separated (e.g. 1,2,3)",
+    ),
+    merge: bool = typer.Option(
+        False,
+        "--merge",
+        help="Merge downloaded parts into a single MP4 via ffmpeg concat",
+    ),
+    keep_local: bool = typer.Option(
+        False,
+        "--keep-local",
+        help="Write parts back into the session parts/ directory (default: temp output dir)",
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        help="Target directory when not using --keep-local (default: temp dir)",
+    ),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    """Download HLS session parts from cloud or local disk; optional merge to MP4."""
+    cfg = AppConfig.load()
+    conn = open_db(cfg)
+    try:
+        payload = download_live_session(
+            cfg,
+            conn,
+            session_id=session_id,
+            parts=parts,
+            keep_local=keep_local,
+            merge=merge,
+            output_dir=output,
+        )
+    finally:
+        conn.close()
+    emit(payload, as_json=json_out)
+    if not payload.get("ok"):
         raise typer.Exit(1)
