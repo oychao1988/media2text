@@ -97,17 +97,18 @@ def stop_hls_recorder(proc: subprocess.Popen, *, timeout: int = 30) -> None:
 
 
 def append_discontinuity_to_playlist(session_dir: Path) -> None:
+    """Append one DISCONTINUITY marker per reconnect (D13; may repeat)."""
     master = session_dir / "master.m3u8"
     if not master.is_file():
         return
-    text = master.read_text(encoding="utf-8")
-    marker = "#EXT-X-DISCONTINUITY"
-    if marker in text:
-        return
-    lines = text.rstrip().splitlines()
+    lines = master.read_text(encoding="utf-8").rstrip().splitlines()
     if not lines or not lines[0].startswith("#EXTM3U"):
         lines.insert(0, "#EXTM3U")
-    lines.append(marker)
+    marker = "#EXT-X-DISCONTINUITY"
+    if lines and lines[-1].strip() == "#EXT-X-ENDLIST":
+        lines.insert(-1, marker)
+    else:
+        lines.append(marker)
     master.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
