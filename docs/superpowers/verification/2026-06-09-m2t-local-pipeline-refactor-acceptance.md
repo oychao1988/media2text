@@ -21,7 +21,7 @@
 | GF-2 | notify outbox_only + daemon drain | `issue_verify.py --issue 247` | [x] |
 | GF-3 | SlowTick 独立 conn；legacy 死代码删除 | `issue_verify.py --issue 248` | [x] |
 | GF-4 | StateWriter snapshot/events；probe_parallelism | `issue_verify.py --issue 249` + `check_no_direct_live_repo.py` | [x] |
-| GF-5 | LIVE_STARTED 不等待 STT；STT fail degraded；FLV stall 收尾 | `issue_verify.py --issue 266` | [ ] |
+| GF-5 | LIVE_STARTED 不等待 STT；STT fail degraded；FLV stall 收尾 | `issue_verify.py --issue 266` | [x] |
 
 ```bash
 python scripts/epic_verify.py local-pipeline-spec-gap-fix

@@ -37,32 +37,32 @@ plan: docs/superpowers/plans/2026-06-09-m2t-local-pipeline-spec-gap-fix.md
 
 ### Task 1 — 开播通知不等待 STT（P0）
 
-- [ ] `_start_recording_after_session`：`ffmpeg` 通过 `FFMPEG_STARTUP_GRACE_SEC` 存活检查后 **立即**：
+- [x] `_start_recording_after_session`：`ffmpeg` 通过 `FFMPEG_STARTUP_GRACE_SEC` 存活检查后 **立即**：
   - 写 `live_pipeline_events` `recording|started`
   - `NotifyService.emit(LIVE_STARTED)`（含 `creator_id`、`session_id`）
-- [ ] `streaming_stt.start()` **移至** 上述通知之后；STT 阻塞不得推迟 `LIVE_STARTED`
-- [ ] 新增单测 `test_live_started_emitted_before_streaming_stt_blocks`：mock `stt.start()` 阻塞/慢返回，断言 `notify.emit(LIVE_STARTED)` 在 `stt.start()` 之前被调用
-- [ ] 回归：`pytest tests/unit/test_live_recording_core.py` 通过
+- [x] `streaming_stt.start()` **移至** 上述通知之后；STT 阻塞不得推迟 `LIVE_STARTED`
+- [x] 新增单测 `test_live_started_emitted_before_streaming_stt_blocks`：mock `stt.start()` 阻塞/慢返回，断言 `notify.emit(LIVE_STARTED)` 在 `stt.start()` 之前被调用
+- [x] 回归：`pytest tests/unit/test_live_recording_core.py` 通过
 
 ### Task 2 — STT 启动失败不杀整段录制（P0）
 
-- [ ] streaming 模式下：`LIVE_STARTED` 已发出后，若 `stt.start()` 失败 → **不得** stop ffmpeg / 不得把 session 标 `failed`
-- [ ] 改为 `_mark_streaming_degraded`（或等价路径），session 保持 `recording`，Reconciler 可 ensure `start_streaming_stt` / `reconnect_streaming_stt`
-- [ ] 发出 `LIVE_START_FAILED` **仅** 当 ffmpeg 早退；STT 失败单独 log + 可选 `TRANSCRIBE_*` 通知（非阻塞开录）
-- [ ] 单测覆盖「ffmpeg 已录 + STT fail → status 仍为 recording」
+- [x] streaming 模式下：`LIVE_STARTED` 已发出后，若 `stt.start()` 失败 → **不得** stop ffmpeg / 不得把 session 标 `failed`
+- [x] 改为 `_mark_streaming_degraded`（或等价路径），session 保持 `recording`，Reconciler 可 ensure `start_streaming_stt` / `reconnect_streaming_stt`
+- [x] 发出 `LIVE_START_FAILED` **仅** 当 ffmpeg 早退；STT 失败单独 log + 可选 `TRANSCRIBE_*` 通知（非阻塞开录）
+- [x] 单测覆盖「ffmpeg 已录 + STT fail → status 仍为 recording」
 
 ### Task 3 — 下播 FLV stall 收尾（P0）
 
-- [ ] 新增配置 `live.offline_flv_stall_polls`（默认 `3`），写入 `config.py` + `config.example.yaml`
-- [ ] `_infer_live_from_recording`：profile offline 且 FLV **连续 N 次** obs poll 不增长 → 返回 `False`（即使 reflow 仍报 live 或 ffmpeg 进程仍存活）
-- [ ] FLV 恢复增长时清零 stall 计数
-- [ ] `test_profile_offline_after_flv_stall_ignores_reflow` 通过（reflow live + 3 轮无增长 → `LIVE_ENDED`）
-- [ ] 回归：`tests/unit/test_offline_recording_signals.py` 全绿
+- [x] 新增配置 `live.offline_flv_stall_polls`（默认 `3`），写入 `config.py` + `config.example.yaml`
+- [x] `_infer_live_from_recording`：profile offline 且 FLV **连续 N 次** obs poll 不增长 → 返回 `False`（即使 reflow 仍报 live 或 ffmpeg 进程仍存活）
+- [x] FLV 恢复增长时清零 stall 计数
+- [x] `test_profile_offline_after_flv_stall_ignores_reflow` 通过（reflow live + 3 轮无增长 → `LIVE_ENDED`）
+- [x] 回归：`tests/unit/test_offline_recording_signals.py` 全绿
 
 ### Task 4 — 文档（P1）
 
-- [ ] `config.example.yaml` 注释说明 `offline_flv_stall_polls` 与 `offline_trust_recording_signals` 的关系
-- [ ] 在 `docs/superpowers/verification/2026-06-09-m2t-local-pipeline-refactor-acceptance.md`（或 gap-fix 验收表）增加 GF-5 行
+- [x] `config.example.yaml` 注释说明 `offline_flv_stall_polls` 与 `offline_trust_recording_signals` 的关系
+- [x] 在 `docs/superpowers/verification/2026-06-09-m2t-local-pipeline-refactor-acceptance.md`（或 gap-fix 验收表）增加 GF-5 行
 
 ## 验证命令
 
@@ -84,7 +84,7 @@ ruff check src/media2text/core/live/recording.py src/media2text/core/config.py
 
 ## 待确认问题
 
-- [ ] STT 启动失败时是否仍需用户可见通知（除 log 外）？默认：**仅 degraded + Reconciler 重试**，不重复发「开播失败」
+- [x] STT 启动失败时是否仍需用户可见通知（除 log 外）？默认：**仅 degraded + Reconciler 重试**，不重复发「开播失败」
 
 ## 依赖与顺序
 
