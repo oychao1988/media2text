@@ -45,8 +45,13 @@ plan: docs/superpowers/plans/2026-06-09-live-segment-media-pipeline.md
 source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/unit/test_post_process*.py tests/unit/test_agent_manifest*.py -v
-python scripts/epic_verify.py live-segment-media
 ruff check src/media2text/core/live/post_process.py
+```
+
+Epic 级闸门（本 Epic 全部 PR 合并后本地/发布前执行，勿放入本 Issue 的 CI verify）：
+
+```bash
+python scripts/epic_verify.py live-segment-media
 ```
 
 ## 非目标范围

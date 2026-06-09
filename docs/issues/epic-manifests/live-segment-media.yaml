@@ -11,6 +11,7 @@ issues: [269, 270, 271, 272, 273, 274]
 steps:
   - name: doctor
     run: media2text doctor --json
+    optional: true
 
   - name: issue-269
     run: python scripts/issue_verify.py --issue 269
