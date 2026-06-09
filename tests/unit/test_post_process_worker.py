@@ -43,6 +43,10 @@ def test_run_post_process_job_transcribe_only(tmp_path, monkeypatch) -> None:
 
     with (
         patch(
+            "media2text.core.transcribe.factory.transcribe_engine_available",
+            return_value=(True, None),
+        ),
+        patch(
             "media2text.core.transcribe.factory.create_transcribe_backend",
             return_value=mock_backend,
         ),

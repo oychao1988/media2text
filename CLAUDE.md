@@ -92,7 +92,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
-直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 `streaming`）。**streaming**（抖音 / B 站）：并行录制 FLV + Deepgram WS 实时转写，finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe；需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费），B 站另需 `auth login --platform bilibili`。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。手动清队列：`media2text post-process run [--limit N] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下 checkpoint + offset 续传（#101）；STT 断线可重连或降级 legacy finalize。
+直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 `streaming`）。**streaming**（抖音 / B 站）：并行录制 + Deepgram WS 实时转写；`live.media.format=hls` 时输出 `master.m3u8` + `parts/seg-*.m4s`，段闭合由 Tier-1 `segment_process` 上传并删本地，`post_process` 仅 summarize（无整文件 remux/upload）；`format=flv` 时 finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe。需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费），B 站另需 `auth login --platform bilibili`。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。手动清队列：`media2text post-process run [--limit N] --json`。`agent-manifest.json` 直播项含 `playback_mode`（`hls`|`flv`）与 `parts[]` 摘要。Desktop/API：`GET /api/sessions/{id}/playback.m3u8`；CLI：`media2text live download <session_id> --parts all [--merge] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下 checkpoint + offset 续传（#101）；STT 断线可重连或降级 legacy finalize。规格：[live-segment-media-design](docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md)。
 
 ### 3. 手动作品流水线（单博主）
 
@@ -179,8 +179,9 @@ media2text creator show <creator_id> --json
 | `live status [--creator <id>] --json` | 当前录制、后处理队列与 daemon 锁 |
 | `live timeline <session_id> --json` | 单场 pipeline events 时间线 |
 | `live stats [--days N] --json` | 各 stage 耗时 P50/P95 聚合 |
+| `live download <session_id> [--parts all\|1,2] [--merge] --json` | 从云盘拉取 HLS 分段；`--merge` 合并为 MP4 |
 
-`live.scan_concurrency`（默认 4）并行 poll 无 active session 的博主；`post_process_max_parallel: 0` 为自适应 worker 数。
+`live.scan_concurrency`（默认 4）并行 poll 无 active session 的博主；`post_process_max_parallel: 0` 为自适应 worker 数。HLS 分段：`live.media.format`、`live.segment_pipeline` 见 `config.example.yaml`。
 | `download run [--creator <id>] [--limit N] --json` | 下载视频 |
 | `transcribe run <path> --json` | 转写 |
 | `summarize run <path> [--creator <id>] --json` | 转写摘要（含 `suggested_groups`） |

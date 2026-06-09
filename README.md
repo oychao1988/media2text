@@ -15,7 +15,7 @@
 | 登录与会话 | Playwright 扫码/浏览器登录，会话保存在 `data/sessions/` |
 | 创作者管理 | 通过主页链接解析 `sec_uid` 并登记；可选拉取昵称、头像等资料 |
 | 监控开关 | `creator monitor` 开启后，统一守护进程负责直播 + 作品流水线 |
-| 直播录制 | 轮询开播状态，ffmpeg 拉流录制，结束后 remux 为 `.mp4` |
+| 直播录制 | 轮询开播状态，ffmpeg 拉流；`streaming` + `live.media.format=hls` 为 HLS 分段（`master.m3u8` + `parts/*.m4s`），legacy 为 FLV/MP4 |
 | 作品同步与下载 | 打开博主主页、拦截带签名的 `aweme/post` 请求后写入 catalog，再下载视频（需有效登录态） |
 | 转写 | 可选 `faster-whisper`，输出 Markdown + JSON |
 | 流水线 | `sync → download → transcribe` 一键跑通 |
@@ -151,10 +151,13 @@ pgrep -fl "monitor watch"    # 确认在跑
 | `monitor.vod_poll_interval_sec` | 作品 sync/download/transcribe 间隔（秒） |
 | `monitor.max_creators_per_vod_tick` | 每轮 VOD 最多处理创作者数（0=不限制） |
 | `monitor.profile_stale_days` | 资料过期判定天数 |
-| `live.pipeline_mode` | `streaming`（并行 FLV + Deepgram WS，抖音/B 站直播；example 推荐）或 `legacy`（代码默认：remux MP4 + 录后转写） |
-| `live.streaming_stt.enabled` | `false` 时仅录 FLV、不启 WS（即使 `pipeline_mode=streaming`）；session 快照为 `legacy` |
-| `live.remux_on_complete` | streaming 默认 `false`（保留 FLV）；设为 `true` 可在 finalize 额外 remux 出 MP4（FLV 仍保留） |
-| `live` | ffmpeg、重连/离线确认；streaming 需 `DEEPGRAM_API_KEY` + `.[transcribe-deepgram]` + 对应平台登录态；`transcribe_on_complete` 仅 legacy |
+| `live.pipeline_mode` | `streaming`（并行录制 + Deepgram WS，抖音/B 站直播；example 推荐）或 `legacy`（代码默认：remux MP4 + 录后转写） |
+| `live.media.format` | `flv`（单文件）或 `hls`（`master.m3u8` + 分段；需 `pipeline_mode=streaming`） |
+| `live.media.segment_duration_sec` | HLS 段时长（秒），默认 600 |
+| `live.segment_pipeline` | 段闭合检测、上传、删本地；`enabled` / `max_parallel` / `upload.delete_local_after_upload` |
+| `live.streaming_stt.enabled` | `false` 时仅录制、不启 WS（即使 `pipeline_mode=streaming`）；session 快照为 `legacy` |
+| `live.remux_on_complete` | streaming 默认 `false`；`format=flv` 时可选额外 remux MP4；HLS 不走整文件 remux |
+| `live` | ffmpeg、重连/离线确认；streaming 需 `DEEPGRAM_API_KEY` + `.[transcribe-deepgram]` + 对应平台登录态；`transcribe_on_complete` 仅 legacy FLV |
 | `notify` | 监控事件提醒：系统提示音 + 飞书群机器人 webhook（见下方） |
 | `transcribe` | 引擎 `whisper`（本地）、`openai`（云端）或 `deepgram`（云端 REST） |
 | `transcribe.engine` | `whisper` \| `openai` \| `deepgram` |
