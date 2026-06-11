@@ -1,0 +1,45 @@
+# Epic verification — Session Media Unified Refactor (SMU-R0..R6)
+# Run: python scripts/epic_verify.py session-media-unified
+name: session-media-unified
+spec: docs/superpowers/specs/2026-06-11-session-media-unified-refactor-design.md
+plan: docs/superpowers/plans/2026-06-11-session-media-unified.md
+acceptance_doc: docs/superpowers/verification/2026-06-11-session-media-unified-acceptance.md
+readme_section: Session Media Unified Refactor
+depends_on_epic: live-segment-media-gap-fix
+issues: [296, 297, 298, 299, 300, 301, 302]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+    optional: true
+
+  - name: issue-296
+    run: python scripts/issue_verify.py --issue 296
+
+  - name: issue-297
+    run: python scripts/issue_verify.py --issue 297
+
+  - name: issue-305-r0b-apple-silicon
+    run: python scripts/issue_verify.py --issue 305
+    optional: true
+
+  - name: issue-298
+    run: python scripts/issue_verify.py --issue 298
+
+  - name: issue-299
+    run: python scripts/issue_verify.py --issue 299
+
+  - name: issue-300
+    run: python scripts/issue_verify.py --issue 300
+
+  - name: issue-301
+    run: python scripts/issue_verify.py --issue 301
+
+  - name: streaming-stt-finalize
+    run: pytest tests/unit/test_segment_finalize_sidecar.py tests/unit/test_streaming_stt_resilience.py::test_streaming_finalize_merges_reconnect_segments -v --tb=short -q
+
+  - name: playback-regression
+    run: pytest tests/unit/test_playback_api.py tests/unit/test_cloud_byte_proxy.py tests/unit/test_session_playback.py -v -m desktop --tb=short -q
+
+  - name: desktop-playback
+    run: pnpm --filter m2t-desktop test -- ViewPlayback.test.tsx
