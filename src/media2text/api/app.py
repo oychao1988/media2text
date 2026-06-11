@@ -30,8 +30,12 @@ from media2text.api.routes import (
 from media2text.api.services.runtime_health_loop import run_runtime_health_loop
 from media2text.api.services.notify_event_drain import run_notify_drain_loop
 from media2text.api.services.state_event_drain import run_drain_loop
+import structlog
+
 from media2text.core.config import AppConfig
 from media2text.core.runtime.supervisor import MonitorSupervisor
+
+log = structlog.get_logger()
 
 
 @asynccontextmanager
@@ -52,7 +56,10 @@ async def lifespan(app: FastAPI):
     if cfg.desktop.auto_start_monitor:
         start_result = supervisor.start(cfg)
         if start_result.get("already_running_external"):
-            supervisor.takeover(cfg)
+            log.info(
+                "monitor_auto_start_deferred_external",
+                pid=start_result.get("pid"),
+            )
     stop = asyncio.Event()
     drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
     notify_drain_task = asyncio.create_task(run_notify_drain_loop(cfg, stop))

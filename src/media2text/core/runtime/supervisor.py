@@ -216,6 +216,27 @@ class MonitorSupervisor:
             "start": start_result,
         }
 
+    def handoff_to_external(
+        self,
+        cfg: AppConfig,
+        *,
+        creator_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Stop embedded supervisor if running, then spawn CLI daemon."""
+        from media2text.core.runtime.external_spawn import spawn_cli_monitor_daemon
+
+        stop_embedded: dict[str, Any] = {"ok": True, "stopped": False}
+        if self._is_embedded_running():
+            stop_embedded = self.stop(cfg)
+            if not stop_embedded.get("ok"):
+                return stop_embedded
+        spawn_result = spawn_cli_monitor_daemon(cfg, creator_id=creator_id)
+        return {
+            "ok": spawn_result.get("ok", False),
+            "stop_embedded": stop_embedded,
+            "start": spawn_result,
+        }
+
     def status(self, cfg: AppConfig) -> SupervisorStatus:
         ws = cfg.ensure_workspace()
         lock_pid = monitor_lock_pid(ws)

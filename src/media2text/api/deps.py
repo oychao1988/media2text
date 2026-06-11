@@ -38,6 +38,14 @@ def spawn_auth_login(platform: str) -> dict:
     import subprocess
     import sys
 
+    cfg = AppConfig.load()
+    log_dir = cfg.ensure_workspace() / "sessions"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_path = log_dir / f"auth-login-{platform.strip().lower()}.log"
+    log_file = log_path.open("a", encoding="utf-8")
+    log_file.write(f"\n--- spawn auth login {platform} ---\n")
+    log_file.flush()
+
     subprocess.Popen(
         [
             sys.executable,
@@ -49,5 +57,14 @@ def spawn_auth_login(platform: str) -> dict:
             platform,
         ],
         start_new_session=True,
+        stdin=subprocess.DEVNULL,
+        stdout=log_file,
+        stderr=subprocess.STDOUT,
+        close_fds=True,
     )
-    return {"ok": True, "spawned": True, "platform": platform}
+    return {
+        "ok": True,
+        "spawned": True,
+        "platform": platform,
+        "log_path": str(log_path),
+    }

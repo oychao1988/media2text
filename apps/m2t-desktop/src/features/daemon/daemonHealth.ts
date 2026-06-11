@@ -125,7 +125,18 @@ export function buildDaemonStats(runtime: RuntimeStatus): DaemonStat[] {
   const { queues } = runtime;
   const pp = queues.post_process;
   const mt = queues.monitor_tasks;
+  const pid = runtime.daemon.pid;
+  const pidSuffix = pid != null ? ` · PID ${pid}` : '';
   const stats: DaemonStat[] = [
+    {
+      label: '运行方式',
+      value:
+        runtime.managed_by === 'embedded'
+          ? `Desktop 内嵌${pidSuffix}`
+          : runtime.managed_by === 'external'
+            ? `终端守护进程${pidSuffix}`
+            : '未运行',
+    },
     {
       label: '录后处理',
       value: `${pp.pending} 排队 · ${pp.running} 进行中`,
@@ -135,12 +146,6 @@ export function buildDaemonStats(runtime: RuntimeStatus): DaemonStat[] {
     stats.push({
       label: '作品任务',
       value: `${mt.pending} 排队 · ${mt.running} 进行中`,
-    });
-  }
-  if (runtime.managed_by === 'external') {
-    stats.push({
-      label: '管理模式',
-      value: '终端独立进程（非 Desktop）',
     });
   }
   return stats;

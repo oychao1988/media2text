@@ -26,7 +26,8 @@ def test_scheduler_drains_segment_process_before_post_process(tmp_path, monkeypa
     loop = TaskSchedulerLoop(
         cfg,
         watcher,
-        pool,
+        live_pool=pool,
+        content_pool=MagicMock(),
         post_pool=post_pool,
         segment_pool=segment_pool,
         stop=stop,

@@ -79,6 +79,11 @@ def run_segment_process_job(
             return {"ok": False, **result}
 
         cloud_path = result.get("cloud_path", "")
+        cloud_file_id = result.get("cloud_file_id", "")
+        if not cloud_path or not cloud_file_id:
+            jobs.mark_failed(job_id, error="upload_unverified")
+            return {"ok": False, "error": "upload_unverified"}
+
         parts_repo.mark_uploaded(
             job.session_id,
             job.part_index,
@@ -87,7 +92,11 @@ def run_segment_process_job(
 
         # delete_local_after_upload removes only the closed .m4s part — not init.mp4,
         # master.m3u8, session.manifest.json, or transcript/summary sidecars.
-        if upload_cfg.delete_local_after_upload:
+        delete_local = (
+            upload_cfg.delete_local_after_upload
+            and cfg.aliyundrive.delete_local_after_upload
+        )
+        if delete_local:
             part_path.unlink(missing_ok=True)
             parts_repo.mark_local_deleted(job.session_id, job.part_index)
 

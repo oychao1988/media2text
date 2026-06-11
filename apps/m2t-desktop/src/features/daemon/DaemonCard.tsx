@@ -24,7 +24,7 @@ type Props = {
 };
 
 export function DaemonCard({ onSelectCreator }: Props) {
-  const { runtime, loading, fetchError, startRuntime, stopRuntime, takeoverRuntime, refresh } = useRuntime();
+  const { runtime, loading, fetchError, startRuntime, stopRuntime, restartRuntime, takeoverRuntime, handoffRuntime, refresh } = useRuntime();
   const [busy, setBusy] = useState(false);
   const [recoverBusy, setRecoverBusy] = useState(false);
   const [bottomPanel, setBottomPanel] = useState<BottomPanel>('logs');
@@ -34,7 +34,9 @@ export function DaemonCard({ onSelectCreator }: Props) {
   const health: RuntimeHealth = runtime?.health ?? 'stopped';
   const running = runtime?.daemon.running ?? false;
   const external = runtime?.managed_by === 'external';
-  const canControl = !external;
+  const embedded = runtime?.managed_by === 'embedded';
+  const canControlEmbedded = embedded;
+  const canControlExternal = external;
   const stats = runtime ? buildDaemonStats(runtime) : [];
   const showBottomPanel = Boolean(runtime) && !fetchError;
 
@@ -97,8 +99,28 @@ export function DaemonCard({ onSelectCreator }: Props) {
     }
   };
 
+  const onRestart = async () => {
+    if (busy || !runtime || !running) return;
+    setBusy(true);
+    try {
+      await restartRuntime();
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const onHandoff = async () => {
+    if (busy || !runtime) return;
+    setBusy(true);
+    try {
+      await handoffRuntime();
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const onStart = async () => {
-    if (busy || !runtime || !canControl) return;
+    if (busy || !runtime || external) return;
     setBusy(true);
     try {
       await startRuntime();
@@ -108,7 +130,7 @@ export function DaemonCard({ onSelectCreator }: Props) {
   };
 
   const onStop = async () => {
-    if (busy || !runtime || !canControl) return;
+    if (busy || !runtime || (!canControlEmbedded && !canControlExternal)) return;
     setBusy(true);
     try {
       await stopRuntime();
@@ -151,33 +173,82 @@ export function DaemonCard({ onSelectCreator }: Props) {
         </div>
         <div className="daemon-card-actions">
           {external ? (
-            <button
-              type="button"
-              className="btn btn-sm"
-              id="btn-daemon-takeover"
-              title="停止终端里单独启动的 monitor watch，改由 Desktop 启停"
-              disabled={busy}
-              onClick={() => void onTakeover()}
-            >
-              改用 Desktop 管理
-            </button>
+            <>
+              <button
+                type="button"
+                className="btn btn-sm"
+                id="btn-daemon-takeover"
+                title="停止终端守护进程，改由 Desktop 内嵌线程管理"
+                disabled={busy}
+                onClick={() => void onTakeover()}
+              >
+                改用 Desktop
+              </button>
+              <button
+                type="button"
+                className="icon-btn"
+                id="btn-daemon-restart-external"
+                title="重启终端守护进程"
+                aria-label="重启"
+                disabled={busy || loading}
+                onClick={() => void onRestart()}
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                className="icon-btn icon-btn-danger"
+                id="btn-daemon-stop-external"
+                title="停止终端守护进程"
+                aria-label="停止"
+                disabled={busy || loading}
+                onClick={() => void onStop()}
+              >
+                ⏹
+              </button>
+            </>
           ) : running ? (
-            <button
-              type="button"
-              className="icon-btn icon-btn-danger"
-              id="btn-daemon-stop"
-              title="停止后台监控"
-              aria-label="停止"
-              disabled={busy || loading}
-              onClick={() => void onStop()}
-            >
-              ⏹
-            </button>
+            <>
+              {embedded ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  id="btn-daemon-handoff"
+                  title="停止 Desktop 内嵌监控，改在终端启动 monitor watch --daemon"
+                  disabled={busy}
+                  onClick={() => void onHandoff()}
+                >
+                  改用终端
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="icon-btn"
+                id="btn-daemon-restart"
+                title="重启 Desktop 内嵌监控"
+                aria-label="重启"
+                disabled={busy || loading}
+                onClick={() => void onRestart()}
+              >
+                ↻
+              </button>
+              <button
+                type="button"
+                className="icon-btn icon-btn-danger"
+                id="btn-daemon-stop"
+                title="停止后台监控"
+                aria-label="停止"
+                disabled={busy || loading}
+                onClick={() => void onStop()}
+              >
+                ⏹
+              </button>
+            </>
           ) : (
             <button
               type="button"
               className="icon-btn"
-              title="启动后台监控"
+              title="启动 Desktop 内嵌监控"
               aria-label="启动"
               disabled={busy || loading}
               onClick={() => void onStart()}

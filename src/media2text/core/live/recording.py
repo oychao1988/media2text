@@ -33,7 +33,6 @@ from media2text.core.ffmpeg import (
 )
 from media2text.core.live.hls_recorder import (
     finalize_hls_endlist,
-    mark_closed_with_duration,
     part_rel_path,
     rotate_hls_after_reconnect,
     spawn_hls_recorder,
@@ -41,7 +40,11 @@ from media2text.core.live.hls_recorder import (
 )
 from media2text.core.cloud.live_upload import upload_hls_session_sidecars
 from media2text.core.live.segment_manifest import SegmentManifestRepo
-from media2text.core.live.segment_watcher import get_segment_watcher
+from media2text.core.live.segment_watcher import (
+    enqueue_all_pending_hls_parts,
+    enqueue_closed_hls_part,
+    get_segment_watcher,
+)
 from media2text.core.live.protocol import LivePlatformAdapter
 from media2text.core.live.partial_notify import PartialTranscriptNotifier
 from media2text.core.live.session_runtime import SessionRuntime
@@ -756,15 +759,42 @@ class LiveRecordingCore:
         return None
 
     def _close_hls_part_if_any(self, session_id: str, session_dir: Path) -> None:
-        idx = self._hls_part_index.get(session_id)
+        idx = self._resolve_hls_part_index(session_id, session_dir)
         if idx is None:
             return
-        repo = SegmentManifestRepo(self._conn)
-        part_path = session_dir / part_rel_path(idx)
-        size = part_path.stat().st_size if part_path.is_file() else None
-        mark_closed_with_duration(
-            repo, session_id, idx, session_dir, bytes=size
+        enqueue_closed_hls_part(
+            self._conn,
+            session_id=session_id,
+            session_dir=session_dir,
+            part_index=idx,
         )
+
+    def _resolve_hls_part_index(self, session_id: str, session_dir: Path) -> int | None:
+        idx = self._hls_part_index.get(session_id)
+        if idx is not None:
+            return idx
+        repo = SegmentManifestRepo(self._conn)
+        recording = [
+            p.part_index
+            for p in repo.list_parts(session_id)
+            if p.state == "recording"
+        ]
+        if recording:
+            return max(recording)
+        parts_dir = session_dir / "parts"
+        if parts_dir.is_dir():
+            max_idx = 0
+            for path in parts_dir.glob("seg-*.m4s"):
+                if path.is_file() and path.stat().st_size > 0:
+                    stem = path.stem  # seg-00001
+                    try:
+                        max_idx = max(max_idx, int(stem.split("-")[-1]))
+                    except ValueError:
+                        continue
+            if max_idx:
+                return max_idx
+        mx = repo.max_part_index(session_id)
+        return mx if mx > 0 else None
 
     def _spawn_hls_recording(
         self,
@@ -1712,6 +1742,7 @@ class LiveRecordingCore:
             seg_watcher.force_close_session(self._conn, session_id, session_dir)
         else:
             self._close_hls_part_if_any(session_id, session_dir)
+            enqueue_all_pending_hls_parts(self._conn, session_id, session_dir)
         finalize_hls_endlist(session_dir)
         manifest_repo = SegmentManifestRepo(self._conn)
         manifest_repo.export_json(session_id, session_dir=session_dir)

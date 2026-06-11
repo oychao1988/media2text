@@ -14,12 +14,22 @@ if TYPE_CHECKING:
 
 # monitor watch runs sync_catalog + prepare_live_recording concurrently; serialize
 # Chromium launches so stream resolve does not fail with launch_failed.
-_PLAYWRIGHT_EXCLUSIVE = threading.Semaphore(1)
+# Increased from 1→2 in 2026-06-10 to prevent executor deadlock when one task hangs.
+_PLAYWRIGHT_EXCLUSIVE = threading.Semaphore(2)
+# Timeout for acquiring the Playwright slot — tasks that wait longer fail fast
+# so the pool stays available for live-critical tasks.
+_PLAYWRIGHT_ACQUIRE_TIMEOUT = 30.0
 
 
 @contextmanager
-def playwright_exclusive() -> Iterator[None]:
-    _PLAYWRIGHT_EXCLUSIVE.acquire()
+def playwright_exclusive(timeout: float | None = None) -> Iterator[None]:
+    acquired = _PLAYWRIGHT_EXCLUSIVE.acquire(
+        blocking=True, timeout=timeout if timeout is not None else _PLAYWRIGHT_ACQUIRE_TIMEOUT
+    )
+    if not acquired:
+        raise TimeoutError(
+            f"failed to acquire Playwright exclusive lock within {timeout if timeout is not None else _PLAYWRIGHT_ACQUIRE_TIMEOUT}s"
+        )
     try:
         yield
     finally:

@@ -18,6 +18,7 @@ from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
 from media2text.core.platform.profile import is_profile_stale, sync_creator_profile
 from media2text.core.live.segment_manifest import SegmentManifestRepo
+from media2text.core.live.segment_watcher import hls_parts_pending_upload
 from media2text.core.storage.models import CreatorRow
 from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.summarize.writer import summary_paths_for_media
@@ -158,6 +159,10 @@ def _upload_file_to_cloud(
                 )
                 file_id_raw = remote["file_id"] if remote else None
             file_id = str(file_id_raw or "")
+            if not file_id:
+                last_error = f"missing cloud file_id for {local_path.name}"
+                uploads.mark_failed(upload_id, error=last_error)
+                raise RuntimeError(last_error)
             uploads.mark_done(
                 upload_id,
                 cloud_file_id=file_id,
@@ -378,16 +383,28 @@ def upload_hls_session_sidecars(
                 )
                 uploaded.append(local_path.name)
             sessions = LiveSessionRepo(conn)
-            sessions.update_status(session_id, cloud_upload_status="done")
+            parts_pending = hls_parts_pending_upload(
+                conn, session_id, session_dir=session_dir
+            )
+            upload_status = "partial" if parts_pending else "done"
+            sessions.update_status(session_id, cloud_upload_status=upload_status)
             if uploaded:
+                body = f"直播 sidecar 云备份完成\n{session_dir.name}\n{', '.join(uploaded)}"
+                if parts_pending:
+                    body += "\n（视频分段仍待上传或本地缺失）"
                 notify.emit(
                     NotifyEvent(
                         kind=EventKind.UPLOAD_COMPLETED,
                         title=creator_label(creator),
-                        body=f"直播 sidecar 云备份完成\n{session_dir.name}\n{', '.join(uploaded)}",
+                        body=body,
                     )
                 )
-            return {"upload_completed": True, "files": uploaded}
+            return {
+                "upload_completed": True,
+                "files": uploaded,
+                "cloud_upload_status": upload_status,
+                "parts_pending": parts_pending,
+            }
     except Exception as exc:  # noqa: BLE001
         log.exception("upload_hls_sidecars_failed", session_id=session_id, error=str(exc))
         LiveSessionRepo(conn).update_status(session_id, cloud_upload_status="failed")
@@ -662,6 +679,18 @@ def _upload_with_client(
                     )
                     file_id_raw = remote["file_id"] if remote else None
                 file_id = str(file_id_raw or "")
+                if not file_id:
+                    last_error = f"missing cloud file_id for {local_path.name}"
+                    uploads.mark_failed(upload_id, error=last_error)
+                    sessions.update_status(session_id, cloud_upload_status="failed")
+                    notify.emit(
+                        NotifyEvent(
+                            kind=EventKind.UPLOAD_FAILED,
+                            title=creator_label(creator),
+                            body=f"云备份失败\n{local_path.name}\n{last_error}",
+                        )
+                    )
+                    return {"upload_failed": True, "upload_error": last_error}
                 uploads.mark_done(
                     upload_id,
                     cloud_file_id=file_id,

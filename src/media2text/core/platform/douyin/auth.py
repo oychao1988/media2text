@@ -2,6 +2,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
+from media2text.core.platform.interactive_login import wait_for_user_login
 from media2text.core.playwright_env import launch_chromium
 
 SESSION_NAME = "douyin.json"
@@ -19,7 +20,12 @@ def login_interactive(workspace: Path, *, headless: bool = False) -> Path:
         context = browser.new_context()
         page = context.new_page()
         page.goto("https://www.douyin.com/", wait_until="domcontentloaded")
-        input("Press Enter after you have logged in to Douyin...")
+        wait_for_user_login(
+            page,
+            context,
+            platform="douyin",
+            prompt="Press Enter after you have logged in to Douyin...",
+        )
         context.storage_state(path=str(path))
         browser.close()
     path.chmod(0o600)

@@ -57,8 +57,9 @@ describe('formatHealthReason', () => {
 });
 
 describe('buildDaemonStats', () => {
-  it('shows queue stats only', () => {
+  it('shows queue stats and managed_by', () => {
     const stats = buildDaemonStats(baseRuntime);
+    expect(stats.find((s) => s.label === '运行方式')?.value).toContain('Desktop 内嵌');
     expect(stats.find((s) => s.label === '录后处理')?.value).toBe('0 排队 · 0 进行中');
     expect(stats.find((s) => s.label === '作品任务')?.value).toBe('0 排队 · 2 进行中');
     expect(stats.find((s) => s.label === '直播检测')).toBeUndefined();
@@ -80,6 +81,7 @@ describe('DaemonCard', () => {
       stopRuntime: async () => {},
       restartRuntime: async () => {},
       takeoverRuntime: async () => {},
+      handoffRuntime: async () => {},
     });
     render(<DaemonCard />);
     expect(screen.getByText('后台监控')).toBeInTheDocument();
@@ -103,6 +105,7 @@ describe('DaemonCard', () => {
       stopRuntime: async () => {},
       restartRuntime: async () => {},
       takeoverRuntime: async () => {},
+      handoffRuntime: async () => {},
     });
     render(<DaemonCard />);
     expect(screen.getByText('后台监控')).toBeInTheDocument();
@@ -113,7 +116,7 @@ describe('DaemonCard', () => {
     expect(screen.getByLabelText('任务详情')).toBeInTheDocument();
   });
 
-  it('shows takeover when external daemon', () => {
+  it('shows external controls when terminal daemon', () => {
     vi.mocked(useRuntime).mockReturnValue({
       runtime: {
         ...baseRuntime,
@@ -128,10 +131,11 @@ describe('DaemonCard', () => {
       stopRuntime: async () => {},
       restartRuntime: async () => {},
       takeoverRuntime: async () => {},
+      handoffRuntime: async () => {},
     });
     render(<DaemonCard />);
-    expect(screen.getByRole('button', { name: '改用 Desktop 管理' })).toBeInTheDocument();
-    expect(screen.getByText('终端独立进程（非 Desktop）')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '改用 Desktop' })).toBeInTheDocument();
+    expect(screen.getByText(/终端守护进程/)).toBeInTheDocument();
   });
 
   it('renders stopped state', () => {
@@ -140,6 +144,7 @@ describe('DaemonCard', () => {
         ...baseRuntime,
         health: 'stopped',
         health_reasons: ['monitor not running'],
+        managed_by: 'none',
         daemon: { ...baseRuntime.daemon, running: false, pid: null },
       },
       loading: false,
@@ -150,6 +155,7 @@ describe('DaemonCard', () => {
       stopRuntime: async () => {},
       restartRuntime: async () => {},
       takeoverRuntime: async () => {},
+      handoffRuntime: async () => {},
     });
     render(<DaemonCard />);
     expect(screen.getByText('后台监控')).toBeInTheDocument();

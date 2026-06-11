@@ -50,7 +50,8 @@ def test_task_scheduler_drains_priority_zero_async(tmp_path, monkeypatch) -> Non
     loop = TaskSchedulerLoop(
         cfg,
         watcher,
-        pool,
+        live_pool=pool,
+        content_pool=MagicMock(),
         post_pool=MagicMock(),
         stop=stop,
     )
@@ -275,7 +276,8 @@ def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> N
     loop = TaskSchedulerLoop(
         cfg,
         watcher,
-        pool,
+        live_pool=pool,
+        content_pool=MagicMock(),
         post_pool=MagicMock(),
         stop=stop,
     )
@@ -324,7 +326,8 @@ def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch)
     loop = TaskSchedulerLoop(
         cfg,
         watcher,
-        pool,
+        live_pool=pool,
+        content_pool=pool,
         post_pool=post_pool,
         stop=stop,
     )

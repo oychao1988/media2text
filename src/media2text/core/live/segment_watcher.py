@@ -61,31 +61,7 @@ class SegmentWatcher:
     def force_close_session(self, conn, session_id: str, session_dir: Path) -> None:
         """Finalize: force-close open parts and enqueue upload jobs."""
         self.stop_session(session_id)
-        repo = SegmentManifestRepo(conn)
-        jobs = SegmentProcessJobRepo(conn)
-        parts_dir = session_dir / "parts"
-        if not parts_dir.is_dir():
-            return
-        for path in sorted(parts_dir.glob("seg-*.m4s")):
-            m = _PART_RE.search(path.name)
-            if not m:
-                continue
-            idx = int(m.group(1))
-            row = repo.get_part(session_id, idx)
-            if row and row.state not in ("recording", "closed"):
-                continue
-            size = path.stat().st_size if path.is_file() else None
-            if row is None:
-                repo.upsert_part(
-                    session_id=session_id,
-                    part_index=idx,
-                    rel_path=part_rel_path(idx),
-                    state="recording",
-                )
-            mark_closed_with_duration(
-                repo, session_id, idx, session_dir, bytes=size
-            )
-            jobs.enqueue(session_id=session_id, part_index=idx)
+        enqueue_all_pending_hls_parts(conn, session_id, session_dir)
 
     def tick_once(self, conn) -> None:
         if not self._cfg.live.segment_pipeline.enabled:
@@ -215,3 +191,75 @@ def set_segment_watcher(watcher: SegmentWatcher | None) -> None:
 
 def get_segment_watcher() -> SegmentWatcher | None:
     return _watcher
+
+
+def enqueue_closed_hls_part(
+    conn,
+    *,
+    session_id: str,
+    session_dir: Path,
+    part_index: int,
+) -> str | None:
+    """Mark a part closed (if needed) and enqueue Tier-1 upload when the file exists."""
+    repo = SegmentManifestRepo(conn)
+    jobs = SegmentProcessJobRepo(conn)
+    rel = part_rel_path(part_index)
+    part_path = session_dir / rel
+    if not part_path.is_file() or part_path.stat().st_size == 0:
+        return None
+    row = repo.get_part(session_id, part_index)
+    if row is None:
+        repo.upsert_part(
+            session_id=session_id,
+            part_index=part_index,
+            rel_path=rel,
+            state="recording",
+        )
+    elif row.state in ("uploaded", "local_deleted"):
+        return None
+    mark_closed_with_duration(
+        repo, session_id, part_index, session_dir, bytes=part_path.stat().st_size
+    )
+    job_id = jobs.enqueue(session_id=session_id, part_index=part_index)
+    if job_id:
+        log.info(
+            "segment_part_enqueued",
+            session_id=session_id,
+            part_index=part_index,
+            job_id=job_id,
+        )
+    return job_id
+
+
+def enqueue_all_pending_hls_parts(conn, session_id: str, session_dir: Path) -> int:
+    """Close + enqueue every on-disk .m4s that is not yet uploaded."""
+    parts_dir = session_dir / "parts"
+    if not parts_dir.is_dir():
+        return 0
+    enqueued = 0
+    for path in sorted(parts_dir.glob("seg-*.m4s")):
+        m = _PART_RE.search(path.name)
+        if not m or not path.is_file() or path.stat().st_size == 0:
+            continue
+        idx = int(m.group(1))
+        if enqueue_closed_hls_part(
+            conn, session_id=session_id, session_dir=session_dir, part_index=idx
+        ):
+            enqueued += 1
+    return enqueued
+
+
+def hls_parts_pending_upload(conn, session_id: str, *, session_dir: Path | None = None) -> bool:
+    """True when manifest or disk still has segments not uploaded/deleted."""
+    repo = SegmentManifestRepo(conn)
+    parts = repo.list_parts(session_id)
+    if parts:
+        if any(p.state in ("recording", "closed") for p in parts):
+            return True
+    if session_dir is not None:
+        parts_dir = session_dir / "parts"
+        if parts_dir.is_dir():
+            for path in parts_dir.glob("seg-*.m4s"):
+                if path.is_file() and path.stat().st_size > 0:
+                    return True
+    return False

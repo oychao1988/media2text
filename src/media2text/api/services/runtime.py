@@ -30,16 +30,34 @@ def start_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, An
 
 
 def stop_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
+    status = supervisor.status(cfg)
+    if status.managed_by == "external":
+        return supervisor.stop_external(cfg)
     return supervisor.stop(cfg)
 
 
 def restart_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
+    status = supervisor.status(cfg)
+    if status.managed_by == "external":
+        stop_result = supervisor.stop_external(cfg)
+        if not stop_result.get("ok"):
+            return stop_result
+        from media2text.core.runtime.external_spawn import spawn_cli_monitor_daemon
+
+        start_result = spawn_cli_monitor_daemon(cfg)
+        return {
+            "ok": start_result.get("ok", False),
+            "managed_by": "external",
+            "stop": stop_result,
+            "start": start_result,
+        }
     stop_result = supervisor.stop(cfg)
     if not stop_result.get("ok") and stop_result.get("not_owner"):
         return stop_result
     start_result = supervisor.start(cfg)
     return {
         "ok": start_result.get("ok", False),
+        "managed_by": "embedded",
         "stop": stop_result,
         "start": start_result,
     }
@@ -67,3 +85,7 @@ def takeover_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str,
     if start.get("ok"):
         recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
     return result
+
+
+def handoff_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
+    return supervisor.handoff_to_external(cfg)

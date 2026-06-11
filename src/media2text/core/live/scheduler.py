@@ -186,8 +186,11 @@ class MonitorScheduler:
         )
 
         self._distill_pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
-        self._monitor_pool = MonitorExecutor(
-            max_workers=max(cfg.monitor.live_worker_max_parallel, 1)
+        self._live_monitor_pool = MonitorExecutor(
+            max_workers=max(cfg.monitor.live_worker_max_parallel, 1),
+        )
+        self._content_monitor_pool = MonitorExecutor(
+            max_workers=max(cfg.monitor.executor_max_parallel, 1),
         )
         self._live_loop: LiveTickLoop | None = None
         self._slow_loop: SlowTickLoop | None = None
@@ -209,6 +212,7 @@ class MonitorScheduler:
             dynamic_poll=bcfg.dynamic_poll_interval_sec,
             post_process_poll=self._cfg.live.post_process_poll_interval_sec,
             monitor_executor_parallel=self._cfg.monitor.live_worker_max_parallel,
+            content_executor_parallel=self._cfg.monitor.executor_max_parallel,
             scheduler_interval_sec=self._cfg.monitor.scheduler_interval_sec,
         )
         self._live_loop = LiveTickLoop(
@@ -221,8 +225,9 @@ class MonitorScheduler:
         self._scheduler_loop = TaskSchedulerLoop(
             self._cfg,
             self._watcher,
-            self._monitor_pool,
-            self._post_pool,
+            live_pool=self._live_monitor_pool,
+            content_pool=self._content_monitor_pool,
+            post_pool=self._post_pool,
             segment_pool=self._segment_pool,
             stop=self._stop,
         )
@@ -240,7 +245,8 @@ class MonitorScheduler:
 
     def stop(self) -> None:
         self._stop.set()
-        self._monitor_pool.shutdown(wait=False, cancel_futures=True)
+        self._live_monitor_pool.shutdown(wait=False, cancel_futures=True)
+        self._content_monitor_pool.shutdown(wait=False, cancel_futures=True)
         self._post_pool.shutdown(wait=False, cancel_futures=True)
         self._segment_pool.shutdown(wait=False, cancel_futures=True)
         set_segment_watcher(None)

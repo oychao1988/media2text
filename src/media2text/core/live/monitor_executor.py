@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -342,11 +343,19 @@ def _emit_sync_notifications(
 class MonitorExecutor:
     """Thread pool for monitor_tasks (sync/download/dynamic); priority-0 inline drain."""
 
-    def __init__(self, max_workers: int) -> None:
+    def __init__(self, max_workers: int, max_inflight: int | None = None) -> None:
         self._executor = ThreadPoolExecutor(
             max_workers=max_workers,
             thread_name_prefix="monexec",
         )
+        self._max_inflight = max_inflight if max_inflight is not None else max_workers * 2
+        self._inflight_count = 0
+        self._inflight_lock = threading.Lock()
+
+    @property
+    def inflight_available(self) -> int:
+        with self._inflight_lock:
+            return self._max_inflight - self._inflight_count
 
     def submit(
         self,
@@ -355,7 +364,18 @@ class MonitorExecutor:
         task_id: str,
         notify: NotifyService,
         watcher: MonitorWatcher | None = None,
-    ) -> None:
+    ) -> bool:
+        with self._inflight_lock:
+            if self._inflight_count >= self._max_inflight:
+                log.warning(
+                    "monitor_executor_at_capacity",
+                    task_id=task_id,
+                    inflight=self._inflight_count,
+                    max_inflight=self._max_inflight,
+                )
+                return False
+            self._inflight_count += 1
+
         def _run() -> None:
             NotifyDaemonGuard.enter()
             conn = open_db(cfg)
@@ -365,8 +385,11 @@ class MonitorExecutor:
                 )
             finally:
                 conn.close()
+                with self._inflight_lock:
+                    self._inflight_count -= 1
 
         self._executor.submit(_run)
+        return True
 
     def drain_pending(
         self,
@@ -379,10 +402,13 @@ class MonitorExecutor:
         min_priority: int = 1,
         max_priority: int | None = None,
     ) -> None:
+        can_accept = min(limit, self.inflight_available)
+        if can_accept <= 0:
+            return
         repo = MonitorTaskRepo(conn)
         repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
         claimed = repo.claim_pending(
-            limit=limit,
+            limit=can_accept,
             min_priority=min_priority,
             max_priority=max_priority,
         )
@@ -400,9 +426,12 @@ class MonitorExecutor:
         watcher: MonitorWatcher | None = None,
         limit: int = 1,
     ) -> int:
+        can_accept = min(limit, self.inflight_available)
+        if can_accept <= 0:
+            return 0
         repo = MonitorTaskRepo(conn)
         repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
-        claimed = repo.claim_pending(limit=limit, max_priority=0, min_priority=0)
+        claimed = repo.claim_pending(limit=can_accept, max_priority=0, min_priority=0)
         for task in claimed:
             self.submit(
                 cfg, task_id=task.id, notify=notify, watcher=watcher

@@ -26,6 +26,7 @@ type RuntimeState = {
   stopRuntime: () => Promise<void>;
   restartRuntime: () => Promise<void>;
   takeoverRuntime: () => Promise<void>;
+  handoffRuntime: () => Promise<void>;
 };
 
 const RuntimeContext = createContext<RuntimeState | null>(null);
@@ -88,7 +89,7 @@ export function RuntimeProvider({ children }: ProviderProps) {
       await refresh();
     } catch (err) {
       if (err instanceof ApiError && err.status === 409) {
-        showToast('已有监控在运行；若为终端独立进程，请点「改用 Desktop 管理」', 'error', 8000);
+        showToast('已有监控在运行；可改用另一种管理方式或先停止再启动', 'error', 8000);
         await refresh();
         return;
       }
@@ -138,6 +139,20 @@ export function RuntimeProvider({ children }: ProviderProps) {
     }
   }, [refresh]);
 
+  const handoffRuntime = useCallback(async () => {
+    try {
+      await apiPost('/api/runtime/handoff', undefined, true);
+      showToast('已切换为终端守护进程', 'success');
+      await refresh();
+    } catch (err) {
+      const msg =
+        err instanceof ApiError
+          ? err.message
+          : '切换失败';
+      showToast(msg, 'error');
+    }
+  }, [refresh]);
+
   const value = useMemo(
     () => ({
       runtime,
@@ -149,6 +164,7 @@ export function RuntimeProvider({ children }: ProviderProps) {
       stopRuntime,
       restartRuntime,
       takeoverRuntime,
+      handoffRuntime,
     }),
     [
       runtime,
@@ -160,6 +176,7 @@ export function RuntimeProvider({ children }: ProviderProps) {
       stopRuntime,
       restartRuntime,
       takeoverRuntime,
+      handoffRuntime,
     ],
   );
 

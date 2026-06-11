@@ -75,6 +75,7 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
         .stderr(Stdio::piped());
 
     apply_playwright_env(&mut cmd);
+    cmd.env("M2T_DESKTOP_MANAGED", "1");
 
     let mut child = cmd
         .spawn()

@@ -31,7 +31,8 @@ class TaskSchedulerLoop:
         self,
         cfg: AppConfig,
         watcher: MonitorWatcher,
-        monitor_pool: MonitorExecutor,
+        live_pool: MonitorExecutor,
+        content_pool: MonitorExecutor,
         post_pool: PostProcessExecutor,
         *,
         segment_pool: SegmentProcessExecutor | None = None,
@@ -39,7 +40,8 @@ class TaskSchedulerLoop:
     ) -> None:
         self._cfg = cfg
         self._watcher = watcher
-        self._monitor_pool = monitor_pool
+        self._live_pool = live_pool
+        self._content_pool = content_pool
         self._post_pool = post_pool
         self._segment_pool = segment_pool
         self._stop = stop
@@ -67,14 +69,14 @@ class TaskSchedulerLoop:
             log.info("reconcile_shadow", live=n_live, content=n_content)
 
         min_claim = max(1, self._cfg.monitor.live_lane_min_claim_per_tick)
-        self._monitor_pool.claim_and_submit_priority_zero(
+        self._live_pool.claim_and_submit_priority_zero(
             self._cfg,
             conn,
             notify=self._watcher._notify,
             watcher=self._watcher,
             limit=min_claim,
         )
-        self._monitor_pool.drain_pending(
+        self._live_pool.drain_pending(
             self._cfg,
             conn,
             notify=self._watcher._notify,
@@ -96,10 +98,17 @@ class TaskSchedulerLoop:
             notify=self._watcher._notify,
             limit=self._cfg.live.post_process_max_parallel,
         )
+        active_sessions = LiveSessionRepo(conn).list_active()
         content_parallel = self._cfg.monitor.executor_max_parallel
-        if LiveSessionRepo(conn).list_active():
+        if active_sessions:
             content_parallel = 0
-        self._monitor_pool.drain_pending(
+            # Release running content tasks so Playwright slots free up for live lane
+            from media2text.core.storage.repos import MonitorTaskRepo
+
+            released = MonitorTaskRepo(conn).release_running_content_tasks()
+            if released:
+                log.info("content_tasks_released_for_live", count=released)
+        self._content_pool.drain_pending(
             self._cfg,
             conn,
             notify=self._watcher._notify,

@@ -75,7 +75,9 @@ def post_runtime_stop(
     request: Request,
     cfg: AppConfig = Depends(get_cfg),
 ) -> dict:
-    result = runtime_svc.stop_runtime(cfg, _supervisor(request))
+    sup = _supervisor(request)
+    managed_by = sup.status(cfg).managed_by
+    result = runtime_svc.stop_runtime(cfg, sup)
     if result.get("not_owner"):
         raise HTTPException(status_code=403, detail=result)
     if not result.get("ok") and result.get("error") == "stop_timeout":
@@ -84,7 +86,7 @@ def post_runtime_stop(
         events_hub.publish(
             event_payload(
                 EventType.DAEMON_STOPPED,
-                extra={"managed_by": "embedded"},
+                extra={"managed_by": managed_by if managed_by != "none" else "embedded"},
             )
         )
     return result
@@ -122,6 +124,35 @@ def post_runtime_restart(
     stop = result.get("stop") or {}
     if not stop.get("ok") and stop.get("error") == "stop_timeout":
         raise HTTPException(status_code=409, detail=stop)
+    start = result.get("start") or {}
     if not result.get("ok"):
-        raise HTTPException(status_code=503, detail=result)
+        status = 409 if start.get("already_running_external") else 503
+        raise HTTPException(status_code=status, detail=result)
+    managed_by = result.get("managed_by", "embedded")
+    events_hub.publish(
+        event_payload(
+            EventType.DAEMON_STARTED,
+            extra={"managed_by": managed_by, "restart": True},
+        )
+    )
+    return result
+
+
+@router.post("/handoff")
+def post_runtime_handoff(
+    request: Request,
+    cfg: AppConfig = Depends(get_cfg),
+) -> dict:
+    """Stop embedded supervisor and spawn CLI ``monitor watch --daemon``."""
+    result = runtime_svc.handoff_runtime(cfg, _supervisor(request))
+    start = result.get("start") or {}
+    if not result.get("ok"):
+        status = 409 if start.get("already_running_external") else 503
+        raise HTTPException(status_code=status, detail=result)
+    events_hub.publish(
+        event_payload(
+            EventType.DAEMON_STARTED,
+            extra={"managed_by": "external", "handoff": True},
+        )
+    )
     return result
