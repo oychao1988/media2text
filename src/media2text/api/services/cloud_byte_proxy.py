@@ -5,6 +5,8 @@ from __future__ import annotations
 import httpx
 from starlette.responses import StreamingResponse
 
+from media2text.core.cloud.aliyundrive import DOWNLOAD_REFERER
+
 
 def stream_cloud_file(
     client,
@@ -14,7 +16,7 @@ def stream_cloud_file(
     media_type: str = "video/mp4",
 ) -> StreamingResponse:
     url = client.get_download_url(file_id)
-    headers: dict[str, str] = {}
+    headers: dict[str, str] = {"Referer": DOWNLOAD_REFERER}
     if range_header:
         headers["Range"] = range_header
     upstream = httpx.stream("GET", url, headers=headers, follow_redirects=True, timeout=60.0)

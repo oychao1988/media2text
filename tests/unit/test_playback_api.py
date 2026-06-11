@@ -62,6 +62,57 @@ def _seed_hls_session(workspace: Path, *, with_init: bool = False) -> tuple[str,
     return sid, session_dir
 
 
+def _seed_hls_multi_part_session(workspace: Path) -> tuple[str, Path]:
+    """Two-part HLS session with discontinuity (dogfood-shaped)."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_hls_multi_part",
+        profile_url="https://www.douyin.com/user/sec_hls_multi_part",
+        monitor_enabled=True,
+    )
+    session_dir = workspace / "creators" / "sec_hls_multi_part" / "live" / "20260611T110019Z"
+    parts_dir = session_dir / "parts"
+    parts_dir.mkdir(parents=True)
+    (parts_dir / "seg-00001.m4s").write_bytes(b"fake-m4s-part-1")
+    (parts_dir / "seg-00002.m4s").write_bytes(b"fake-m4s-part-2")
+    (session_dir / "init.mp4").write_bytes(b"fake-init")
+    master = session_dir / "master.m3u8"
+    master.write_text(
+        "\n".join(
+            [
+                "#EXTM3U",
+                '#EXT-X-MAP:URI="init.mp4"',
+                "#EXT-X-DISCONTINUITY",
+                "#EXTINF:600.0,",
+                "seg-00001.m4s",
+                "#EXTINF:30.76,",
+                "seg-00002.m4s",
+                "#EXT-X-ENDLIST",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r1",
+        temp_path=str(master),
+        session_dir=str(session_dir),
+        pipeline_mode="streaming",
+    )
+    for part_index, size in ((1, 16), (2, 16)):
+        SegmentManifestRepo(conn).upsert_part(
+            session_id=sid,
+            part_index=part_index,
+            rel_path=f"parts/seg-{part_index:05d}.m4s",
+            state="closed",
+            bytes=size,
+        )
+    conn.close()
+    return sid, session_dir
+
+
 def _seed_hls_session_bare_seg_uris(workspace: Path) -> str:
     """ffmpeg -hls_flags append_list writes seg-NNNNN.m4s without parts/ prefix."""
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
@@ -243,6 +294,101 @@ def _mock_cloud_stream(*, status_code: int, content: bytes, content_range: str |
     return mock_upstream
 
 
+def test_playback_m3u8_preserves_discontinuity_tags(api_client, workspace) -> None:
+    sid, _ = _seed_hls_multi_part_session(workspace)
+    r = api_client.get(f"/api/sessions/{sid}/playback.m3u8")
+    assert r.status_code == 200
+    assert "#EXT-X-DISCONTINUITY" in r.text
+    assert f"/api/sessions/{sid}/parts/1" in r.text
+    assert f"/api/sessions/{sid}/parts/2" in r.text
+
+
+def test_get_part_cloud_proxies_range_part2(api_client, workspace) -> None:
+    sid, session_dir = _seed_hls_multi_part_session(workspace)
+    (session_dir / "parts" / "seg-00002.m4s").unlink()
+
+    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
+    SegmentManifestRepo(conn).upsert_part(
+        session_id=sid,
+        part_index=2,
+        rel_path="parts/seg-00002.m4s",
+        state="local_deleted",
+        bytes=16,
+    )
+    conn.close()
+
+    mock_resp = StreamingResponse(
+        iter([b"fake-m4s-part-2"]),
+        status_code=206,
+        headers={"Content-Range": "bytes 0-15/16"},
+        media_type="video/mp4",
+    )
+    mock_upload = MagicMock(cloud_file_id="cf-part-2")
+    with (
+        patch(
+            "media2text.api.routes.playback.find_part_upload",
+            return_value=mock_upload,
+        ),
+        patch(
+            "media2text.api.routes.playback._stream_cloud_upload",
+            return_value=mock_resp,
+        ) as mock_stream,
+    ):
+        r = api_client.get(f"/api/sessions/{sid}/parts/2", headers={"Range": "bytes=0-15"})
+    assert r.status_code == 206
+    assert r.content == b"fake-m4s-part-2"
+    mock_stream.assert_called_once()
+    assert mock_stream.call_args.kwargs["range_header"] == "bytes=0-15"
+    assert r.headers.get("location") is None
+
+
+def test_multi_part_cloud_proxy_part1_and_part2_return_206(api_client, workspace) -> None:
+    """US10: both parts use Range proxy (not 302) when local segments are missing."""
+    sid, session_dir = _seed_hls_multi_part_session(workspace)
+    for part_index in (1, 2):
+        (session_dir / "parts" / f"seg-{part_index:05d}.m4s").unlink()
+
+    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
+    for part_index in (1, 2):
+        SegmentManifestRepo(conn).upsert_part(
+            session_id=sid,
+            part_index=part_index,
+            rel_path=f"parts/seg-{part_index:05d}.m4s",
+            state="uploaded",
+            bytes=16,
+        )
+    conn.close()
+
+    def _fake_stream(_cfg, upload, *, range_header, media_type="video/mp4"):
+        part_num = upload.cloud_file_id.split("-")[-1]
+        body = f"part-{part_num}".encode()
+        return StreamingResponse(
+            iter([body]),
+            status_code=206,
+            headers={"Content-Range": f"bytes 0-{len(body) - 1}/{len(body)}"},
+            media_type=media_type,
+        )
+
+    def _find_upload(_conn, *, session_id, part_index):
+        return MagicMock(cloud_file_id=f"cf-part-{part_index}")
+
+    with patch(
+        "media2text.api.routes.playback.find_part_upload",
+        side_effect=_find_upload,
+    ), patch(
+        "media2text.api.routes.playback._stream_cloud_upload",
+        side_effect=_fake_stream,
+    ):
+        for part_index in (1, 2):
+            r = api_client.get(
+                f"/api/sessions/{sid}/parts/{part_index}",
+                headers={"Range": "bytes=0-"},
+            )
+            assert r.status_code == 206, f"part {part_index}"
+            assert r.headers.get("location") is None
+            assert r.content == f"part-{part_index}".encode()
+
+
 def test_get_part_cloud_proxies_range(api_client, workspace) -> None:
     sid, session_dir = _seed_hls_session(workspace)
     (session_dir / "parts" / "seg-00001.m4s").unlink()
@@ -383,6 +529,7 @@ def test_playback_m3u8_from_cloud_when_local_master_missing(api_client, workspac
     ) + "\n"
 
     mock_http = MagicMock()
+    mock_http.status_code = 200
     mock_http.text = cloud_text
     drive = MagicMock()
     drive.get_download_url.return_value = "https://cloud.example/master.m3u8"
@@ -391,10 +538,11 @@ def test_playback_m3u8_from_cloud_when_local_master_missing(api_client, workspac
 
     with (
         patch("media2text.api.routes.playback.AliyunDriveClient.open", return_value=drive),
-        patch("media2text.api.routes.playback.httpx.get", return_value=mock_http),
+        patch("media2text.api.routes.playback.httpx.get", return_value=mock_http) as mock_get,
     ):
         r = api_client.get(f"/api/sessions/{sid}/playback.m3u8")
     assert r.status_code == 200
+    assert mock_get.call_args.kwargs["headers"]["Referer"] == "https://www.aliyundrive.com/"
     assert f"/api/sessions/{sid}/parts/1" in r.text
     assert "parts/seg-00001.m4s" not in r.text
 

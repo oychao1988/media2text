@@ -17,7 +17,7 @@ from media2text.api.services.session_playback import (
     find_m3u8_upload,
     find_part_upload,
 )
-from media2text.core.cloud.aliyundrive import AliyunDriveClient
+from media2text.core.cloud.aliyundrive import AliyunDriveClient, DOWNLOAD_REFERER
 from media2text.core.config import AppConfig
 from media2text.core.live.playback_remux import (
     playback_mp4_is_fresh,
@@ -194,7 +194,10 @@ def _fetch_cloud_m3u8_text(cfg: AppConfig, upload) -> str:
         raise FileNotFoundError("aliyundrive token missing")
     with AliyunDriveClient.open(token_path) as client:
         url = client.get_download_url(str(upload.cloud_file_id))
-        return httpx.get(url, timeout=30.0).text
+        resp = httpx.get(url, headers={"Referer": DOWNLOAD_REFERER}, timeout=30.0)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"cloud m3u8 fetch failed {resp.status_code}")
+        return resp.text
 
 
 @router.get("/{session_id}/playback.m3u8")

@@ -44,6 +44,7 @@ def test_stream_cloud_file_forwards_range_header():
     mock_stream.assert_called_once()
     call_kwargs = mock_stream.call_args.kwargs
     assert call_kwargs["headers"]["Range"] == "bytes=0-99"
+    assert call_kwargs["headers"]["Referer"] == "https://www.aliyundrive.com/"
     assert resp.status_code == 206
 
 

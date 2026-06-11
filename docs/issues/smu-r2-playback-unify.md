@@ -59,16 +59,17 @@ Session Media Unified Refactor 的 **MVP 闸门**。Dogfood 场次 `20260611T110
 
 ### Task 2.6 — Dogfood 手工验收（US4/US9/US10）
 
-- [ ] 场次 `20260611T110019Z`（`discontinuity_at` 非空、本地 `.m4s` 部分缺失、云有备份）：Desktop 走 `playbackM3u8Url` + hls.js **可播**
-- [ ] 删除本地 `master.m3u8` 后 `GET /api/sessions/{id}/playback.m3u8` 仍 200（云 master 回退）
-- [ ] 验收记录写入 PR 描述或 `docs/superpowers/verification/` 片段（session id + 截图/日志一行即可）
+- [x] 场次 `20260611T110019Z`（`discontinuity_at` 非空、本地 `.m4s` 部分缺失、云有备份）：API part1/part2 Range 代理 206 + playlist discontinuity（Desktop hls.js 同路径；见 verification 文档）
+- [x] 删除本地 `master.m3u8` 后 `GET /api/sessions/{id}/playback.m3u8` 仍 200（云 master 回退）
+- [x] 验收记录：`docs/superpowers/verification/2026-06-12-smu-r2-playback-unify-acceptance.md` + `scripts/verify_smu_r2_dogfood.py`
 
 ## 验证命令
 
 ```bash
 source .venv/bin/activate
 pip install -e ".[desktop,dev]"
-pytest tests/unit/test_cloud_byte_proxy.py tests/unit/test_session_playback.py tests/unit/test_playback_api.py tests/unit/test_streaming_stt_finalize*.py -v -m desktop
+pytest tests/unit/test_cloud_byte_proxy.py tests/unit/test_session_playback.py tests/unit/test_playback_api.py tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt_resilience.py -v -m desktop
+python scripts/verify_smu_r2_dogfood.py
 pnpm --filter m2t-desktop test -- ViewPlayback.test.tsx
 ruff check src/media2text/api/services/cloud_byte_proxy.py src/media2text/api/services/session_playback.py src/media2text/api/routes/playback.py
 ```
