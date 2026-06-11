@@ -92,7 +92,7 @@ cat data/.monitor-watch.lock   # 单实例 PID
 
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`。
 
-直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy`，`config.example.yaml` 推荐 **`streaming` + `live.media.format=hls` + `segment_pipeline.enabled=true`**）。**streaming**（抖音 / B 站）：并行录制 + Deepgram WS 实时转写；`live.media.format=hls` 时输出 `master.m3u8` + `parts/seg-*.m4s`，段闭合由 Tier-1 `segment_process` 上传并删本地，`post_process` 仅 summarize（无整文件 remux/upload）；`format=flv` 时 finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe。需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费），B 站另需 `auth login --platform bilibili`。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。`media2text doctor --json` 在 `pipeline_mode=legacy` 时输出 `live_pipeline_deprecated` 警告。手动清队列：`media2text post-process run [--limit N] --json`。`agent-manifest.json` 直播项含 `playback_mode`（`hls`|`flv`）与 `parts[]` 摘要。Desktop/API：`GET /api/sessions/{id}/playback.m3u8`；CLI：`media2text live download <session_id> --parts all [--merge] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下 checkpoint + offset 续传（#101）；STT 断线可重连或降级 legacy finalize。规格：[live-segment-media-design](docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md)。
+直播收尾：`live.pipeline_mode` 控制路径（代码默认 `legacy` 仅只读兼容旧场次，`config.example.yaml` 推荐新用户 **`streaming` + `live.media.format=hls` + `segment_pipeline.enabled=true`**）。**streaming**（抖音 / B 站）：并行录制 + Deepgram WS 实时转写；`live.media.format=hls` 时输出 `master.m3u8` + `parts/seg-*.m4s`，段闭合由 Tier-1 `segment_process` 上传并删本地，`post_process` 仅 summarize（无整文件 remux/upload）；`format=flv` 时 finalize 保留 FLV、封存 transcript、跳过 remux/post-process transcribe。需 `DEEPGRAM_API_KEY` 与 `pip install -e ".[transcribe-deepgram]"`（流式按用量计费），B 站另需 `auth login --platform bilibili`。**legacy**：finalize remux 为 MP4 + 入队 `post_process_jobs`；转写/摘要/云盘在 drain 中异步执行（summarize ∥ upload）。`media2text doctor --json` 在 `pipeline_mode=legacy` 时输出 `live_pipeline_deprecated` 警告。手动清队列：`media2text post-process run [--limit N] --json`。`agent-manifest.json` 直播项含 `playback_mode`（`hls`|`flv`）与 `parts[]` 摘要。Desktop/API：`GET /api/sessions/{id}/playback.m3u8`；CLI：`media2text live download <session_id> --parts all [--merge] --json`。通知：首次 API offline → `live_ended`；满 `live.offline_confirm_sec`（默认 45s）仍 offline → `recording_completed`（streaming 下可同时 `transcribe_completed`）；`summarize_completed` 在 worker 完成。ffmpeg 重连在 streaming 下 checkpoint + offset 续传（#101）；STT 断线可重连或降级 legacy finalize。规格：[live-segment-media-design](docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md)。
 
 ### 3. 手动作品流水线（单博主）
 
@@ -282,7 +282,7 @@ monitor:
   live_poll_interval_sec: 60
   vod_poll_interval_sec: 300
 live:
-  pipeline_mode: legacy           # legacy | streaming（example 推荐 streaming）
+  pipeline_mode: legacy           # legacy 仅兼容旧数据 | streaming（example 推荐 streaming+hls）
   transcribe_on_complete: false   # legacy 录后转写；streaming 必须 false
 transcribe:
   engine: whisper                 # whisper | openai | deepgram

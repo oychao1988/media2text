@@ -2015,9 +2015,21 @@ class LiveRecordingCore:
             "job_id": job_id,
         }
 
+    def _session_pipeline_mode(self, session_id: str) -> str:
+        row = self._sessions.get(session_id)
+        if row and row.pipeline_mode:
+            return row.pipeline_mode.strip().lower()
+        return self._cfg.live.snapshot_pipeline_mode()
+
     def _finalize_recording_legacy(
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
+        if self._session_pipeline_mode(session_id) == "legacy":
+            log.warning(
+                "live_pipeline_deprecated",
+                mode="legacy",
+                hint="use streaming+hls; see config.example.yaml",
+            )
         proc = self._processes.pop(session_id, None)
         if proc is not None:
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)

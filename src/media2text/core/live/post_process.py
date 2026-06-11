@@ -27,6 +27,8 @@ from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
 
+_LIVE_PIPELINE_DEPRECATED_HINT = "use streaming+hls; see config.example.yaml"
+
 
 def _transcript_exists(media: Path) -> bool:
     return media.with_suffix(".transcript.json").is_file()
@@ -172,6 +174,13 @@ def run_post_process_job(
                 return {}
             wconn = open_db(cfg)
             try:
+                session = LiveSessionRepo(wconn).get(job.session_id)
+                if session and (session.pipeline_mode or "").strip().lower() == "legacy":
+                    log.warning(
+                        "live_pipeline_deprecated",
+                        mode="legacy",
+                        hint=_LIVE_PIPELINE_DEPRECATED_HINT,
+                    )
                 PostProcessJobRepo(wconn).update_stage(job_id, stage="cloud_upload")
                 with stage_event(
                     wconn, session_id=job.session_id, stage="cloud_upload", job_id=job_id
@@ -192,6 +201,12 @@ def run_post_process_job(
                 wconn.close()
 
         hls_session = is_hls_session_media(media)
+        if hls_session and cfg.aliyundrive.enabled:
+            log.warning(
+                "live_pipeline_deprecated",
+                mode="hls_whole_file_upload",
+                hint=_LIVE_PIPELINE_DEPRECATED_HINT,
+            )
         if creator and (has_transcript or (cfg.aliyundrive.enabled and not hls_session)):
             futures = {}
             with ThreadPoolExecutor(max_workers=2) as pool:

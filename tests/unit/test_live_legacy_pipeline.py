@@ -65,11 +65,17 @@ def test_legacy_single_flv_remux_to_mp4(tmp_path, monkeypatch) -> None:
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
         patch("media2text.core.live.recording.concat_to_mp4") as mock_concat,
+        patch("media2text.core.live.recording.log") as mock_log,
         patch("media2text.core.manifest.refresh_manifest"),
     ):
         meta = core._finalize_recording(sid, str(flv), 4242)
 
     assert meta is not None
+    mock_log.warning.assert_any_call(
+        "live_pipeline_deprecated",
+        mode="legacy",
+        hint="use streaming+hls; see config.example.yaml",
+    )
     assert meta["path"].endswith(".mp4")
     mock_remux.assert_called_once()
     mock_concat.assert_not_called()
