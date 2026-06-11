@@ -1,7 +1,7 @@
 # Live Segment Media — 压缩 PoC 验收（LSM-0 / S6）
 
-**日期:** 2026-06-09（Apple Silicon 补跑：2026-06-12，#297）  
-**Issue:** [#269](https://github.com/oychao1988/media2text/issues/269)（基线）、[#297](https://github.com/oychao1988/media2text/issues/297)（codec 矩阵）  
+**日期:** 2026-06-09（Apple Silicon 补跑：待定 [#305](https://github.com/oychao1988/media2text/issues/305)，#297 Intel 矩阵：2026-06-12）  
+**Issue:** [#269](https://github.com/oychao1988/media2text/issues/269)（基线）、[#297](https://github.com/oychao1988/media2text/issues/297)（codec 矩阵）、[#305](https://github.com/oychao1988/media2text/issues/305)（Apple Silicon 补跑）  
 **脚本:** `scripts/benchmark_live_compress.py`  
 **规格:** [live-segment-media-pipeline-design §7](../specs/2026-06-09-live-segment-media-pipeline-design.md)
 
@@ -30,7 +30,7 @@ CLI：`--video-codec hevc_videotoolbox|h264_videotoolbox|libx264`
 
 | video_codec | 原片 (B) | 输出 (B) | size_ratio | encode_realtime_factor | cpu_pct | s6_pass | 备注 |
 |-------------|----------|----------|------------|------------------------|---------|---------|------|
-| `hevc_videotoolbox` | — | — | — | — | — | **skipped** | 本地无 Apple Silicon 硬件；须在 M 系列 Mac 上补跑 |
+| `hevc_videotoolbox` | — | — | — | — | — | **skipped** | 待 [#305](https://github.com/oychao1988/media2text/issues/305) 在 M 系列 Mac 补跑 |
 | `libx264` | — | — | — | — | — | **skipped** | 同上 |
 
 ### Intel（Core i7-8750H，x86_64 macOS）
@@ -43,7 +43,17 @@ CLI：`--video-codec hevc_videotoolbox|h264_videotoolbox|libx264`
 
 **运行环境（Intel 行）:** macOS x86_64，Intel Core i7-8750H；`ffmpeg` 含 `hevc_videotoolbox` / `h264_videotoolbox`。
 
-**状态:** **S6 未通过** — Apple Silicon 上 `hevc_videotoolbox` 仍待实测；Intel 上 HEVC VT 不可用，H.264 VT / x264 仅验证脚本与速度门槛，**不得**作为 `encode.mode=compress` 默认依据。
+**状态:** **S6 未通过** — Apple Silicon 补跑见 [#305](https://github.com/oychao1988/media2text/issues/305)；Intel 上 HEVC VT 不可用，H.264 VT / x264 仅验证脚本与速度门槛，**不得**作为 `encode.mode=compress` 默认依据。
+
+## R0 交付完成度（对照 SMU spec §7）
+
+| 项 | 状态 | 负责 Issue |
+|----|------|------------|
+| Benchmark codec 矩阵脚本 | ✅ 完成 | #297 |
+| Intel fallback 矩阵实测 | ✅ 完成（S6 未过） | #297 |
+| Apple Silicon S6 重跑 | ⏳ 待 M 系列硬件 | #305 |
+| `encode.mode=compress` 门禁文档化 | ✅ 保持 copy | #297 + 本表 |
+| 接入 `live.encode` / hls_recorder | ⏭ 非 R0 | #298 |
 
 ### 补跑命令
 
@@ -81,6 +91,7 @@ python scripts/benchmark_live_compress.py \
 source .venv/bin/activate
 pip install -e ".[dev]"
 ruff check scripts/benchmark_live_compress.py   # exit 0
+pytest tests/unit/test_benchmark_live_compress.py -v   # exit 0
 python scripts/benchmark_live_compress.py --help   # exit 0
 python scripts/benchmark_live_compress.py            # exit 0, prints help
 test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md

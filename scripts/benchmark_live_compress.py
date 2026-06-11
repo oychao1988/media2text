@@ -30,6 +30,17 @@ S6_REALTIME_FACTOR_MIN = 1.0
 
 VIDEO_CODECS = ("hevc_videotoolbox", "h264_videotoolbox", "libx264")
 
+
+def compute_s6_result(*, size_ratio: float, encode_realtime_factor: float) -> dict[str, bool]:
+    """Return S6 gate booleans used by run_benchmark and unit tests."""
+    s6_size_pass = size_ratio <= S6_SIZE_RATIO_MAX
+    s6_realtime_pass = encode_realtime_factor >= S6_REALTIME_FACTOR_MIN
+    return {
+        "s6_size_pass": s6_size_pass,
+        "s6_realtime_pass": s6_realtime_pass,
+        "s6_pass": s6_size_pass and s6_realtime_pass,
+    }
+
 _CODEC_ARGS: dict[str, list[str]] = {
     "hevc_videotoolbox": ["-c:v", "hevc_videotoolbox"],
     "h264_videotoolbox": ["-c:v", "h264_videotoolbox"],
@@ -165,6 +176,10 @@ def run_benchmark(
         encode_realtime_factor = duration_sec / elapsed if elapsed > 0 else 0.0
         cpu_pct = sum(cpu_samples) / len(cpu_samples) if cpu_samples else None
 
+        s6 = compute_s6_result(
+            size_ratio=size_ratio,
+            encode_realtime_factor=encode_realtime_factor,
+        )
         return {
             "sample_path": str(sample_path.resolve()),
             "video_codec": video_codec,
@@ -175,10 +190,7 @@ def run_benchmark(
             "encode_wall_sec": round(elapsed, 2),
             "encode_realtime_factor": round(encode_realtime_factor, 3),
             "cpu_pct": round(cpu_pct, 1) if cpu_pct is not None else None,
-            "s6_size_pass": size_ratio <= S6_SIZE_RATIO_MAX,
-            "s6_realtime_pass": encode_realtime_factor >= S6_REALTIME_FACTOR_MIN,
-            "s6_pass": size_ratio <= S6_SIZE_RATIO_MAX
-            and encode_realtime_factor >= S6_REALTIME_FACTOR_MIN,
+            **s6,
         }
 
 
