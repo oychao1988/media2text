@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Literal
 
+from fastapi import HTTPException
+from starlette.responses import StreamingResponse
+
 from media2text.api.security import safe_workspace_path, workspace_rel
+from media2text.api.services.cloud_byte_proxy import stream_cloud_file
 from media2text.core.cloud.aliyundrive import AliyunDriveClient
 from media2text.core.config import AppConfig
 from media2text.core.manifest import refresh_manifest
@@ -79,6 +84,121 @@ def _primary_cloud_upload(conn, session_id: str):
             if row.file_kind == kind and row.upload_status == "done" and row.cloud_file_id:
                 return row
     return None
+
+
+def _load_agent_manifest(workspace: Path, sec_uid: str) -> dict[str, Any] | None:
+    path = workspace / "creators" / sec_uid / "agent-manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _path_matches_workspace_rel(workspace: Path, raw: str | None, rel_path: str) -> bool:
+    if not raw:
+        return False
+    rel = workspace_rel(workspace, raw)
+    if rel == rel_path:
+        return True
+    return raw == rel_path or raw.endswith(f"/{rel_path}") or raw.endswith(rel_path)
+
+
+def _cloud_file_from_manifest_entry(entry: dict[str, Any] | None) -> str | None:
+    if not entry:
+        return None
+    status = entry.get("cloud_upload_status")
+    file_id = entry.get("cloud_file_id")
+    rel_path = entry.get("cloud_relative_path")
+    if _cloud_ready(status, file_id, relative_path=rel_path):
+        return str(file_id) if file_id else None
+    return None
+
+
+def resolve_cloud_file_for_media_path(
+    cfg: AppConfig,
+    conn,
+    workspace_rel_path: str,
+) -> str | None:
+    """Resolve Aliyun cloud_file_id for a workspace-relative media path."""
+    ws = cfg.ensure_workspace()
+    for row in conn.execute(
+        """
+        SELECT cloud_file_id, local_path, upload_status
+        FROM cloud_uploads
+        WHERE upload_status = 'done' AND cloud_file_id IS NOT NULL
+        """
+    ).fetchall():
+        if _path_matches_workspace_rel(ws, row["local_path"], workspace_rel_path):
+            return row["cloud_file_id"]
+
+    for row in conn.execute(
+        """
+        SELECT cloud_file_id, cloud_upload_status, local_path, temp_path
+        FROM live_sessions
+        WHERE cloud_file_id IS NOT NULL
+        """
+    ).fetchall():
+        if not _cloud_ready(row["cloud_upload_status"], row["cloud_file_id"]):
+            continue
+        if _path_matches_workspace_rel(ws, row["local_path"], workspace_rel_path):
+            return row["cloud_file_id"]
+        if _path_matches_workspace_rel(ws, row["temp_path"], workspace_rel_path):
+            return row["cloud_file_id"]
+
+    parts = Path(workspace_rel_path).parts
+    if len(parts) >= 2 and parts[0] == "creators":
+        sec_uid = parts[1]
+        manifest = _load_agent_manifest(ws, sec_uid)
+        if manifest:
+            for key in ("live", "items", "archives"):
+                for entry in manifest.get(key) or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    media_path = entry.get("media_path") or entry.get("local_path")
+                    if _path_matches_workspace_rel(ws, media_path, workspace_rel_path):
+                        found = _cloud_file_from_manifest_entry(entry)
+                        if found:
+                            return found
+    return None
+
+
+def try_cloud_media_range(
+    cfg: AppConfig,
+    conn,
+    *,
+    workspace_rel_path: str,
+    range_header: str | None,
+) -> StreamingResponse | None:
+    if not cfg.aliyundrive.enabled:
+        return None
+    cloud_file_id = resolve_cloud_file_for_media_path(cfg, conn, workspace_rel_path)
+    if not cloud_file_id:
+        return None
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return None
+    ext = Path(workspace_rel_path).suffix.lower()
+    media_type = {
+        ".flv": "video/x-flv",
+        ".mp4": "video/mp4",
+        ".m4s": "video/mp4",
+        ".webm": "video/webm",
+    }.get(ext, "application/octet-stream")
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            return stream_cloud_file(
+                client,
+                cloud_file_id,
+                range_header=range_header,
+                media_type=media_type,
+            )
+    except RuntimeError:
+        raise HTTPException(status_code=502, detail="cloud media unavailable") from None
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def delete_local_media(

@@ -8,7 +8,8 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
-from media2text.api.deps import get_cfg
+from media2text.api.deps import get_cfg, get_db
+from media2text.api.services.history_media import try_cloud_media_range
 from media2text.api.security import safe_workspace_path, workspace_rel
 from media2text.core.config import AppConfig
 
@@ -86,10 +87,19 @@ def get_media(
     path: str = Query(..., description="Workspace-relative media path"),
     range: str | None = Header(None, alias="Range"),
     cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
 ) -> Response:
     ws = cfg.ensure_workspace()
     target = safe_workspace_path(ws, path)
     if not target.is_file():
+        cloud_resp = try_cloud_media_range(
+            cfg,
+            conn,
+            workspace_rel_path=path,
+            range_header=range,
+        )
+        if cloud_resp is not None:
+            return cloud_resp
         raise HTTPException(status_code=404, detail="file not found")
 
     size = target.stat().st_size

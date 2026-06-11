@@ -131,6 +131,29 @@ describe('ViewPlayback hls.js', () => {
     expect(document.querySelector('video')).toBeTruthy();
   });
 
+  it('shows cloud fallback hint when vod fails on cloud-only session', async () => {
+    const { mediaUrl } = await import('../../lib/api');
+    vi.mocked(mediaUrl).mockRejectedValueOnce(new Error('network'));
+    render(
+      <ViewPlayback
+        active
+        creatorName="主播"
+        session={baseSession({
+          kind: 'vod',
+          media_format: 'mp4',
+          media_available: false,
+          cloud_available: true,
+          media_path: 'creators/sec/videos/1.mp4',
+          local_path: null,
+          temp_path: null,
+        })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/云端视频不可用/)).toBeInTheDocument();
+    });
+  });
+
   it('shows cloud fallback hint when hls fails on cloud-only session', async () => {
     const { playbackM3u8Url } = await import('../../lib/api');
     vi.mocked(playbackM3u8Url).mockRejectedValueOnce(new Error('network'));
