@@ -46,7 +46,7 @@ Spec **U6**：新录走 `streaming+hls`；`pipeline_mode=legacy` 仅只读兼容
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/unit/test_post_process_hls_skip_upload.py tests/unit/test_segment_finalize_sidecar.py tests/unit/test_streaming_stt_finalize*.py tests/unit/test_api_history_media.py -v
+pytest tests/unit/test_post_process_hls_skip_upload.py tests/unit/test_segment_finalize_sidecar.py tests/unit/test_live_legacy_pipeline.py tests/unit/test_api_history_media.py -v
 ruff check src/media2text/core/live/recording.py src/media2text/core/live/post_process.py
 ```
 
