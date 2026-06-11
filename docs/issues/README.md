@@ -212,6 +212,25 @@
 
 **合并顺序**：#246 → #247 → #248 → #249 → #266（GF-5 依赖 GF-4）。
 
+### Session Media Unified Refactor（2026-06-11，已交付）
+
+规格：[session-media-unified-refactor-design](../superpowers/specs/2026-06-11-session-media-unified-refactor-design.md) · 计划：[session-media-unified](../superpowers/plans/2026-06-11-session-media-unified.md) · 验收：[session-media-unified-acceptance](../superpowers/verification/2026-06-11-session-media-unified-acceptance.md)
+
+**前置 Epic**：`live-segment-media`（#269–#274）+ `live-segment-media-gap-fix`（#281–#284）
+
+| 顺序 | GitHub | PR | 文件 | 分支 |
+|------|--------|-----|------|------|
+| R0 | [#297](https://github.com/oychao1988/media2text/issues/297) | [#303](https://github.com/oychao1988/media2text/pull/303) | [smu-r0-encode-poc](./smu-r0-encode-poc.md) | `issue-297-smu-r0-encode-poc` |
+| R0b | [#305](https://github.com/oychao1988/media2text/issues/305)（optional） | — | [smu-r0b-apple-silicon-encode-poc](./smu-r0b-apple-silicon-encode-poc.md) | `issue-305-smu-r0b-apple-silicon-encode-poc` |
+| R2 | [#296](https://github.com/oychao1988/media2text/issues/296) | [#304](https://github.com/oychao1988/media2text/pull/304) | [smu-r2-playback-unify](./smu-r2-playback-unify.md) | `issue-296-smu-r2-playback-unify` |
+| R1 | [#298](https://github.com/oychao1988/media2text/issues/298) | [#307](https://github.com/oychao1988/media2text/pull/307) | [smu-r1-config-encode](./smu-r1-config-encode.md) | `issue-298-smu-r1-config-encode` |
+| R3 | [#299](https://github.com/oychao1988/media2text/issues/299) | [#308](https://github.com/oychao1988/media2text/pull/308) | [smu-r3-vod-cloud-playback](./smu-r3-vod-cloud-playback.md) | `issue-299-smu-r3-vod-cloud-playback` |
+| R4 | [#300](https://github.com/oychao1988/media2text/issues/300) | [#309](https://github.com/oychao1988/media2text/pull/309) | [smu-r4-legacy-deprecation](./smu-r4-legacy-deprecation.md) | `issue-300-smu-r4-legacy-deprecation` |
+| R5 | [#301](https://github.com/oychao1988/media2text/issues/301) | [#310](https://github.com/oychao1988/media2text/pull/310) | [smu-r5-hardening-cleanup](./smu-r5-hardening-cleanup.md) | `issue-301-smu-r5-hardening-cleanup` |
+| R6 | [#302](https://github.com/oychao1988/media2text/issues/302) | （本 PR） | [smu-r6-epic-acceptance](./smu-r6-epic-acceptance.md) | `issue-302-smu-r6-epic-acceptance` |
+
+**合并顺序**：#296 / #297 可并行 → #298 → #299 / #300 可并行 → #301 → #302（Epic 验收）。Epic 闸门：`python scripts/epic_verify.py session-media-unified`
+
 ### Monitor Daemon v3 — 观测/执行拆分（2026-06-05，待实现）
 
 规格：[monitor-daemon-observe-execute-design](../superpowers/specs/2026-06-05-monitor-daemon-observe-execute-design.md) · 计划：[monitor-daemon-v3](../superpowers/plans/2026-06-05-monitor-daemon-v3.md)
