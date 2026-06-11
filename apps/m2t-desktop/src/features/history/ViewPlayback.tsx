@@ -129,7 +129,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       (session.media_available || session.cloud_available),
   );
   const canPlayVideo = Boolean(
-    (canPlayHls || (session?.media_available && !mediaMissing)) &&
+    (canPlayHls || cloudOnly || (session?.media_available && !mediaMissing)) &&
       !isGallery &&
       !isListed &&
       session?.session_id,
@@ -138,7 +138,11 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     canPlayVideo && mediaPath && !isHls && mediaPath.toLowerCase().endsWith('.flv'),
   );
   const canPlayNative = Boolean(
-    canPlayVideo && !isHls && !canPlayFlv && mediaPath && session?.media_available,
+    canPlayVideo &&
+      !isHls &&
+      !canPlayFlv &&
+      mediaPath &&
+      (session?.media_available || sessionCloudAvailable(session)),
   );
   const canShowGallery = Boolean(
     mediaPath && session?.media_available && !mediaMissing && isGallery,
@@ -338,7 +342,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
                 <p>历史录播</p>
                 <p className="video-placeholder-hint">选择历史场次以回放</p>
               </div>
-            ) : (mediaMissing || !session.media_available) && !canPlayHls ? (
+            ) : (mediaMissing || !session.media_available) && !canPlayHls && !cloudOnly ? (
               <div className="video-placeholder">
                 <p>{cloudOnly ? '仅云端可用' : '视频文件缺失'}</p>
                 <p className="video-placeholder-hint">
@@ -352,7 +356,9 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
                 <p className="hint">回放加载失败</p>
                 {cloudOnly ? (
                   <p className="video-placeholder-hint">
-                    云端分段不可用，可尝试从云端下载
+                    {isHls
+                      ? '云端分段不可用，可尝试从云端下载'
+                      : '云端视频不可用，可尝试从云端下载'}
                   </p>
                 ) : null}
               </div>
