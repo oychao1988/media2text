@@ -43,8 +43,9 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 ruff check scripts/benchmark_live_compress.py
 python scripts/benchmark_live_compress.py --help
-python scripts/benchmark_live_compress.py --sample data/creators/<sec>/live/<sample>.flv --video-codec hevc_videotoolbox --json
+python scripts/benchmark_live_compress.py
 test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
+# 人工（需本地 FLV 样本）: python scripts/benchmark_live_compress.py --sample "$SAMPLE" --video-codec hevc_videotoolbox --json
 ```
 
 ## 非目标范围
