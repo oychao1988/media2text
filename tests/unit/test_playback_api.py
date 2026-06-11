@@ -209,58 +209,6 @@ def test_playback_init_streams_local_file(api_client, workspace) -> None:
     assert r.content == (session_dir / "init.mp4").read_bytes()
 
 
-def test_cloud_init_redirect_resolves_upload_record(workspace) -> None:
-    cfg = AppConfig.model_validate({"workspace": str(workspace)})
-    cfg.aliyundrive.enabled = True
-    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
-    cid = CreatorRepo(conn).add(
-        sec_uid="sec_cloud_init",
-        profile_url="https://x",
-        monitor_enabled=True,
-    )
-    sid = LiveSessionRepo(conn).create(
-        creator_id=cid,
-        room_id="r1",
-        temp_path="/x",
-        session_dir=str(workspace / "live"),
-    )
-    from media2text.core.storage.repos import CloudUploadRepo
-
-    upload_id = CloudUploadRepo(conn).create(
-        session_id=sid,
-        creator_id=cid,
-        platform="douyin",
-        file_name="init.mp4",
-        file_kind="init_mp4",
-        size=9,
-        pre_hash="abc",
-    )
-    CloudUploadRepo(conn).mark_done(
-        upload_id,
-        cloud_file_id="cloud-init",
-        cloud_relative_path="media2text/douyin/u/live/init.mp4",
-    )
-    conn.close()
-    cfg.aliyundrive_token_path().write_text('{"refresh_token":"x"}', encoding="utf-8")
-
-    from media2text.api.routes.playback import _cloud_init_redirect
-
-    client = MagicMock()
-    client.get_download_url.return_value = "https://cloud.example/init.mp4"
-    client.__enter__ = MagicMock(return_value=client)
-    client.__exit__ = MagicMock(return_value=False)
-    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
-    with patch(
-        "media2text.api.routes.playback.AliyunDriveClient.open",
-        return_value=client,
-    ):
-        redirect = _cloud_init_redirect(cfg, conn, session_id=sid)
-    conn.close()
-    assert redirect is not None
-    assert redirect.status_code == 302
-    assert redirect.headers["location"] == "https://cloud.example/init.mp4"
-
-
 def _enable_aliyun_for_client(api_client, workspace: Path) -> AppConfig:
     cfg = api_client.app.dependency_overrides[get_cfg]()
     cfg.aliyundrive.enabled = True
@@ -465,6 +413,74 @@ def test_get_part_cloud_proxies_full_range(api_client, workspace) -> None:
     assert r.status_code == 206
     assert captured.get("range") == "bytes=0-"
     assert r.headers.get("location") is None
+
+
+def test_playback_part_cloud_upstream_failure_returns_502(api_client, workspace) -> None:
+    sid, session_dir = _seed_hls_session(workspace)
+    (session_dir / "parts" / "seg-00001.m4s").unlink()
+    _enable_aliyun_for_client(api_client, workspace)
+
+    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
+    SegmentManifestRepo(conn).upsert_part(
+        session_id=sid,
+        part_index=1,
+        rel_path="parts/seg-00001.m4s",
+        state="uploaded",
+        bytes=14,
+    )
+    conn.close()
+
+    mock_upload = MagicMock(cloud_file_id="cf-part-1")
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    with (
+        patch(
+            "media2text.api.routes.playback.find_part_upload",
+            return_value=mock_upload,
+        ),
+        patch(
+            "media2text.api.routes.playback.AliyunDriveClient.open",
+            return_value=mock_client,
+        ),
+        patch(
+            "media2text.api.routes.playback.stream_cloud_file",
+            side_effect=RuntimeError("cloud upstream status 503"),
+        ),
+    ):
+        r = api_client.get(f"/api/sessions/{sid}/parts/1")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "cloud playback unavailable"
+    assert "text/html" not in r.headers.get("content-type", "")
+
+
+def test_playback_init_cloud_upstream_failure_returns_502(api_client, workspace) -> None:
+    sid, session_dir = _seed_hls_session(workspace, with_init=True)
+    (session_dir / "init.mp4").unlink()
+    _enable_aliyun_for_client(api_client, workspace)
+
+    mock_upload = MagicMock(cloud_file_id="cloud-init")
+    mock_client = MagicMock()
+    mock_client.__enter__ = MagicMock(return_value=mock_client)
+    mock_client.__exit__ = MagicMock(return_value=False)
+    with (
+        patch(
+            "media2text.api.routes.playback.find_init_upload",
+            return_value=mock_upload,
+        ),
+        patch(
+            "media2text.api.routes.playback.AliyunDriveClient.open",
+            return_value=mock_client,
+        ),
+        patch(
+            "media2text.api.routes.playback.stream_cloud_file",
+            side_effect=RuntimeError("cloud upstream status 503"),
+        ),
+    ):
+        r = api_client.get(f"/api/sessions/{sid}/init.mp4")
+    assert r.status_code == 502
+    assert r.json()["detail"] == "cloud playback unavailable"
+    assert "text/html" not in r.headers.get("content-type", "")
 
 
 def test_playback_init_cloud_proxies_range(api_client, workspace) -> None:
