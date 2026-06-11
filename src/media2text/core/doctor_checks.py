@@ -169,6 +169,19 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
             }
         )
 
+    warnings: list[dict] = []
+    if cfg.live.effective_pipeline_mode() == "legacy":
+        warnings.append(
+            {
+                "code": "live_pipeline_deprecated",
+                "message": "live.pipeline_mode=legacy is deprecated",
+                "hint": (
+                    "Recommended: pipeline_mode=streaming, live.media.format=hls, "
+                    "segment_pipeline.enabled=true — see config.example.yaml"
+                ),
+            }
+        )
+
     if ad.enabled:
         token_path = cfg.aliyundrive_token_path()
         aliyundrive_ok = False
@@ -206,6 +219,7 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
     return {
         "ok": ok,
         "checks": checks,
+        "warnings": warnings,
         "compliance_accepted": is_compliance_accepted(ws),
         "index_stale": is_index_stale(conn, ws),
         "monitor_lock_pid": monitor_lock_pid(ws),

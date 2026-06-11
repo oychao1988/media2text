@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 
-from media2text.core.config import LiveCompressConfig
+from media2text.core.config import LiveEncodeConfig
 from media2text.core.live.hls_recorder import (
     append_discontinuity_to_playlist,
     build_hls_recorder_args,
@@ -22,7 +22,7 @@ def test_hls_recorder_builds_event_playlist_args(tmp_path) -> None:
         stream_url="http://example.com/live.flv",
         session_dir=out_dir,
         segment_sec=600,
-        compress_cfg=LiveCompressConfig(enabled=False),
+        encode_cfg=LiveEncodeConfig(mode="copy"),
     )
     assert "-hls_base_url" in args
     assert "parts/" in args
@@ -42,7 +42,11 @@ def test_hls_recorder_compress_args_when_enabled(tmp_path) -> None:
         stream_url="http://example.com/live.flv",
         session_dir=tmp_path / "session",
         segment_sec=600,
-        compress_cfg=LiveCompressConfig(enabled=True, video_bitrate="2M"),
+        encode_cfg=LiveEncodeConfig(
+            mode="compress",
+            video_codec="hevc_videotoolbox",
+            video_bitrate="2M",
+        ),
     )
     joined = " ".join(args)
     assert "hevc_videotoolbox" in joined
@@ -59,7 +63,7 @@ def test_spawn_hls_recorder(mock_open, mock_popen, tmp_path) -> None:
         stream_url="http://x",
         session_dir=tmp_path / "s",
         segment_sec=60,
-        compress_cfg=LiveCompressConfig(),
+        encode_cfg=LiveEncodeConfig(),
         start_segment_number=3,
     )
     assert proc is mock_popen.return_value

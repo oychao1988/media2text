@@ -5,8 +5,9 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from media2text.core.config import LiveCompressConfig
+from media2text.core.config import LiveEncodeConfig
 from media2text.core.ffmpeg import stop_process
+from media2text.core.live.encode_profile import resolve_video_encoder
 
 HLS_FFMPEG_LOG = "ffmpeg-hls.log"
 
@@ -28,7 +29,7 @@ def build_hls_recorder_args(
     stream_url: str,
     session_dir: Path,
     segment_sec: int,
-    compress_cfg: LiveCompressConfig,
+    encode_cfg: LiveEncodeConfig,
     start_segment_number: int = 1,
 ) -> list[str]:
     session_dir.mkdir(parents=True, exist_ok=True)
@@ -52,21 +53,8 @@ def build_hls_recorder_args(
         "-i",
         stream_url,
     ]
-    if compress_cfg.enabled:
-        cmd.extend(
-            [
-                "-c:v",
-                "hevc_videotoolbox",
-                "-b:v",
-                compress_cfg.video_bitrate,
-                "-c:a",
-                "aac",
-                "-b:a",
-                compress_cfg.audio_bitrate,
-            ]
-        )
-    else:
-        cmd.extend(["-c", "copy"])
+    _, encode_args = resolve_video_encoder(encode_cfg, ffmpeg=ffmpeg)
+    cmd.extend(encode_args)
 
     cmd.extend(
         [
@@ -100,7 +88,7 @@ def spawn_hls_recorder(
     stream_url: str,
     session_dir: Path,
     segment_sec: int,
-    compress_cfg: LiveCompressConfig,
+    encode_cfg: LiveEncodeConfig,
     start_segment_number: int = 1,
 ) -> subprocess.Popen:
     cmd = build_hls_recorder_args(
@@ -108,7 +96,7 @@ def spawn_hls_recorder(
         stream_url=stream_url,
         session_dir=session_dir,
         segment_sec=segment_sec,
-        compress_cfg=compress_cfg,
+        encode_cfg=encode_cfg,
         start_segment_number=start_segment_number,
     )
     log_path = session_dir / HLS_FFMPEG_LOG

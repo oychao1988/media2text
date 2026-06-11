@@ -958,7 +958,7 @@ class LiveRecordingCore:
             stream_url=stream_url,
             session_dir=session_dir,
             segment_sec=self._cfg.live.media.segment_duration_sec,
-            compress_cfg=self._cfg.live.compress,
+            encode_cfg=self._cfg.live.encode,
             start_segment_number=part_index,
         )
         repo = SegmentManifestRepo(self._conn)
