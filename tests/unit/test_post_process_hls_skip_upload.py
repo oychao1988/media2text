@@ -4,7 +4,6 @@ from media2text.core.config import AliyunDriveConfig, AppConfig, SummarizeConfig
 from media2text.core.live.post_process import run_post_process_job
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PostProcessJobRepo
 
-
 def _seed_hls_job(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
@@ -72,3 +71,31 @@ def test_hls_session_skips_whole_file_upload(tmp_path, monkeypatch) -> None:
     assert result.get("transcribed") is True
     mock_upload.assert_not_called()
     assert "upload_completed" not in result
+
+
+def test_hls_post_process_logs_whole_file_upload_deprecation(
+    tmp_path, monkeypatch
+) -> None:
+    cfg, conn, job_id = _seed_hls_job(tmp_path, monkeypatch)
+    notify = MagicMock()
+    with (
+        patch(
+            "media2text.core.summarize.hook.maybe_summarize_after_transcribe",
+            return_value={"summarized": True},
+        ),
+        patch(
+            "media2text.core.live.post_process.maybe_upload_live_to_aliyundrive",
+        ),
+        patch(
+            "media2text.core.live.post_process.upload_summary_sidecars_if_needed",
+            return_value={},
+        ),
+        patch("media2text.core.live.post_process.log") as mock_log,
+    ):
+        run_post_process_job(cfg, conn, job_id=job_id, notify=notify)
+
+    mock_log.warning.assert_any_call(
+        "live_pipeline_deprecated",
+        mode="hls_whole_file_upload",
+        hint="use streaming+hls; see config.example.yaml",
+    )

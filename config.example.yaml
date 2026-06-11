@@ -35,8 +35,8 @@ monitor:
 
 live:
   auto_record: true               # false = poll only updates snapshots; manual start via desktop API
-  # streaming: parallel FLV record + Deepgram WS STT (no post-process transcribe).
-  # legacy: v2 remux to MP4 + optional post-process transcribe (code default).
+  # streaming: parallel FLV/HLS record + Deepgram WS STT (recommended for new installs).
+  # legacy: read-only compat for old recordings; remux MP4 + post-process transcribe/upload.
   pipeline_mode: streaming
   remux_on_complete: false          # streaming default; legacy uses true when unset
   streaming_stt:
