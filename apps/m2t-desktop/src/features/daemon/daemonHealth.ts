@@ -10,7 +10,7 @@ export const HEALTH_TITLE: Record<RuntimeHealth, string> = {
 };
 
 export const HEALTH_HINT: Record<RuntimeHealth, string> = {
-  healthy: '正在自动检测直播并同步作品',
+  healthy: '正在自动检测直播；已开作品同步的博主会拉取最新投稿',
   degraded: '后台仍在运行，部分检测可能偏慢',
   stopped: '未检测直播，也不会同步新作品',
 };

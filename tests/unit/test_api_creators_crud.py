@@ -47,6 +47,30 @@ def test_patch_monitor_and_override(api_client, workspace) -> None:
     assert row.auto_record_override == "on"
 
 
+def test_patch_content_sync(api_client, workspace) -> None:
+    cid = _add_creator(workspace)
+    r = api_client.patch(
+        f"/api/creators/{cid}",
+        json={"contentSyncEnabled": True},
+    )
+    assert r.status_code == 200
+    assert r.json()["content_sync_enabled"] is True
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    repo = CreatorRepo(open_db(cfg))
+    row = repo.get(cid)
+    assert row is not None
+    assert row.content_sync_enabled == 1
+    r2 = api_client.patch(
+        f"/api/creators/{cid}",
+        json={"contentSyncEnabled": False},
+    )
+    assert r2.status_code == 200
+    row2 = repo.get(cid)
+    assert row2 is not None
+    assert row2.content_sync_enabled == 0
+    assert row2.vod_due_at is None
+
+
 def test_patch_invalid_override(api_client, workspace) -> None:
     cid = _add_creator(workspace)
     r = api_client.patch(

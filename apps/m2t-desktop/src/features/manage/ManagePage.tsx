@@ -16,8 +16,9 @@ type ManageDrawerProps = {
   globalAutoRecord: boolean;
   syncBusy: string | null;
   onToggleMonitor: (c: Creator) => void;
+  onToggleContentSync: (c: Creator) => void;
   onSetAutoRecord: (value: 'inherit' | 'on' | 'off') => void;
-  onRunSync: (kind: 'profile' | 'catalog' | 'catalog-download' | 'download' | 'dynamics') => void;
+  onRunSync: (kind: 'profile' | 'catalog' | 'download' | 'dynamics') => void;
   onRemove: () => void;
 };
 
@@ -26,6 +27,7 @@ function ManageCreatorDrawer({
   globalAutoRecord,
   syncBusy,
   onToggleMonitor,
+  onToggleContentSync,
   onSetAutoRecord,
   onRunSync,
   onRemove,
@@ -94,6 +96,20 @@ function ManageCreatorDrawer({
               <p className="hint">
                 开启后由 daemon 自动处理；中栏「直播」预览可选，不影响后台录制。
               </p>
+              <div className="toggle-row">
+                <span>作品自动同步（投稿 / 动态）</span>
+                <button
+                  type="button"
+                  className={`toggle${creator.content_sync_enabled ? ' on' : ''}`}
+                  id="detail-content-sync-toggle"
+                  aria-pressed={creator.content_sync_enabled}
+                  aria-label="开启作品自动同步"
+                  onClick={() => onToggleContentSync(creator)}
+                />
+              </div>
+              <p className="hint">
+                默认关闭。开启后 daemon 仅拉取最新投稿并自动下载；补历史请用下方「同步历史作品」。
+              </p>
             </section>
             <section className="inspector-block" id="detail-auto-record-section">
               <h4>开录策略</h4>
@@ -133,6 +149,9 @@ function ManageCreatorDrawer({
             </section>
             <section className="inspector-block ops">
               <h4>运维</h4>
+              <p className="hint">
+                自动同步只处理新投稿；「同步历史作品」会分页拉全量 catalog（较慢）。
+              </p>
               <div className="detail-actions detail-actions--row">
                 <button
                   type="button"
@@ -145,21 +164,12 @@ function ManageCreatorDrawer({
                 </button>
                 <button
                   type="button"
-                  className="btn-ghost btn-sm"
+                  className="btn btn-sm"
                   id="detail-sync-catalog"
                   disabled={syncBusy != null}
                   onClick={() => onRunSync('catalog')}
                 >
-                  同步作品
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm"
-                  id="detail-sync-catalog-download"
-                  disabled={syncBusy != null}
-                  onClick={() => onRunSync('catalog-download')}
-                >
-                  同步并下载
+                  同步历史作品
                 </button>
                 <button
                   type="button"
@@ -168,7 +178,7 @@ function ManageCreatorDrawer({
                   disabled={syncBusy != null}
                   onClick={() => onRunSync('download')}
                 >
-                  下载作品
+                  下载待发作品
                 </button>
                 {creator.platform === 'bilibili' ? (
                   <button
@@ -208,7 +218,7 @@ export function ManagePage() {
       setCreators(res.creators ?? []);
       setSelectedId((prev) => {
         if (prev && res.creators.some((c) => c.id === prev)) return prev;
-        return res.creators[0]?.id ?? null;
+        return null;
       });
     } catch {
       if (!opts?.silent) setCreators([]);
@@ -289,6 +299,20 @@ export function ManagePage() {
     }
   };
 
+  const toggleContentSync = async (c: Creator) => {
+    const next = !c.content_sync_enabled;
+    try {
+      await patchCreator(
+        c.id,
+        { contentSyncEnabled: next },
+        { content_sync_enabled: next },
+      );
+      showToast(next ? '已开启作品自动同步' : '已关闭作品自动同步', 'success');
+    } catch {
+      /* toast */
+    }
+  };
+
   const setAutoRecord = async (value: 'inherit' | 'on' | 'off') => {
     if (!selected) return;
     try {
@@ -300,9 +324,7 @@ export function ManagePage() {
     }
   };
 
-  const runSync = async (
-    kind: 'profile' | 'catalog' | 'catalog-download' | 'download' | 'dynamics',
-  ) => {
+  const runSync = async (kind: 'profile' | 'catalog' | 'download' | 'dynamics') => {
     if (!selected) return;
     const key = `${selected.id}:${kind}`;
     setSyncBusy(key);
@@ -312,13 +334,10 @@ export function ManagePage() {
         showToast('资料同步完成', 'success');
       } else if (kind === 'catalog') {
         await apiPost(`/api/creators/${selected.id}/sync`);
-        showToast('作品列表已同步', 'success');
-      } else if (kind === 'catalog-download') {
-        await apiPost(`/api/creators/${selected.id}/sync?enqueue_download=true`);
-        showToast('同步完成，已加入下载队列（需开启监控）', 'success');
+        showToast('历史作品列表已同步', 'success');
       } else if (kind === 'download') {
         await apiPost(`/api/creators/${selected.id}/download`);
-        showToast('已加入下载队列（需开启监控）', 'success');
+        showToast('已加入下载队列（需 daemon 运行）', 'success');
       } else {
         await apiPost(`/api/creators/${selected.id}/sync-dynamics`);
         showToast('动态同步完成', 'success');
@@ -458,6 +477,7 @@ export function ManagePage() {
                   globalAutoRecord={globalAutoRecord}
                   syncBusy={syncBusy}
                   onToggleMonitor={(creator) => void toggleMonitor(creator)}
+                  onToggleContentSync={(creator) => void toggleContentSync(creator)}
                   onSetAutoRecord={(value) => void setAutoRecord(value)}
                   onRunSync={(kind) => void runSync(kind)}
                   onRemove={requestRemove}

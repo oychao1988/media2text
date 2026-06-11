@@ -102,6 +102,16 @@ class CreatorRepo:
         ).fetchall()
         return [CreatorRow(**dict(r)) for r in rows]
 
+    def list_content_sync_enabled(self) -> list[CreatorRow]:
+        rows = self._conn.execute(
+            """
+            SELECT * FROM creators
+            WHERE content_sync_enabled = 1
+            ORDER BY created_at
+            """
+        ).fetchall()
+        return [CreatorRow(**dict(r)) for r in rows]
+
     def list_live_watched(self) -> list[CreatorRow]:
         """Deprecated: use list_monitored."""
         return self.list_monitored()
@@ -111,6 +121,49 @@ class CreatorRepo:
             "UPDATE creators SET monitor_enabled = ? WHERE id = ?",
             (1 if enabled else 0, creator_id),
         )
+        self._conn.commit()
+        return cur.rowcount > 0
+
+    def set_content_sync_enabled(self, creator_id: str, *, enabled: bool) -> bool:
+        if enabled:
+            now = datetime.now(timezone.utc).isoformat()
+            row = self.get(creator_id)
+            if row is None:
+                return False
+            if row.platform == "bilibili":
+                cur = self._conn.execute(
+                    """
+                    UPDATE creators
+                    SET content_sync_enabled = 1,
+                        archive_due_at = COALESCE(archive_due_at, ?),
+                        dynamic_due_at = COALESCE(dynamic_due_at, ?)
+                    WHERE id = ?
+                    """,
+                    (now, now, creator_id),
+                )
+            else:
+                cur = self._conn.execute(
+                    """
+                    UPDATE creators
+                    SET content_sync_enabled = 1,
+                        vod_due_at = COALESCE(vod_due_at, ?)
+                    WHERE id = ?
+                    """,
+                    (now, creator_id),
+                )
+        else:
+            cur = self._conn.execute(
+                """
+                UPDATE creators
+                SET content_sync_enabled = 0,
+                    vod_due_at = NULL,
+                    archive_due_at = NULL,
+                    dynamic_due_at = NULL,
+                    sync_needs_download = 0
+                WHERE id = ?
+                """,
+                (creator_id,),
+            )
         self._conn.commit()
         return cur.rowcount > 0
 
@@ -320,7 +373,7 @@ class AwemeRepo:
                 """
                 SELECT a.* FROM awemes a
                 INNER JOIN creators c ON c.id = a.creator_id
-                WHERE a.sync_status = 'listed' AND c.monitor_enabled = 1
+                WHERE a.sync_status = 'listed' AND c.content_sync_enabled = 1
                 """
             ).fetchall()
         else:
@@ -432,7 +485,7 @@ class AwemeRepo:
                 INNER JOIN creators c ON c.id = a.creator_id
                 WHERE a.sync_status = 'downloaded'
                   AND (a.transcribe_status IS NULL OR a.transcribe_status != 'done')
-                  AND c.monitor_enabled = 1
+                  AND c.content_sync_enabled = 1
                 """
             ).fetchall()
         else:

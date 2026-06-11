@@ -30,6 +30,7 @@ const sampleCreator = {
   display_name: '测试博主',
   unique_id: 'test_user',
   monitor_enabled: true,
+  content_sync_enabled: false,
   auto_record_override: 'inherit',
   status_light: 'gray',
   status_abbr: '—',
@@ -63,7 +64,11 @@ describe('ManagePage remove creator', () => {
   });
 
   it('shows synced profile in drawer', async () => {
+    const user = userEvent.setup();
     render(<ManagePage />);
+
+    await screen.findByText('测试博主');
+    await user.click(screen.getByText('测试博主'));
 
     expect(await screen.findByRole('region', { name: '博主资料' })).toBeTruthy();
     expect(screen.getByText('这是简介')).toBeTruthy();
@@ -75,6 +80,8 @@ describe('ManagePage remove creator', () => {
     const user = userEvent.setup();
     render(<ManagePage />);
 
+    await screen.findByText('测试博主');
+    await user.click(screen.getByText('测试博主'));
     await screen.findByRole('button', { name: '移除博主' });
     await user.click(screen.getByRole('button', { name: '移除博主' }));
 

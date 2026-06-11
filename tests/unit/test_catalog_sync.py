@@ -14,11 +14,16 @@ def test_sync_creator_with_fixtures(tmp_path, monkeypatch) -> None:
         profile_url="https://www.douyin.com/user/test",
         monitor_enabled=False,
     )
-    result = sync_creator(cfg, cid)
+    result = sync_creator(cfg, cid, mode="full")
     assert result["ok"] is True
     assert result["new_count"] == 3
     awemes = AwemeRepo(conn).list_for_creator(cid)
     assert len(awemes) == 3
+
+    again = sync_creator(cfg, cid, mode="incremental")
+    assert again["ok"] is True
+    assert again["new_count"] == 0
+    assert again["pages"] == 1
     by_id = {row.aweme_id: row for row in awemes}
     assert by_id["7123456789012345678"].download_url == "https://example.com/video-one.mp4"
     assert by_id["7123456789012345679"].download_url == "https://douyinvod.com/high.mp4?watermark=0"

@@ -59,6 +59,27 @@ def test_creator_monitor_cli(tmp_path, monkeypatch) -> None:
     assert json.loads(off.stdout)["monitor_enabled"] is False
 
 
+def test_creator_content_sync_cli(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAsync",
+        profile_url="https://www.douyin.com/user/sync",
+        monitor_enabled=True,
+    )
+    runner = CliRunner()
+    on = runner.invoke(app, ["creator", "content-sync", cid, "--json"])
+    assert on.exit_code == 0
+    assert json.loads(on.stdout)["content_sync_enabled"] is True
+    off = runner.invoke(app, ["creator", "content-sync", cid, "--off", "--json"])
+    assert off.exit_code == 0
+    assert json.loads(off.stdout)["content_sync_enabled"] is False
+    row = CreatorRepo(conn).get(cid)
+    assert row is not None
+    assert row.vod_due_at is None
+
+
 def test_download_run_monitor_only(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
@@ -69,6 +90,7 @@ def test_download_run_monitor_only(tmp_path, monkeypatch) -> None:
         profile_url="https://example.com/mon",
         monitor_enabled=True,
     )
+    creators.set_content_sync_enabled(monitored, enabled=True)
     unmonitored = creators.add(
         sec_uid="MS4wLjABAAAAunmon",
         profile_url="https://example.com/unmon",

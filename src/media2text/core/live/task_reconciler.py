@@ -246,7 +246,7 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
     tasks = MonitorTaskRepo(conn)
     creators_repo = CreatorRepo(conn)
 
-    for creator in creators_repo.list_monitored():
+    for creator in creators_repo.list_content_sync_enabled():
         if LiveSessionRepo(conn).get_active_for_creator(creator.id):
             continue
 

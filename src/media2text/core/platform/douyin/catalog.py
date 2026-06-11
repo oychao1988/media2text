@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired, ParseFailed, PlatformChanged
 from media2text.core.platform.douyin.adapter import DouyinAdapterV1
@@ -19,7 +21,10 @@ def build_adapter(cfg: AppConfig) -> DouyinAdapterV1:
     return DouyinAdapterV1(None, fixture_root=FIXTURE_ROOT)
 
 
-def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
+SyncMode = Literal["full", "incremental"]
+
+
+def sync_creator(cfg: AppConfig, creator_id: str, *, mode: SyncMode = "full") -> dict:
     conn = open_db(cfg)
     creators = CreatorRepo(conn)
     awemes = AwemeRepo(conn)
@@ -28,7 +33,8 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
         return {"ok": False, "error": "creator not found"}
 
     adapter = build_adapter(cfg)
-    max_pages = cfg.platforms.douyin.max_sync_pages
+    max_pages = cfg.platforms.douyin.max_sync_pages if mode == "full" else 0
+    had_catalog = creators.count_awemes(creator_id) > 0 if mode == "incremental" else False
     cursor = ""
     pages = 0
     new_count = 0
@@ -39,11 +45,16 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
             items, next_cursor, has_more = adapter.list_awemes(
                 sec_uid=creator.sec_uid, max_cursor=cursor
             )
+            page_new = 0
             for item in items:
                 if awemes.upsert_listed(creator_id=creator.id, item=item):
                     new_count += 1
+                    page_new += 1
                 total_listed += 1
             pages += 1
+            if mode == "incremental":
+                if not had_catalog or page_new == 0:
+                    break
             if not has_more or not next_cursor:
                 break
             if max_pages and pages >= max_pages:
@@ -80,6 +91,7 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
         "new_count": new_count,
         "total_listed": total_listed,
         "pages": pages,
+        "mode": mode,
         "auth_required": False,
         "platform_changed": False,
     }
