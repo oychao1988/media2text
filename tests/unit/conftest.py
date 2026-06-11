@@ -13,6 +13,7 @@ def api_client(workspace):
     clear_health_cache()
     cfg = AppConfig.load()
     app = create_app()
+    api = app.state.api_app
 
     def override_cfg() -> AppConfig:
         return cfg
@@ -24,8 +25,10 @@ def api_client(workspace):
         finally:
             conn.close()
 
-    app.dependency_overrides[get_cfg] = override_cfg
-    app.dependency_overrides[get_db] = override_db
+    for target in (app, api):
+        target.dependency_overrides[get_cfg] = override_cfg
+        target.dependency_overrides[get_db] = override_db
     with TestClient(app) as client:
         yield client
-    app.dependency_overrides.clear()
+    for target in (app, api):
+        target.dependency_overrides.clear()

@@ -114,8 +114,8 @@ describe('ViewPlayback hls.js', () => {
     expect(document.querySelector('video')).toBeTruthy();
   });
 
-  it('uses remuxed playback.mp4 when discontinuity_at is present', async () => {
-    const { playbackMp4Url, playbackM3u8Url } = await import('../../lib/api');
+  it('uses playback.m3u8 when discontinuity_at is present', async () => {
+    const { playbackM3u8Url, playbackMp4Url } = await import('../../lib/api');
     render(
       <ViewPlayback
         active
@@ -124,10 +124,29 @@ describe('ViewPlayback hls.js', () => {
       />,
     );
     await waitFor(() => {
-      expect(playbackMp4Url).toHaveBeenCalledWith('sess-1');
+      expect(playbackM3u8Url).toHaveBeenCalledWith('sess-1');
     });
-    expect(playbackM3u8Url).not.toHaveBeenCalled();
-    expect(mockHlsInstances.length).toBe(0);
+    expect(playbackMp4Url).not.toHaveBeenCalled();
+    expect(mockHlsInstances.length).toBeGreaterThan(0);
     expect(document.querySelector('video')).toBeTruthy();
+  });
+
+  it('shows cloud fallback hint when hls fails on cloud-only session', async () => {
+    const { playbackM3u8Url } = await import('../../lib/api');
+    vi.mocked(playbackM3u8Url).mockRejectedValueOnce(new Error('network'));
+    render(
+      <ViewPlayback
+        active
+        creatorName="主播"
+        session={baseSession({
+          media_format: 'hls',
+          media_available: false,
+          cloud_available: true,
+        })}
+      />,
+    );
+    await waitFor(() => {
+      expect(screen.getByText(/云端分段不可用/)).toBeInTheDocument();
+    });
   });
 });
