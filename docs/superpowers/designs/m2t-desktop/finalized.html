@@ -17,6 +17,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="panels/local-tab.css" />
   <style>
     :root,
     [data-theme="light"] {
@@ -3170,6 +3171,7 @@
         <div class="tabs" role="tablist" id="center-tabs" aria-label="博主视图">
           <button class="tab active" role="tab" aria-selected="true" type="button" data-view="live">直播</button>
           <button class="tab" role="tab" type="button" data-view="history">历史</button>
+          <button class="tab" role="tab" type="button" data-view="local">本地</button>
         </div>
       </div>
 
@@ -3281,6 +3283,9 @@
           </div>
         </div>
       </div>
+
+      <!-- LOCAL: 博主外部媒体（panels/local-tab.html） -->
+      <div class="center-view" id="view-local" aria-label="本地登记媒体"></div>
 
       <!-- PLAYBACK: 历史录播 -->
       <div class="center-view" id="view-playback">
@@ -4301,6 +4306,7 @@
     manage: document.getElementById('view-manage'),
     live: document.getElementById('view-live'),
     history: document.getElementById('view-history'),
+    local: document.getElementById('view-local'),
     playback: document.getElementById('view-playback'),
   };
   const centerTabs = document.getElementById('center-tabs');
@@ -5580,6 +5586,7 @@
     }
     updateCenterToolbarContext(name);
     if (name === 'live' || (name === 'history' && !playbackMode)) setLiveContext();
+    if (name === 'local') setLocalContext();
     if (name === 'playback') setPlaybackContext();
     if (name === 'manage') {
       syncManageFilterCounts();
@@ -6037,12 +6044,142 @@
     showToast('右栏已展开');
   });
 
+  function loadLocalPanel() {
+    const host = views.local;
+    if (!host || host.dataset.loaded === '1') return;
+    fetch('panels/local-tab.html')
+      .then(function (r) {
+        if (!r.ok) throw new Error('fetch failed');
+        return r.text();
+      })
+      .then(function (html) {
+        host.innerHTML = html;
+        host.dataset.loaded = '1';
+        initLocalPanel();
+      })
+      .catch(function () {
+        host.innerHTML =
+          '<p class="local-load-fail">无法加载本地 Tab 原型。请在本目录运行：<code>python3 -m http.server 8766</code> 后访问。</p>';
+      });
+  }
+
+  function setLocalContext() {
+    loadLocalPanel();
+    const sel = document.querySelector('#local-list .local-item-row.selected:not(.disabled)');
+    if (sel) updateLocalPreview(sel);
+    showToast('本地媒体 · 当前博主登记项');
+  }
+
+  function updateLocalPreview(row) {
+    const body = document.getElementById('local-body');
+    const stage = document.getElementById('local-preview-stage');
+    const titleEl = document.getElementById('local-preview-title');
+    if (!body || !stage || !row) return;
+    body.classList.add('has-preview');
+    const name = row.dataset.name || '预览';
+    const path = row.dataset.path || '';
+    const kind = row.dataset.kind || 'video';
+    if (titleEl) titleEl.textContent = name;
+    stage.className = 'local-preview-stage' + (kind === 'document' ? '' : ' video');
+    if (kind === 'document') {
+      stage.innerHTML =
+        '<div class="doc-preview"><h1>' +
+        name +
+        '</h1><p>外部 Markdown · 摘要输入即正文，无需转写。</p><p style="color:var(--text-dim);font-size:11px;font-family:var(--mono);">' +
+        path +
+        '</p></div>';
+    } else {
+      stage.innerHTML =
+        '<div class="video-frame-mini"><div class="play-icon" aria-hidden="true">▶</div><p>' +
+        (kind === 'audio' ? '音频预览' : '外部路径 · Range 播放') +
+        '</p><p style="font-size:10px;opacity:0.7;font-family:var(--mono);">' +
+        path +
+        '</p></div>';
+    }
+  }
+
+  function initLocalPanel() {
+    const list = document.getElementById('local-list');
+    if (!list || list.dataset.bound === '1') return;
+    list.dataset.bound = '1';
+
+    list.addEventListener('click', function (e) {
+      const actionBtn = e.target.closest('.local-item-actions .btn-xs[data-action]');
+      if (actionBtn) {
+        e.stopPropagation();
+        const row = actionBtn.closest('.local-item-row');
+        const action = actionBtn.dataset.action;
+        const name = row?.dataset.name || '项';
+        if (action === 'remove') {
+          showToast('已移除登记：' + name + '（不删磁盘）');
+          return;
+        }
+        if (action === 'transcribe') {
+          showToast('转写任务已入队：' + name);
+          return;
+        }
+        if (action === 'summarize') {
+          showToast('摘要任务已入队：' + name);
+          return;
+        }
+        if (action === 'preview' && row) {
+          document.querySelectorAll('.local-item-row').forEach(function (r) {
+            r.classList.remove('selected');
+          });
+          row.classList.add('selected');
+          updateLocalPreview(row);
+        }
+        return;
+      }
+      const row = e.target.closest('.local-item-row:not(.disabled)');
+      if (!row) return;
+      document.querySelectorAll('.local-item-row').forEach(function (r) {
+        r.classList.remove('selected');
+      });
+      row.classList.add('selected');
+      updateLocalPreview(row);
+      showToast('本地：' + (row.dataset.name || ''));
+    });
+
+    list.addEventListener('keydown', function (e) {
+      if (e.key !== 'Enter' && e.key !== ' ') return;
+      const row = e.target.closest('.local-item-row:not(.disabled)');
+      if (!row) return;
+      e.preventDefault();
+      row.click();
+    });
+
+    document.querySelector('.local-toolbar')?.addEventListener('click', function (e) {
+      const chip = e.target.closest('.chip[data-local-filter]');
+      if (!chip) return;
+      document.querySelectorAll('.local-toolbar .chip').forEach(function (c) {
+        c.classList.toggle('active', c === chip);
+      });
+      showToast('筛选：' + chip.textContent.trim());
+    });
+
+    document.getElementById('local-btn-add-file')?.addEventListener('click', function () {
+      showToast('Tauri 选文件 → POST /local/items（原型）');
+    });
+    document.getElementById('local-btn-add-folder')?.addEventListener('click', function () {
+      showToast('Tauri 选文件夹 → POST /local/scan-roots（原型）');
+    });
+    document.getElementById('local-btn-refresh')?.addEventListener('click', function () {
+      showToast('增量扫描已登记文件夹（原型）');
+    });
+
+    const first = list.querySelector('.local-item-row.selected:not(.disabled)');
+    if (first) updateLocalPreview(first);
+  }
+
+  loadLocalPanel();
+
   centerTabs?.addEventListener('click', function (e) {
     const tab = e.target.closest('.tab[data-view]');
     if (!tab) return;
     playbackMode = false;
     showView(tab.dataset.view);
-    const names = { live: '直播', history: '历史' };
+    const names = { live: '直播', history: '历史', local: '本地' };
     showToast('视图：' + (names[tab.dataset.view] || tab.dataset.view));
   });
 

@@ -1,7 +1,7 @@
 import flvjs from 'flv.js';
 import Hls from 'hls.js';
 import { useEffect, useRef, useState } from 'react';
-import { listGalleryImages, mediaUrl, playbackM3u8Url } from '../../lib/api';
+import { listGalleryImages, mediaUrl, playbackM3u8Url, playbackMp4Url } from '../../lib/api';
 import type { LiveSessionSummary } from '../../lib/types';
 import { useLayoutStore } from '../layout/useLayoutStore';
 import { alignPlaybackTime, sessionUsesHls } from './playbackTime';
@@ -145,6 +145,10 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
   );
   const discontinuityAt = session?.discontinuity_at;
   const partDurations = session?.part_durations;
+  const hlsNeedsRemux = Boolean(
+    isHls && (discontinuityAt?.length ?? 0) > 0,
+  );
+  const useHlsPlaylist = canPlayHls && !hlsNeedsRemux;
 
   useEffect(() => {
     if (!active) return undefined;
@@ -163,9 +167,11 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     let cancelled = false;
     void (async () => {
       try {
-        const url = isHls
-          ? await playbackM3u8Url(session.session_id)
-          : await mediaUrl(mediaPath!);
+        const url = hlsNeedsRemux
+          ? await playbackMp4Url(session.session_id)
+          : isHls
+            ? await playbackM3u8Url(session.session_id)
+            : await mediaUrl(mediaPath!);
         if (!cancelled) setSrc(url);
       } catch {
         if (!cancelled) setError(true);
@@ -174,7 +180,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     return () => {
       cancelled = true;
     };
-  }, [canPlayVideo, isHls, mediaPath, session]);
+  }, [canPlayVideo, hlsNeedsRemux, isHls, mediaPath, session]);
 
   useEffect(() => {
     const video = videoRef.current;
@@ -204,7 +210,49 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       }
     };
 
-    if (canPlayHls && Hls.isSupported()) {
+    if (hlsNeedsRemux) {
+      destroyFlv();
+      destroyHls();
+      video.src = src;
+      try {
+        video.load();
+      } catch {
+        /* jsdom lacks HTMLMediaElement.load */
+      }
+      const remuxPlay = video.play();
+      if (remuxPlay && typeof remuxPlay.catch === 'function') {
+        void remuxPlay.catch(() => undefined);
+      }
+      return () => {
+        video.removeEventListener('error', onVideoError);
+        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+      };
+    }
+
+    const nativeHlsSupported =
+      video.canPlayType('application/vnd.apple.mpegurl') !== '' ||
+      video.canPlayType('application/x-mpegURL') !== '';
+
+    if (useHlsPlaylist && nativeHlsSupported) {
+      destroyFlv();
+      destroyHls();
+      video.src = src;
+      try {
+        video.load();
+      } catch {
+        /* jsdom lacks HTMLMediaElement.load */
+      }
+      const nativePlay = video.play();
+      if (nativePlay && typeof nativePlay.catch === 'function') {
+        void nativePlay.catch(() => undefined);
+      }
+      return () => {
+        video.removeEventListener('error', onVideoError);
+        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+      };
+    }
+
+    if (useHlsPlaylist && Hls.isSupported()) {
       destroyFlv();
       const hls = new Hls({ enableWorker: false });
       hls.loadSource(src);
@@ -221,25 +269,6 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
         video.removeEventListener('error', onVideoError);
         video.removeEventListener('timeupdate', handleVideoTimeUpdate);
         destroyHls();
-      };
-    }
-
-    if (canPlayHls && video.canPlayType('application/vnd.apple.mpegurl')) {
-      destroyFlv();
-      destroyHls();
-      video.src = src;
-      try {
-        video.load();
-      } catch {
-        /* jsdom lacks HTMLMediaElement.load */
-      }
-      const nativePlay = video.play();
-      if (nativePlay && typeof nativePlay.catch === 'function') {
-        void nativePlay.catch(() => undefined);
-      }
-      return () => {
-        video.removeEventListener('error', onVideoError);
-        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
       };
     }
 
@@ -283,9 +312,12 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     canPlayHls,
     canPlayFlv,
     canPlayNative,
+    hlsNeedsRemux,
+    useHlsPlaylist,
     active,
     onTimeUpdate,
     discontinuityAt,
+    partDurations,
   ]);
 
   const breadcrumb = session ? sessionPlaybackLabel(session) : '—';

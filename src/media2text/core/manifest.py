@@ -6,14 +6,39 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from media2text.core.live.segment_manifest import SegmentManifestRepo
+from media2text.core.live.transcript_writer import find_transcript_sidecar, _sidecar_lookup_media_path
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, DynamicRepo
 
 
-def _transcript_sidecar_path(media_path: str | None) -> str | None:
+def _media_path_for_sidecars(
+    *,
+    local_path: str | None,
+    temp_path: str | None,
+) -> str | None:
+    """Pick the media path used to locate transcript/summary sidecars."""
+    for raw in (temp_path, local_path):
+        if not raw:
+            continue
+        return str(_sidecar_lookup_media_path(raw))
+    return None
+
+
+def _transcript_sidecar_path(
+    media_path: str | None,
+    *,
+    workspace: Path | None = None,
+) -> str | None:
     if not media_path:
         return None
-    json_path = Path(media_path).with_suffix(".transcript.json")
-    return str(json_path) if json_path.is_file() else None
+    found = find_transcript_sidecar(media_path, workspace=workspace)
+    if found is None:
+        return None
+    if workspace is not None:
+        try:
+            return str(found.relative_to(workspace.resolve()))
+        except ValueError:
+            return str(found)
+    return str(found)
 
 
 def _summary_sidecar_path(media_path: str | None) -> str | None:
@@ -147,13 +172,20 @@ def refresh_manifest(
     for row in live_rows:
         data = dict(row)
         local_path = data.get("local_path")
+        sidecar_media = _media_path_for_sidecars(
+            local_path=local_path,
+            temp_path=data.get("temp_path"),
+        )
         entry: dict = {
             "id": data["id"],
             "type": "live",
             "title": None,
             "media_path": local_path,
-            "transcript_path": _transcript_sidecar_path(local_path),
-            "summary_path": _summary_sidecar_path(local_path),
+            "transcript_path": _transcript_sidecar_path(
+                sidecar_media,
+                workspace=workspace,
+            ),
+            "summary_path": _summary_sidecar_path(sidecar_media or local_path),
             "status": data.get("status"),
         }
         if data.get("pipeline_mode"):

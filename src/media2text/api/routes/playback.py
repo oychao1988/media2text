@@ -12,12 +12,18 @@ from media2text.api.deps import get_cfg, get_db
 from media2text.api.security import safe_workspace_path, workspace_rel
 from media2text.core.cloud.aliyundrive import AliyunDriveClient
 from media2text.core.config import AppConfig
+from media2text.core.live.playback_remux import (
+    playback_mp4_is_fresh,
+    playback_mp4_path,
+    remux_hls_to_playback_mp4,
+)
 from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.storage.repos import CloudUploadRepo, LiveSessionRepo
 
 router = APIRouter(prefix="/sessions", tags=["playback"])
 
-_PART_URI_RE = re.compile(r"parts/seg-(\d+)\.m4s", re.IGNORECASE)
+# ffmpeg event playlists may emit bare `seg-00001.m4s` or `parts/seg-00001.m4s`.
+_PART_URI_RE = re.compile(r"(?:parts/)?seg-(\d+)\.m4s", re.IGNORECASE)
 _INIT_URI_RE = re.compile(r"init\.mp4", re.IGNORECASE)
 
 
@@ -215,12 +221,12 @@ def get_playback_part(
             else:
                 return FileResponse(
                     path=part_path,
-                    media_type="video/iso.segment",
+                    media_type="video/mp4",
                     headers={"Accept-Ranges": "bytes"},
                 )
         return FileResponse(
             path=part_path,
-            media_type="video/iso.segment",
+            media_type="video/mp4",
             headers={"Accept-Ranges": "bytes"},
         )
 
@@ -259,3 +265,54 @@ def get_playback_init(
         return redirect
 
     raise HTTPException(status_code=404, detail="init not found")
+
+
+@router.get("/{session_id}/playback.mp4", response_model=None)
+def get_playback_mp4(
+    session_id: str,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> FileResponse:
+    row = LiveSessionRepo(conn).get(session_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+
+    session_dir = _resolve_session_dir(row)
+    if session_dir is None:
+        raise HTTPException(status_code=404, detail="session_dir not found")
+
+    master = session_dir / "master.m3u8"
+    if not master.is_file():
+        raise HTTPException(status_code=404, detail="playlist not found")
+
+    try:
+        out = remux_hls_to_playback_mp4(
+            session_dir,
+            ffmpeg=cfg.live.ffmpeg_path,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    return FileResponse(
+        path=out,
+        media_type="video/mp4",
+        headers={"Accept-Ranges": "bytes", "Cache-Control": "no-cache"},
+    )
+
+
+@router.get("/{session_id}/playback.mp4/status")
+def get_playback_mp4_status(
+    session_id: str,
+    conn=Depends(get_db),
+) -> dict:
+    row = LiveSessionRepo(conn).get(session_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="session not found")
+    session_dir = _resolve_session_dir(row)
+    if session_dir is None:
+        raise HTTPException(status_code=404, detail="session_dir not found")
+    out = playback_mp4_path(session_dir) if session_dir else None
+    ready = bool(out and out.is_file() and playback_mp4_is_fresh(session_dir))
+    return {"ready": ready, "path": str(out) if ready else None}

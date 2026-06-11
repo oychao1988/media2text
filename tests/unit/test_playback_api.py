@@ -61,6 +61,58 @@ def _seed_hls_session(workspace: Path, *, with_init: bool = False) -> tuple[str,
     return sid, session_dir
 
 
+def _seed_hls_session_bare_seg_uris(workspace: Path) -> str:
+    """ffmpeg -hls_flags append_list writes seg-NNNNN.m4s without parts/ prefix."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_hls_bare_seg",
+        profile_url="https://www.douyin.com/user/sec_hls_bare_seg",
+        monitor_enabled=True,
+    )
+    session_dir = workspace / "creators" / "sec_hls_bare_seg" / "live" / "20260611T110019Z"
+    parts_dir = session_dir / "parts"
+    parts_dir.mkdir(parents=True)
+    (parts_dir / "seg-00005.m4s").write_bytes(b"fake-m4s-5")
+    master = session_dir / "master.m3u8"
+    master.write_text(
+        "\n".join(
+            [
+                "#EXTM3U",
+                '#EXT-X-MAP:URI="init.mp4"',
+                "#EXTINF:600.0,",
+                "seg-00005.m4s",
+                "#EXT-X-ENDLIST",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r1",
+        temp_path=str(master),
+        session_dir=str(session_dir),
+        pipeline_mode="streaming",
+    )
+    SegmentManifestRepo(conn).upsert_part(
+        session_id=sid,
+        part_index=5,
+        rel_path="parts/seg-00005.m4s",
+        state="closed",
+    )
+    conn.close()
+    return sid
+
+
+def test_playback_m3u8_rewrites_bare_seg_uris(api_client, workspace) -> None:
+    sid = _seed_hls_session_bare_seg_uris(workspace)
+    r = api_client.get(f"/api/sessions/{sid}/playback.m3u8")
+    assert r.status_code == 200
+    assert f"/api/sessions/{sid}/parts/5" in r.text
+    assert "seg-00005.m4s" not in r.text
+
+
 def test_playback_m3u8_returns_event_playlist(api_client, workspace) -> None:
     sid, _ = _seed_hls_session(workspace)
     r = api_client.get(f"/api/sessions/{sid}/playback.m3u8")
@@ -76,7 +128,7 @@ def test_playback_part_streams_local_file(api_client, workspace) -> None:
     r = api_client.get(f"/api/sessions/{sid}/parts/1")
     assert r.status_code == 200
     assert r.content == (session_dir / "parts" / "seg-00001.m4s").read_bytes()
-    assert "video/iso.segment" in r.headers.get("content-type", "")
+    assert "video/mp4" in r.headers.get("content-type", "")
 
 
 def test_playback_part_missing_returns_404(api_client, workspace) -> None:
@@ -172,3 +224,19 @@ def test_playback_init_cloud_redirect(api_client, workspace, monkeypatch) -> Non
     r = api_client.get(f"/api/sessions/{sid}/init.mp4", follow_redirects=False)
     assert r.status_code == 302
     assert r.headers["location"] == f"https://cloud.example/{sid}/init.mp4"
+
+
+def test_playback_mp4_endpoint(api_client, workspace, monkeypatch) -> None:
+    sid, session_dir = _seed_hls_session(workspace, with_init=True)
+
+    monkeypatch.setattr(
+        "media2text.api.routes.playback.remux_hls_to_playback_mp4",
+        lambda session_dir, *, ffmpeg: session_dir / "playback.mp4",
+    )
+    fake = session_dir / "playback.mp4"
+    fake.write_bytes(b"remuxed-mp4")
+
+    r = api_client.get(f"/api/sessions/{sid}/playback.mp4")
+    assert r.status_code == 200
+    assert r.content == b"remuxed-mp4"
+    assert "video/mp4" in r.headers.get("content-type", "")

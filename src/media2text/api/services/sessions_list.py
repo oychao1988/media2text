@@ -10,7 +10,6 @@ from typing import Any
 from fastapi import HTTPException
 
 from media2text.api.security import safe_workspace_path, workspace_rel
-from media2text.core.live.transcript_writer import transcript_sidecar_media_paths
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.repos import AwemeRepo, CloudUploadRepo, CreatorRepo
 
@@ -123,7 +122,7 @@ def _build_live_item(
     if m_entry and m_entry.get("media_path"):
         media_path = m_entry.get("media_path") or media_path
 
-    ht = _has_transcript(media_path, m_entry)
+    ht = _has_transcript(ws, media_path, m_entry)
     hs = _has_summary(ws, media_path, m_entry)
     cloud = _merge_cloud_fields(conn, sid, data, m_entry)
     hls_fields = _hls_playback_fields(ws, media_path, data)
@@ -151,10 +150,7 @@ def _build_live_item(
         **hls_fields,
         "has_transcript": ht,
         "has_summary": hs,
-        "transcript_path": _resolve_sidecar_rel(
-            ws,
-            m_entry.get("transcript_path") if m_entry else _transcript_sidecar_path(media_path),
-        ),
+        "transcript_path": _resolve_transcript_path(ws, media_path, m_entry),
         "summary_path": _resolve_summary_path(ws, media_path, m_entry),
         "display_label": _format_live_display_label(data.get("started_at")),
     }
@@ -171,7 +167,7 @@ def _build_vod_item(
     media_path = row.local_path
     if m_entry and m_entry.get("media_path"):
         media_path = m_entry.get("media_path") or media_path
-    ht = _has_transcript(media_path, m_entry)
+    ht = _has_transcript(ws, media_path, m_entry)
     hs = _has_summary(ws, media_path, m_entry)
     started_at = _vod_started_at(row.create_time)
     manifest_cloud = {
@@ -206,26 +202,47 @@ def _build_vod_item(
         "cloud_available": _cloud_available(cloud_status, cloud_file_id, cloud_rel),
         "has_transcript": ht,
         "has_summary": hs,
-        "transcript_path": _resolve_sidecar_rel(
+        "transcript_path": _resolve_transcript_path(
             ws,
-            m_entry.get("transcript_path") if m_entry else row.transcript_path or _transcript_sidecar_path(media_path),
+            media_path,
+            m_entry,
+            row_transcript_path=row.transcript_path,
         ),
         "summary_path": _resolve_summary_path(ws, media_path, m_entry),
         "display_label": row.title or row.aweme_id,
     }
 
 
-def _has_transcript(media_path: str | None, manifest_entry: dict | None) -> bool:
+def _has_transcript(
+    workspace: Path,
+    media_path: str | None,
+    manifest_entry: dict | None,
+) -> bool:
     if manifest_entry and manifest_entry.get("transcript_path"):
-        return True
+        rel = _resolve_sidecar_rel(workspace, str(manifest_entry["transcript_path"]))
+        if rel:
+            return True
     if not media_path:
         return False
-    base = Path(media_path)
-    for candidate in transcript_sidecar_media_paths(base):
-        for suffix in (".transcript.json", ".transcript.partial.json", ".transcript.md"):
-            if candidate.with_suffix(suffix).is_file():
-                return True
-    return _transcript_sidecar_path(media_path) is not None
+    return _transcript_sidecar_path(media_path, workspace=workspace) is not None
+
+
+def _resolve_transcript_path(
+    workspace: Path,
+    media_path: str | None,
+    manifest_entry: dict | None,
+    *,
+    row_transcript_path: str | None = None,
+) -> str | None:
+    if manifest_entry and manifest_entry.get("transcript_path"):
+        rel = _resolve_sidecar_rel(workspace, str(manifest_entry["transcript_path"]))
+        if rel:
+            return rel
+    if row_transcript_path:
+        rel = _resolve_sidecar_rel(workspace, row_transcript_path)
+        if rel:
+            return rel
+    return _transcript_sidecar_path(media_path, workspace=workspace)
 
 
 def _resolve_sidecar_rel(

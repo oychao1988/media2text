@@ -227,6 +227,10 @@ def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, 
                 content = page.content()
             except Exception:
                 content = ""
+            # Signed profile/other XHR means the session is usable even when the
+            # static HTML still contains nav/footer login links.
+            if payload is not None:
+                return payload, content
             if "登录" in content and "passport" in content:
                 raise AuthRequired("login required on profile page")
             if _is_verify_challenge_page(content):

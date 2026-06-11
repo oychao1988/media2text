@@ -10,7 +10,11 @@ from fastapi import HTTPException
 from media2text.api.security import workspace_rel
 from media2text.api.services.history_media import _resolve_media_path
 from media2text.api.services.sessions_list import _load_manifest, _manifest_live_by_id, _manifest_vod_by_id
-from media2text.api.services.transcript import read_summary_text, read_transcript_payload
+from media2text.api.services.transcript import (
+    read_summary_text,
+    read_transcript_for_session,
+    read_transcript_payload,
+)
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, LiveSessionRepo
 
 HistoryKind = Literal["live", "vod"]
@@ -58,6 +62,18 @@ def read_history_transcript(
     kind: HistoryKind,
     item_id: str,
 ) -> dict[str, Any]:
+    if kind == "live":
+        creator = CreatorRepo(conn).get(creator_id)
+        if not creator:
+            raise HTTPException(status_code=404, detail="history item not found")
+        session = LiveSessionRepo(conn).get(item_id)
+        if not session or session.creator_id != creator_id:
+            raise HTTPException(status_code=404, detail="history item not found")
+        try:
+            return read_transcript_for_session(session)
+        except HTTPException:
+            raise HTTPException(status_code=404, detail="transcript not found") from None
+
     media = resolve_history_media_path(
         conn, workspace=workspace, creator_id=creator_id, kind=kind, item_id=item_id
     )

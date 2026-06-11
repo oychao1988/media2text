@@ -32,8 +32,11 @@ from media2text.core.ffmpeg import (
     stop_process,
 )
 from media2text.core.live.hls_recorder import (
+    HLS_FFMPEG_LOG,
+    append_discontinuity_to_playlist,
     finalize_hls_endlist,
     part_rel_path,
+    read_hls_ffmpeg_log_tail,
     rotate_hls_after_reconnect,
     spawn_hls_recorder,
     stop_hls_recorder,
@@ -67,6 +70,8 @@ from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorT
 log = structlog.get_logger()
 FFMPEG_STARTUP_GRACE_SEC = 2
 TRANSCRIPT_STALL_RECONNECT_SEC = 90
+HLS_STALL_GRACE_SEC = 45
+HLS_STALL_POLL_THRESHOLD = 3
 
 
 class LiveRecordingCore:
@@ -107,6 +112,7 @@ class LiveRecordingCore:
         self._partial_notifiers: dict[str, PartialTranscriptNotifier] = {}
         self._hls_part_index: dict[str, int] = {}
         self._hls_discontinuity_seq: dict[str, int] = {}
+        self._hls_stall_polls: dict[str, int] = {}
         self._stall_recovery_inflight: set[str] = set()
 
     @property
@@ -604,6 +610,142 @@ class LiveRecordingCore:
         finally:
             self._stall_recovery_inflight.discard(row.id)
 
+    def _hls_recording_healthy(self, session_id: str, session_dir: Path) -> bool:
+        if self._hls_media_growing(session_id, session_dir):
+            return True
+        log_path = session_dir / HLS_FFMPEG_LOG
+        if log_path.is_file():
+            size = log_path.stat().st_size
+            key = f"{session_id}:hlslog"
+            prev = self._flv_size_snapshots.get(key)
+            self._flv_size_snapshots[key] = size
+            if prev is not None and size > prev:
+                return True
+        return False
+
+    def _maybe_recover_stalled_hls(
+        self,
+        row,
+        creator,
+        *,
+        ffmpeg_alive: bool,
+        stt_alive: bool | None,
+    ) -> None:
+        if not self._use_hls_recording(row.id):
+            return
+        if row.status != "recording" or not ffmpeg_alive:
+            return
+        if stt_alive is not True:
+            return
+        if row.id in self._streaming_legacy_finalize:
+            return
+        if row.id in self._stall_recovery_inflight:
+            return
+        attempts = row.reconnect_attempts or 0
+        if attempts >= self._cfg.live.max_reconnect_attempts:
+            return
+        session_dir = self._resolve_session_dir(row.id)
+        if session_dir is None:
+            return
+        if self._recording_age_sec(row.started_at) < HLS_STALL_GRACE_SEC:
+            return
+        if self._hls_recording_healthy(row.id, session_dir):
+            self._hls_stall_polls.pop(row.id, None)
+            return
+        stall = self._hls_stall_polls.get(row.id, 0) + 1
+        self._hls_stall_polls[row.id] = stall
+        if stall < HLS_STALL_POLL_THRESHOLD:
+            return
+        tasks = MonitorTaskRepo(self._conn)
+        if tasks.has_active_dedupe(f"reconnect_rec:{row.id}"):
+            return
+        self._stall_recovery_inflight.add(row.id)
+        try:
+            log.warning(
+                "live_hls_stall_reconnect",
+                session_id=row.id,
+                stall_polls=stall,
+                mode="hls_only",
+            )
+            self._reconnect_hls_ffmpeg_only(row.id, creator)
+            self._hls_stall_polls.pop(row.id, None)
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "live_hls_stall_reconnect_failed",
+                session_id=row.id,
+                error=str(exc),
+            )
+        finally:
+            self._stall_recovery_inflight.discard(row.id)
+
+    def _reconnect_hls_ffmpeg_only(self, session_id: str, creator) -> None:
+        row = self._sessions.get(session_id)
+        if row is None or row.ffmpeg_pid is None:
+            return
+        old_pid = row.ffmpeg_pid
+        proc_old = self._processes.pop(session_id, None)
+        if proc_old is not None:
+            stop_hls_recorder(
+                proc_old, timeout=self._cfg.live.ffmpeg_stop_timeout_sec
+            )
+        elif self._process_alive(old_pid):
+            stop_pid(old_pid, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
+
+        session_dir = self._resolve_session_dir(session_id)
+        if session_dir is None:
+            return
+
+        part_index = self._resolve_hls_part_index(session_id, session_dir) or 1
+        seg_path = session_dir / part_rel_path(part_index)
+        has_seg = seg_path.is_file() and seg_path.stat().st_size > 0
+        discontinuity_seq = self._hls_discontinuity_seq.get(session_id, 0)
+        next_index = part_index
+        if has_seg:
+            self._close_hls_part_if_any(session_id, session_dir)
+            next_index = part_index + 1
+            discontinuity_seq += 1
+            rotate_hls_after_reconnect(
+                conn=self._conn,
+                session_id=session_id,
+                session_dir=session_dir,
+                next_index=next_index,
+                discontinuity_seq=discontinuity_seq,
+            )
+        elif (session_dir / "master.m3u8").is_file():
+            append_discontinuity_to_playlist(session_dir)
+
+        stream_url = self._resolve_live_stream_url(creator, room_id=row.room_id)
+        if not stream_url:
+            raise RecordingError("hls_reconnect_no_stream_url")
+
+        attempt = self._state.increment_reconnect_attempts(session_id)
+
+        new_proc = self._spawn_hls_recording(
+            session_id=session_id,
+            stream_url=stream_url,
+            session_dir=session_dir,
+            part_index=next_index,
+            discontinuity_seq=discontinuity_seq,
+        )
+        master_path = str(session_dir / "master.m3u8")
+        self._state.update_recording_state(
+            session_id,
+            ffmpeg_pid=new_proc.pid,
+            temp_path=master_path,
+            session_dir=str(session_dir),
+        )
+        self._processes[session_id] = new_proc
+        self._stream_urls[session_id] = stream_url
+        self._hls_discontinuity_seq[session_id] = discontinuity_seq
+        time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+        log.info(
+            "live_recording_reconnected_hls",
+            session_id=session_id,
+            attempt=attempt,
+            part_index=next_index,
+            mode="hls_only",
+        )
+
     def poll_active_session(self, row, creator, *, state: StateWriter) -> None:
         """LP-02: obs + offline semantics; inline stall recovery when CDN URL expires."""
         if row.status != "recording" or row.ffmpeg_pid is None:
@@ -642,6 +784,12 @@ class LiveRecordingCore:
 
         if still_live:
             self._maybe_recover_stalled_stream(
+                row,
+                creator,
+                ffmpeg_alive=ffmpeg_alive,
+                stt_alive=stt_alive,
+            )
+            self._maybe_recover_stalled_hls(
                 row,
                 creator,
                 ffmpeg_alive=ffmpeg_alive,
@@ -1264,7 +1412,9 @@ class LiveRecordingCore:
         exit_code = proc.poll()
         if exit_code is not None:
             err_tail = ""
-            if proc.stderr is not None:
+            if use_hls and session_dir is not None:
+                err_tail = read_hls_ffmpeg_log_tail(session_dir)
+            elif proc.stderr is not None:
                 err_tail = proc.stderr.read().decode(errors="replace")[-500:]
             stop_process(proc, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
             self._processes.pop(session_id, None)

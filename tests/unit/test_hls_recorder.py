@@ -24,7 +24,10 @@ def test_hls_recorder_builds_event_playlist_args(tmp_path) -> None:
         segment_sec=600,
         compress_cfg=LiveCompressConfig(enabled=False),
     )
-    assert "-f" in args and "hls" in args
+    assert "-hls_base_url" in args
+    assert "parts/" in args
+    assert "-loglevel" in args
+    assert "-reconnect" in args
     assert "-hls_playlist_type" in args
     assert "event" in args
     assert "-hls_segment_type" in args
@@ -47,8 +50,10 @@ def test_hls_recorder_compress_args_when_enabled(tmp_path) -> None:
 
 
 @patch("media2text.core.live.hls_recorder.subprocess.Popen")
-def test_spawn_hls_recorder(mock_popen, tmp_path) -> None:
+@patch("media2text.core.live.hls_recorder.open", create=True)
+def test_spawn_hls_recorder(mock_open, mock_popen, tmp_path) -> None:
     mock_popen.return_value = MagicMock()
+    mock_open.return_value = MagicMock()
     proc = spawn_hls_recorder(
         ffmpeg="ffmpeg",
         stream_url="http://x",
@@ -62,14 +67,19 @@ def test_spawn_hls_recorder(mock_popen, tmp_path) -> None:
     assert "-start_number" in cmd
     idx = cmd.index("-start_number")
     assert cmd[idx + 1] == "3"
+    kwargs = mock_popen.call_args[1]
+    assert kwargs["stderr"] is mock_open.return_value
+    mock_open.assert_called_once()
 
 
 def test_stop_hls_recorder_delegates_to_stop_process() -> None:
     proc = MagicMock()
     proc.poll.return_value = None
+    proc.stderr = MagicMock()
     with patch("media2text.core.live.hls_recorder.stop_process") as mock_stop:
         stop_hls_recorder(proc, timeout=5)
     mock_stop.assert_called_once_with(proc, timeout=5)
+    proc.stderr.close.assert_called_once()
 
 
 def test_finalize_hls_endlist_appends_marker(tmp_path) -> None:
@@ -116,6 +126,7 @@ def test_hls_reconnect_appends_discontinuity_and_new_index(
         rel_path="parts/seg-00002.m4s",
         state="closed",
     )
+    (session_dir / "init.mp4").write_bytes(b"init-v1")
 
     rotate_hls_after_reconnect(
         conn=conn,
@@ -126,6 +137,7 @@ def test_hls_reconnect_appends_discontinuity_and_new_index(
     )
     text = master.read_text(encoding="utf-8")
     assert "EXT-X-DISCONTINUITY" in text
+    assert (session_dir / "init-1.mp4").read_bytes() == b"init-v1"
 
     repo.upsert_part(
         session_id=sid,

@@ -220,3 +220,14 @@ def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
 
 def is_session_finalized(row: LiveSessionRow) -> bool:
     return row.status in ("completed", "failed")
+
+
+# Private WebSocket close code: session no longer accepts live transcript stream.
+WS_CLOSE_SESSION_FINALIZED = 4410
+
+
+def transcript_session_meta(row: LiveSessionRow) -> dict[str, Any]:
+    return {
+        "session_status": row.status,
+        "session_finalized": is_session_finalized(row),
+    }

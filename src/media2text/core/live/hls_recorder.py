@@ -1,11 +1,21 @@
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 from pathlib import Path
 
 from media2text.core.config import LiveCompressConfig
 from media2text.core.ffmpeg import stop_process
+
+HLS_FFMPEG_LOG = "ffmpeg-hls.log"
+
+
+def read_hls_ffmpeg_log_tail(session_dir: Path, *, max_bytes: int = 500) -> str:
+    log_path = session_dir / HLS_FFMPEG_LOG
+    if not log_path.is_file():
+        return ""
+    return log_path.read_bytes()[-max_bytes:].decode(errors="replace")
 
 
 def part_rel_path(part_index: int) -> str:
@@ -29,6 +39,15 @@ def build_hls_recorder_args(
 
     cmd: list[str] = [
         ffmpeg,
+        "-hide_banner",
+        "-loglevel",
+        "warning",
+        "-reconnect",
+        "1",
+        "-reconnect_streamed",
+        "1",
+        "-reconnect_delay_max",
+        "5",
         "-y",
         "-i",
         stream_url,
@@ -53,6 +72,8 @@ def build_hls_recorder_args(
         [
             "-f",
             "hls",
+            "-hls_base_url",
+            "parts/",
             "-hls_time",
             str(segment_sec),
             "-hls_playlist_type",
@@ -90,11 +111,35 @@ def spawn_hls_recorder(
         compress_cfg=compress_cfg,
         start_segment_number=start_segment_number,
     )
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    log_path = session_dir / HLS_FFMPEG_LOG
+    log_handle = open(log_path, "ab")  # noqa: SIM115
+    return subprocess.Popen(
+        cmd,
+        stdout=subprocess.DEVNULL,
+        stderr=log_handle,
+    )
 
 
 def stop_hls_recorder(proc: subprocess.Popen, *, timeout: int = 30) -> None:
     stop_process(proc, timeout=timeout)
+    stderr = proc.stderr
+    if stderr is not None and hasattr(stderr, "close"):
+        try:
+            stderr.close()
+        except OSError:
+            pass
+
+
+def archive_hls_init(session_dir: Path, *, discontinuity_seq: int) -> Path | None:
+    """Preserve init.mp4 before reconnect overwrites it (Safari needs matching init per era)."""
+    init = session_dir / "init.mp4"
+    if not init.is_file() or init.stat().st_size <= 0:
+        return None
+    dest = session_dir / f"init-{discontinuity_seq}.mp4"
+    if dest.is_file():
+        return dest
+    shutil.copy2(init, dest)
+    return dest
 
 
 def append_discontinuity_to_playlist(session_dir: Path) -> None:
@@ -133,7 +178,9 @@ def rotate_hls_after_reconnect(
     next_index: int,
     discontinuity_seq: int,
 ) -> None:
-    del conn, session_id, next_index, discontinuity_seq  # spawn path owns DB upsert
+    del conn, session_id, next_index  # spawn path owns DB upsert
+    if discontinuity_seq > 0:
+        archive_hls_init(session_dir, discontinuity_seq=discontinuity_seq)
     append_discontinuity_to_playlist(session_dir)
 
 

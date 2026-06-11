@@ -31,6 +31,52 @@ def transcript_sidecar_media_paths(media_path: Path) -> list[Path]:
     return [media_path]
 
 
+_TRANSCRIPT_SIDECAR_SUFFIXES = (
+    ".transcript.json",
+    ".transcript.partial.json",
+    ".transcript.md",
+)
+
+
+def find_transcript_sidecar(
+    media_path: str | Path,
+    *,
+    workspace: Path | None = None,
+) -> Path | None:
+    """Return filesystem path to an existing transcript sidecar (HLS anchor-aware)."""
+    lookup = _sidecar_lookup_media_path(media_path, workspace=workspace)
+    for candidate in transcript_sidecar_media_paths(lookup):
+        for suffix in _TRANSCRIPT_SIDECAR_SUFFIXES:
+            sidecar = candidate.with_suffix(suffix)
+            paths_to_try: list[Path] = [sidecar]
+            if workspace is not None and not sidecar.is_absolute():
+                paths_to_try.insert(0, workspace / sidecar)
+            for path in paths_to_try:
+                if path.is_file():
+                    return path
+    return None
+
+
+def _sidecar_lookup_media_path(
+    media_path: str | Path,
+    *,
+    workspace: Path | None = None,
+) -> Path:
+    """Normalize session dir / playlist paths before locating transcript sidecars."""
+    path = Path(media_path)
+    candidates: list[Path] = [path]
+    if workspace is not None and not path.is_absolute():
+        candidates.insert(0, workspace / path)
+    for candidate in candidates:
+        if candidate.is_dir():
+            master = candidate / "master.m3u8"
+            if master.is_file():
+                return master
+        if candidate.name.lower() == "master.m3u8" or candidate.suffix.lower() == ".m3u8":
+            return candidate
+    return candidates[0]
+
+
 def partial_segment_end_from_media(media_path: Path) -> float | None:
     """Max segment ``end`` from any partial sidecar reachable from *media_path*."""
     best: float | None = None

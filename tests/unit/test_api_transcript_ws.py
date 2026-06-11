@@ -2,6 +2,7 @@ import json
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
+from media2text.api.services.transcript import WS_CLOSE_SESSION_FINALIZED
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
@@ -50,6 +51,15 @@ def test_transcript_ws_pushes_partial(api_client, workspace) -> None:
         msg = json.loads(ws.receive_text())
         assert msg["text"] == "ws-line"
         assert msg["partial"] is True
+        assert msg["session_finalized"] is True
+        # Finalized sessions may emit a duplicate payload before closing.
+        try:
+            while True:
+                json.loads(ws.receive_text())
+        except WebSocketDisconnect as exc:
+            assert exc.code == WS_CLOSE_SESSION_FINALIZED
+        else:
+            pytest.fail("expected websocket close after finalized session")
 
 
 def test_transcript_ws_unknown_session(api_client) -> None:

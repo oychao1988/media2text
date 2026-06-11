@@ -23,7 +23,7 @@ def record_stream_copy(
         "flv",
         str(output_path),
     ]
-    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    return subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def stop_process(proc: subprocess.Popen, *, timeout: int = 30) -> None:

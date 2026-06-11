@@ -100,6 +100,8 @@ export type TranscriptSegment = {
 export type TranscriptPayload = {
   ok?: boolean;
   session_id?: string;
+  session_status?: string;
+  session_finalized?: boolean;
   partial?: boolean;
   text?: string;
   segments?: TranscriptSegment[];

@@ -32,6 +32,7 @@ vi.mock('../../lib/api', () => ({
   listGalleryImages: vi.fn(),
   mediaUrl: vi.fn(async (p: string) => `http://api.test/media?path=${encodeURIComponent(p)}`),
   playbackM3u8Url: vi.fn(async (id: string) => `http://api.test/api/sessions/${id}/playback.m3u8`),
+  playbackMp4Url: vi.fn(async (id: string) => `http://api.test/api/sessions/${id}/playback.mp4`),
 }));
 
 vi.mock('../layout/useLayoutStore', () => ({
@@ -68,6 +69,7 @@ const baseSession = (overrides: Partial<LiveSessionSummary> = {}): LiveSessionSu
 describe('ViewPlayback hls.js', () => {
   beforeEach(() => {
     mockHlsInstances.length = 0;
+    vi.clearAllMocks();
   });
 
   it('uses playback.m3u8 for media_format=hls', async () => {
@@ -77,7 +79,7 @@ describe('ViewPlayback hls.js', () => {
       <ViewPlayback
         active
         creatorName="主播"
-        session={baseSession({ media_format: 'hls', discontinuity_at: [120] })}
+        session={baseSession({ media_format: 'hls' })}
         onTimeUpdate={onTimeUpdate}
       />,
     );
@@ -109,6 +111,23 @@ describe('ViewPlayback hls.js', () => {
     await waitFor(() => {
       expect(playbackM3u8Url).toHaveBeenCalledWith('sess-1');
     });
+    expect(document.querySelector('video')).toBeTruthy();
+  });
+
+  it('uses remuxed playback.mp4 when discontinuity_at is present', async () => {
+    const { playbackMp4Url, playbackM3u8Url } = await import('../../lib/api');
+    render(
+      <ViewPlayback
+        active
+        creatorName="主播"
+        session={baseSession({ media_format: 'hls', discontinuity_at: [630.76] })}
+      />,
+    );
+    await waitFor(() => {
+      expect(playbackMp4Url).toHaveBeenCalledWith('sess-1');
+    });
+    expect(playbackM3u8Url).not.toHaveBeenCalled();
+    expect(mockHlsInstances.length).toBe(0);
     expect(document.querySelector('video')).toBeTruthy();
   });
 });

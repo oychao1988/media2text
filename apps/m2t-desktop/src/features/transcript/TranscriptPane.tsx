@@ -213,24 +213,26 @@ export function TranscriptPane({
     let ws: WebSocket | null = null;
     let reconnectTimer: number | undefined;
     let attempt = 0;
+    let sessionFinalized = false;
+
+    const markSessionFinalized = () => {
+      sessionFinalized = true;
+      if (reconnectTimer != null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = undefined;
+      }
+    };
 
     const applyPayload = (payload: TranscriptPayload) => {
+      if (payload.session_finalized) markSessionFinalized();
       if (!cancelled) dispatch({ type: 'payload', payload });
     };
 
     const loadRest = async () => {
       try {
-        if (mode === 'playback' && playbackItem) {
-          if (transcriptPath) {
-            const url = await mediaUrl(transcriptPath);
-            const res = await fetch(url);
-            if (!res.ok) throw new Error('transcript unavailable');
-            const payload = (await res.json()) as TranscriptPayload;
-            if (!cancelled) applyPayload(payload);
-            return;
-          }
+        if (mode === 'playback' && sessionId) {
           const res = await apiGet<TranscriptPayload & { ok: boolean }>(
-            `/api/creators/${playbackItem.creatorId}/history/${playbackItem.kind}/${playbackItem.itemId}/transcript`,
+            `/api/sessions/${sessionId}/transcript`,
             true,
           );
           if (!cancelled) applyPayload(res);
@@ -244,6 +246,15 @@ export function TranscriptPane({
           if (!cancelled) applyPayload(payload);
           return;
         }
+        if (mode === 'playback' && playbackItem) {
+          const res = await apiGet<TranscriptPayload & { ok: boolean }>(
+            `/api/creators/${playbackItem.creatorId}/history/${playbackItem.kind}/${playbackItem.itemId}/transcript`,
+            true,
+          );
+          if (!cancelled) applyPayload(res);
+          return;
+        }
+        if (!sessionId) throw new Error('session unavailable');
         const res = await apiGet<TranscriptPayload & { ok: boolean }>(
           `/api/sessions/${sessionId}/transcript`,
           true,
@@ -255,7 +266,7 @@ export function TranscriptPane({
     };
 
     const connectWs = async () => {
-      if (cancelled) return;
+      if (cancelled || sessionFinalized) return;
       try {
         const url = await buildWsUrl(`/api/sessions/${sessionId}/transcript/stream`);
         ws = new WebSocket(url);
@@ -278,18 +289,23 @@ export function TranscriptPane({
         }
       };
 
-      ws.onclose = () => {
-        if (!cancelled) {
-          dispatch({ type: 'disconnected', value: true });
-          scheduleReconnect();
+      ws.onclose = (ev) => {
+        if (cancelled) return;
+        // Server closes with 4410 when the session is completed/failed — do not reconnect.
+        if (ev.code === 4410) {
+          markSessionFinalized();
+          dispatch({ type: 'disconnected', value: false });
+          return;
         }
+        dispatch({ type: 'disconnected', value: true });
+        scheduleReconnect();
       };
 
       ws.onerror = () => ws?.close();
     };
 
     const scheduleReconnect = () => {
-      if (cancelled) return;
+      if (cancelled || sessionFinalized) return;
       const delay = Math.min(1000 * 2 ** attempt, 30000);
       attempt += 1;
       reconnectTimer = window.setTimeout(() => {

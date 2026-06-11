@@ -154,6 +154,11 @@ export async function playbackM3u8Url(sessionId: string): Promise<string> {
   return `${base}/api/sessions/${encodeURIComponent(sessionId)}/playback.m3u8`;
 }
 
+export async function playbackMp4Url(sessionId: string): Promise<string> {
+  const base = await getApiBaseUrl();
+  return `${base}/api/sessions/${encodeURIComponent(sessionId)}/playback.mp4`;
+}
+
 export async function listGalleryImages(
   relDir: string,
 ): Promise<{ ok: boolean; images: string[] }> {

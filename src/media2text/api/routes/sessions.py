@@ -13,11 +13,13 @@ from media2text.api.deps import get_cfg, get_db
 from media2text.api.security import workspace_rel
 from media2text.api.services import flv_proxy as flv_proxy_svc
 from media2text.api.services.transcript import (
+    WS_CLOSE_SESSION_FINALIZED,
     _media_path_for_session,
     is_session_finalized,
     read_summary_text,
     read_transcript_for_session,
     session_sidecar_paths,
+    transcript_session_meta,
     transcript_mtime,
 )
 from media2text.core.config import AppConfig
@@ -77,7 +79,12 @@ def get_transcript(
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
     payload = read_transcript_for_session(row)
-    return {"ok": True, "session_id": session_id, **payload}
+    return {
+        "ok": True,
+        "session_id": session_id,
+        **transcript_session_meta(row),
+        **payload,
+    }
 
 
 @router.get("/{session_id}/summary")
@@ -156,7 +163,10 @@ async def transcript_stream_ws(
             if mtime is not None and mtime != last_mtime:
                 last_mtime = mtime
                 try:
-                    payload = read_transcript_for_session(row)
+                    payload = {
+                        **read_transcript_for_session(row),
+                        **transcript_session_meta(row),
+                    }
                 except HTTPException:
                     payload = None
                 if payload is not None:
@@ -165,13 +175,16 @@ async def transcript_stream_ws(
             if is_session_finalized(row):
                 if mtime is None or mtime == last_mtime:
                     try:
-                        payload = read_transcript_for_session(row)
+                        payload = {
+                            **read_transcript_for_session(row),
+                            **transcript_session_meta(row),
+                        }
                         await websocket.send_text(
                             json.dumps(payload, ensure_ascii=False)
                         )
                     except HTTPException:
                         pass
-                await websocket.close()
+                await websocket.close(code=WS_CLOSE_SESSION_FINALIZED)
                 return
 
             await asyncio.sleep(_TRANSCRIPT_POLL_SEC)

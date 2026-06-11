@@ -17,7 +17,7 @@ router = APIRouter(tags=["media"])
 _EXT_MEDIA_TYPES = {
     ".flv": "video/x-flv",
     ".mp4": "video/mp4",
-    ".m4s": "video/iso.segment",
+    ".m4s": "video/mp4",
     ".m3u8": "application/vnd.apple.mpegurl",
     ".webm": "video/webm",
     ".md": "text/markdown; charset=utf-8",
