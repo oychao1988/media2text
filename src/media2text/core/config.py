@@ -85,6 +85,13 @@ class LiveCompressConfig(BaseModel):
     audio_bitrate: str = "128k"
 
 
+class LiveEncodeConfig(BaseModel):
+    mode: str = "copy"  # copy | compress
+    video_codec: str = "auto"
+    video_bitrate: str = "2M"
+    audio_bitrate: str = "128k"
+
+
 class LiveSegmentUploadConfig(BaseModel):
     enabled: bool = True
     delete_local_after_upload: bool = True
@@ -106,6 +113,7 @@ class LiveConfig(BaseModel):
     transcribe_on_complete: bool = False
     streaming_stt: StreamingSttConfig = Field(default_factory=StreamingSttConfig)
     media: LiveMediaConfig = Field(default_factory=LiveMediaConfig)
+    encode: LiveEncodeConfig = Field(default_factory=LiveEncodeConfig)
     compress: LiveCompressConfig = Field(default_factory=LiveCompressConfig)
     segment_pipeline: LiveSegmentPipelineConfig = Field(
         default_factory=LiveSegmentPipelineConfig
@@ -151,6 +159,16 @@ class LiveConfig(BaseModel):
         if self.remux_on_complete is not None:
             return self.remux_on_complete
         return self.effective_pipeline_mode() != "streaming"
+
+    @model_validator(mode="after")
+    def _migrate_compress_to_encode(self) -> LiveConfig:
+        if self.compress.enabled and self.encode.mode == "copy":
+            self.encode.mode = "compress"
+            if self.compress.video_bitrate:
+                self.encode.video_bitrate = self.compress.video_bitrate
+            if self.compress.audio_bitrate:
+                self.encode.audio_bitrate = self.compress.audio_bitrate
+        return self
 
     @model_validator(mode="after")
     def _validate_streaming_pipeline(self) -> LiveConfig:

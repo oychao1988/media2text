@@ -15,7 +15,7 @@
 | 登录与会话 | Playwright 扫码/浏览器登录，会话保存在 `data/sessions/` |
 | 创作者管理 | 通过主页链接解析 `sec_uid` 并登记；可选拉取昵称、头像等资料 |
 | 监控开关 | `creator monitor` 开启后，统一守护进程负责直播 + 作品流水线 |
-| 直播录制 | 轮询开播状态，ffmpeg 拉流；`streaming` + `live.media.format=hls` 为 HLS 分段（`master.m3u8` + `parts/*.m4s`），legacy 为 FLV/MP4 |
+| 直播录制 | 轮询开播状态，ffmpeg 拉流；**新用户推荐** `streaming` + `live.media.format=hls` + `segment_pipeline.enabled=true`（HLS 分段 + 段级上云）；legacy 为 FLV/MP4 整文件路径 |
 | 作品同步与下载 | 打开博主主页、拦截带签名的 `aweme/post` 请求后写入 catalog，再下载视频（需有效登录态） |
 | 转写 | 可选 `faster-whisper`，输出 Markdown + JSON |
 | 流水线 | `sync → download → transcribe` 一键跑通 |

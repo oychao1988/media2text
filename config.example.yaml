@@ -66,19 +66,24 @@ live:
   ffmpeg_path: ffmpeg
   ffmpeg_stop_timeout_sec: 30
   temp_format: flv
-  # HLS segment pipeline (LSM-1+): live.media.format / segment_pipeline — see
-  # docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
-  compress:
-    # PoC gate (LSM-0 / S6): run scripts/benchmark_live_compress.py on a real
-    # FLV/TS sample before enabling. Record results in:
+  # Session Media unified path (SMU): streaming + hls + segment_pipeline — see
+  # docs/superpowers/specs/2026-06-11-session-media-unified-refactor-design.md
+  encode:
+    # PoC gate (SMU-R0 / S6): run scripts/benchmark_live_compress.py before
+    # switching to compress. Record results in:
     # docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
-    # Keep enabled: false until size_ratio <= 0.40 AND encode_realtime_factor >= 1.0.
+    mode: copy                     # copy | compress — keep copy until S6 s6_pass on your hardware
+    video_codec: auto              # auto → hevc_videotoolbox → h264_videotoolbox → libx264
+    video_bitrate: 2M
+    audio_bitrate: 128k
+  # Deprecated alias — maps to live.encode when enabled=true (SMU-R1)
+  compress:
     enabled: false
-    encoder: videotoolbox          # macOS hevc_videotoolbox
+    encoder: videotoolbox
     video_bitrate: 2M
     audio_bitrate: 128k
   media:
-    format: flv                    # flv | hls — hls requires pipeline_mode=streaming
+    format: hls                    # flv | hls — hls requires pipeline_mode=streaming
     segment_duration_sec: 600
   segment_pipeline:
     enabled: true
