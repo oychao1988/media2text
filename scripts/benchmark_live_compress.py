@@ -28,6 +28,14 @@ ROOT = Path(__file__).resolve().parents[1]
 S6_SIZE_RATIO_MAX = 0.40
 S6_REALTIME_FACTOR_MIN = 1.0
 
+VIDEO_CODECS = ("hevc_videotoolbox", "h264_videotoolbox", "libx264")
+
+_CODEC_ARGS: dict[str, list[str]] = {
+    "hevc_videotoolbox": ["-c:v", "hevc_videotoolbox"],
+    "h264_videotoolbox": ["-c:v", "h264_videotoolbox"],
+    "libx264": ["-c:v", "libx264", "-preset", "veryfast"],
+}
+
 
 def _run_checked(cmd: list[str], *, text: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, capture_output=True, text=text, check=False)
@@ -71,19 +79,32 @@ def _sample_cpu_pct(pid: int) -> float | None:
         return None
 
 
+def _video_codec_args(video_codec: str) -> list[str]:
+    if video_codec not in _CODEC_ARGS:
+        raise ValueError(
+            f"unsupported video_codec: {video_codec!r}; "
+            f"expected one of {', '.join(VIDEO_CODECS)}"
+        )
+    return _CODEC_ARGS[video_codec]
+
+
 def run_benchmark(
     sample_path: Path,
     *,
+    video_codec: str = "hevc_videotoolbox",
+    video_bitrate: str = "2M",
+    audio_bitrate: str = "128k",
     ffmpeg_path: str = "ffmpeg",
     ffprobe_path: str = "ffprobe",
 ) -> dict[str, object]:
     if platform.system() != "Darwin":
         raise RuntimeError(
-            "hevc_videotoolbox PoC requires macOS; non-macOS fallback is out of scope for LSM-0"
+            "VideoToolbox PoC requires macOS; non-macOS fallback is out of scope for LSM-0"
         )
     if not sample_path.is_file():
         raise FileNotFoundError(f"sample not found: {sample_path}")
 
+    codec_args = _video_codec_args(video_codec)
     input_bytes = sample_path.stat().st_size
     duration_sec = probe_duration(sample_path, ffprobe_path)
 
@@ -98,14 +119,13 @@ def run_benchmark(
             "-y",
             "-i",
             str(sample_path),
-            "-c:v",
-            "hevc_videotoolbox",
+            *codec_args,
             "-b:v",
-            "2M",
+            video_bitrate,
             "-c:a",
             "aac",
             "-b:a",
-            "128k",
+            audio_bitrate,
             "-f",
             "hls",
             "-hls_time",
@@ -147,6 +167,7 @@ def run_benchmark(
 
         return {
             "sample_path": str(sample_path.resolve()),
+            "video_codec": video_codec,
             "input_bytes": input_bytes,
             "output_bytes": output_bytes,
             "size_ratio": round(size_ratio, 4),
@@ -164,7 +185,7 @@ def run_benchmark(
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Benchmark live HLS compression (hevc_videotoolbox + event playlist) "
+            "Benchmark live HLS compression (VideoToolbox / libx264 + event playlist) "
             "against S6 gates: size_ratio <= 0.40, encode_realtime_factor >= 1.0."
         ),
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
@@ -173,6 +194,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--sample",
         type=Path,
         help="Local FLV/TS (or other ffmpeg-readable) live recording sample path",
+    )
+    parser.add_argument(
+        "--video-codec",
+        choices=VIDEO_CODECS,
+        default="hevc_videotoolbox",
+        help="Video encoder for the HLS PoC",
     )
     parser.add_argument(
         "--json",
@@ -210,6 +237,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = run_benchmark(
             args.sample.expanduser().resolve(),
+            video_codec=args.video_codec,
             ffmpeg_path=args.ffmpeg,
             ffprobe_path=args.ffprobe,
         )
@@ -221,6 +249,7 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
     else:
         print(f"sample_path: {result['sample_path']}")
+        print(f"video_codec: {result['video_codec']}")
         print(f"size_ratio: {result['size_ratio']} (S6 <= {S6_SIZE_RATIO_MAX})")
         print(
             f"encode_realtime_factor: {result['encode_realtime_factor']} "
