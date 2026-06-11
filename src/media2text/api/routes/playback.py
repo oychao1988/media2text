@@ -7,7 +7,7 @@ from pathlib import Path
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, Response
 
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.security import safe_workspace_path, workspace_rel
@@ -25,7 +25,7 @@ from media2text.core.live.playback_remux import (
     remux_hls_to_playback_mp4,
 )
 from media2text.core.live.segment_manifest import SegmentManifestRepo
-from media2text.core.storage.repos import CloudUploadRepo, LiveSessionRepo
+from media2text.core.storage.repos import LiveSessionRepo
 
 router = APIRouter(prefix="/sessions", tags=["playback"])
 
@@ -97,73 +97,6 @@ def _rewrite_m3u8(
     return body
 
 
-def _cloud_part_redirect(cfg: AppConfig, conn, *, session_id: str, part_index: int):
-    upload = None
-    for row in CloudUploadRepo(conn).list_for_session(session_id):
-        if row.part_index == part_index and row.upload_status == "done" and row.cloud_file_id:
-            upload = row
-            break
-    if upload is None:
-        part = SegmentManifestRepo(conn).get_part(session_id, part_index)
-        if part and part.cloud_path:
-            for row in CloudUploadRepo(conn).list_for_session(session_id):
-                if (
-                    row.upload_status == "done"
-                    and row.cloud_file_id
-                    and row.file_kind == "m4s"
-                    and f"seg-{part_index:05d}.m4s" in (row.file_name or "")
-                ):
-                    upload = row
-                    break
-    if upload is None or not upload.cloud_file_id:
-        return None
-    if not cfg.aliyundrive.enabled:
-        return None
-    token_path = cfg.aliyundrive_token_path()
-    if not token_path.is_file():
-        return None
-    try:
-        with AliyunDriveClient.open(token_path) as client:
-            url = client.get_download_url(str(upload.cloud_file_id))
-    except Exception:  # noqa: BLE001
-        return None
-    return RedirectResponse(url=url, status_code=302)
-
-
-def _cloud_init_redirect(cfg: AppConfig, conn, *, session_id: str):
-    upload = None
-    for row in CloudUploadRepo(conn).list_for_session(session_id):
-        if (
-            row.upload_status == "done"
-            and row.cloud_file_id
-            and row.file_kind == "init_mp4"
-        ):
-            upload = row
-            break
-    if upload is None:
-        for row in CloudUploadRepo(conn).list_for_session(session_id):
-            if (
-                row.upload_status == "done"
-                and row.cloud_file_id
-                and row.file_name == "init.mp4"
-            ):
-                upload = row
-                break
-    if upload is None or not upload.cloud_file_id:
-        return None
-    if not cfg.aliyundrive.enabled:
-        return None
-    token_path = cfg.aliyundrive_token_path()
-    if not token_path.is_file():
-        return None
-    try:
-        with AliyunDriveClient.open(token_path) as client:
-            url = client.get_download_url(str(upload.cloud_file_id))
-    except Exception:  # noqa: BLE001
-        return None
-    return RedirectResponse(url=url, status_code=302)
-
-
 def _stream_cloud_upload(
     cfg: AppConfig,
     upload,
@@ -184,6 +117,8 @@ def _stream_cloud_upload(
                 range_header=range_header,
                 media_type=media_type,
             )
+    except RuntimeError:
+        raise HTTPException(status_code=502, detail="cloud playback unavailable") from None
     except Exception:  # noqa: BLE001
         return None
 
