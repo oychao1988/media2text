@@ -116,7 +116,7 @@ def _seed_hls_multi_part_session(workspace: Path) -> tuple[str, Path]:
 def _seed_hls_session_bare_seg_uris(workspace: Path) -> str:
     """ffmpeg -hls_flags append_list writes seg-NNNNN.m4s without parts/ prefix."""
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
-    conn = open_db(AppConfig.model_validate({"workspace": str(workspace)}))
+    conn = open_db(cfg)
     cid = CreatorRepo(conn).add(
         sec_uid="sec_hls_bare_seg",
         profile_url="https://www.douyin.com/user/sec_hls_bare_seg",
