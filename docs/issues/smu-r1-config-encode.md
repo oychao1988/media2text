@@ -41,7 +41,7 @@ Spec **U1/U2**：唯一推荐路径 `streaming + hls + segment_pipeline`；压�
 
 ### Task 1.4 — Doctor 警告（spec §8 迁移）
 
-- [x] `media2text doctor --json`：若 `live.pipeline_mode=legacy`，输出 `warnings[]` 含 `live_pipeline_deprecated` 与迁移指引（指向 example 推荐路径）
+- [x] `media2text doctor --json`：若 `live.pipeline_mode=legacy`，输出 `warnings[]` 含 `live_pipeline_deprecated` 与迁移指引（指向 example 推荐路径）（**本地/开发机** exit 0；CI 无 ffmpeg/session，不纳入 issue_verify）
 - [x] `tests/unit/test_doctor*.py` 或等价单测覆盖 legacy 警告
 
 ## 验证命令
@@ -49,8 +49,8 @@ Spec **U1/U2**：唯一推荐路径 `streaming + hls + segment_pipeline`；压�
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/unit/test_encode_profile.py tests/unit/test_hls_recorder.py -v
-media2text doctor --json
+pytest tests/unit/test_encode_profile.py tests/unit/test_hls_recorder.py tests/unit/test_doctor_legacy_pipeline.py -v
+# media2text doctor --json  # 本地/开发机；CI 无 ffmpeg/session，legacy 警告由 test_doctor_legacy_pipeline 覆盖
 ruff check src/media2text/core/config.py src/media2text/core/live/encode_profile.py src/media2text/core/live/hls_recorder.py
 ```
 
