@@ -1,5 +1,3 @@
-from unittest.mock import patch
-
 import pytest
 
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig

@@ -5,12 +5,19 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from fastapi import APIRouter, Depends, HTTPException
+import httpx
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.security import safe_workspace_path, workspace_rel
-from media2text.core.cloud.aliyundrive import AliyunDriveClient
+from media2text.api.services.cloud_byte_proxy import stream_cloud_file
+from media2text.api.services.session_playback import (
+    find_init_upload,
+    find_m3u8_upload,
+    find_part_upload,
+)
+from media2text.core.cloud.aliyundrive import AliyunDriveClient, DOWNLOAD_REFERER
 from media2text.core.config import AppConfig
 from media2text.core.live.playback_remux import (
     playback_mp4_is_fresh,
@@ -157,6 +164,42 @@ def _cloud_init_redirect(cfg: AppConfig, conn, *, session_id: str):
     return RedirectResponse(url=url, status_code=302)
 
 
+def _stream_cloud_upload(
+    cfg: AppConfig,
+    upload,
+    *,
+    range_header: str | None,
+    media_type: str = "video/mp4",
+):
+    if not upload or not upload.cloud_file_id or not cfg.aliyundrive.enabled:
+        return None
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        return None
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            return stream_cloud_file(
+                client,
+                str(upload.cloud_file_id),
+                range_header=range_header,
+                media_type=media_type,
+            )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _fetch_cloud_m3u8_text(cfg: AppConfig, upload) -> str:
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        raise FileNotFoundError("aliyundrive token missing")
+    with AliyunDriveClient.open(token_path) as client:
+        url = client.get_download_url(str(upload.cloud_file_id))
+        resp = httpx.get(url, headers={"Referer": DOWNLOAD_REFERER}, timeout=30.0)
+        if resp.status_code >= 400:
+            raise RuntimeError(f"cloud m3u8 fetch failed {resp.status_code}")
+        return resp.text
+
+
 @router.get("/{session_id}/playback.m3u8")
 def get_playback_m3u8(
     session_id: str,
@@ -170,10 +213,19 @@ def get_playback_m3u8(
     if session_dir is None:
         raise HTTPException(status_code=404, detail="session_dir not found")
     master = session_dir / "master.m3u8"
-    if not master.is_file():
-        raise HTTPException(status_code=404, detail="playlist not found")
+    if master.is_file():
+        raw = master.read_text(encoding="utf-8")
+    else:
+        upload = find_m3u8_upload(conn, session_id=session_id)
+        if not upload or not upload.cloud_file_id or not cfg.aliyundrive.enabled:
+            raise HTTPException(status_code=404, detail="playlist not found")
+        try:
+            raw = _fetch_cloud_m3u8_text(cfg, upload)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="playlist not found") from None
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail="cloud playlist unavailable") from exc
 
-    raw = master.read_text(encoding="utf-8")
     rewritten = _rewrite_m3u8(raw, session_id=session_id)
     return Response(
         content=rewritten,
@@ -186,9 +238,10 @@ def get_playback_m3u8(
 def get_playback_part(
     session_id: str,
     part_index: int,
+    request: Request,
     cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
-) -> FileResponse | RedirectResponse:
+):
     if part_index < 1:
         raise HTTPException(status_code=404, detail="part not found")
 
@@ -231,9 +284,14 @@ def get_playback_part(
         )
 
     if part_row and part_row.state in ("uploaded", "local_deleted"):
-        redirect = _cloud_part_redirect(cfg, conn, session_id=session_id, part_index=part_index)
-        if redirect is not None:
-            return redirect
+        upload = find_part_upload(conn, session_id=session_id, part_index=part_index)
+        proxied = _stream_cloud_upload(
+            cfg,
+            upload,
+            range_header=request.headers.get("range"),
+        )
+        if proxied is not None:
+            return proxied
 
     raise HTTPException(status_code=404, detail="part not found")
 
@@ -241,9 +299,10 @@ def get_playback_part(
 @router.get("/{session_id}/init.mp4", response_model=None)
 def get_playback_init(
     session_id: str,
+    request: Request,
     cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
-) -> FileResponse | RedirectResponse:
+):
     row = LiveSessionRepo(conn).get(session_id)
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
@@ -260,9 +319,14 @@ def get_playback_init(
             headers={"Accept-Ranges": "bytes"},
         )
 
-    redirect = _cloud_init_redirect(cfg, conn, session_id=session_id)
-    if redirect is not None:
-        return redirect
+    upload = find_init_upload(conn, session_id=session_id)
+    proxied = _stream_cloud_upload(
+        cfg,
+        upload,
+        range_header=request.headers.get("range"),
+    )
+    if proxied is not None:
+        return proxied
 
     raise HTTPException(status_code=404, detail="init not found")
 
