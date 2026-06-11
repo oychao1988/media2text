@@ -31,10 +31,10 @@ SMU 将 `live.compress` 收拢为 `live.encode`（R1），但 **S6 门禁**仍�
 
 ### Task 0.2 — 硬件验收表（人工）
 
-- [x] 在 **Apple Silicon** 样本上跑 hevc + libx264，结果写入 `docs/superpowers/verification/2026-06-09-live-compress-benchmark.md`（本地无 M 系列硬件，Apple 行标 `skipped`；Intel 补跑矩阵）
+- [x] Intel 三 codec 矩阵写入验收表（`hevc` 失败；`h264_videotoolbox` / `libx264` 速度 OK、体积≈原片）
 - [x] 表格含 Intel / Apple 分行；每行标注 `s6_pass: true|false`
-- [x] **最低交付**：Apple Silicon 至少一行完整结果（Intel 可标 `skipped` 并说明原因）— Apple 行 `skipped`（无硬件）；Intel 行已填
-- [x] 未通过硬件保持 `encode.mode: copy` 推荐（注释引用验收表）
+- [ ] **Apple Silicon 实测** — 延期至 [#305 SMU-R0b](smu-r0b-apple-silicon-encode-poc.md)（本地 x86_64，无 M 系列硬件）
+- [x] 未通过硬件保持 `encode.mode: copy` 推荐（验收表 + `config.example.yaml` 注释）
 
 ## 验证命令
 
@@ -42,10 +42,12 @@ SMU 将 `live.compress` 收拢为 `live.encode`（R1），但 **S6 门禁**仍�
 source .venv/bin/activate
 pip install -e ".[dev]"
 ruff check scripts/benchmark_live_compress.py
+pytest tests/unit/test_benchmark_live_compress.py -v
 python scripts/benchmark_live_compress.py --help
 python scripts/benchmark_live_compress.py
 test -f docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
 # 人工（需本地 FLV 样本）: python scripts/benchmark_live_compress.py --sample "$SAMPLE" --video-codec hevc_videotoolbox --json
+# Apple Silicon 补跑: 见 docs/issues/smu-r0b-apple-silicon-encode-poc.md (#305)
 ```
 
 ## 非目标范围
