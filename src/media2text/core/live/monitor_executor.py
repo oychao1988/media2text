@@ -236,11 +236,11 @@ def _run_sync_catalog(
     new_content_kind = (
         EventKind.NEW_AWEME if platform == "douyin" else EventKind.NEW_ARCHIVE
     )
-    outcome = sync_creator(cfg, task.creator_id)
+    outcome = sync_creator(cfg, task.creator_id, mode="incremental")
     creator = CreatorRepo(conn).get(task.creator_id)
     if creator:
         _emit_sync_notifications(creator, outcome, new_content_kind=new_content_kind, notify=notify)
-    if outcome.get("ok"):
+    if outcome.get("ok") and int(outcome.get("new_count") or 0) > 0:
         CreatorRepo(conn).mark_sync_needs_download(task.creator_id)
     return {"sync": outcome}
 

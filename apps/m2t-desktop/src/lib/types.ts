@@ -8,6 +8,7 @@ export type Creator = {
   unique_id: string | null;
   profile_url: string | null;
   monitor_enabled: boolean;
+  content_sync_enabled: boolean;
   profile_stale: boolean;
   auto_record_override: 'inherit' | 'on' | 'off';
   status_light: StatusLight;

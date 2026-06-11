@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
 from media2text.core.workspace import open_db
 
+SyncMode = Literal["full", "incremental"]
 
-def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
+
+def sync_creator(cfg: AppConfig, creator_id: str, *, mode: SyncMode = "full") -> dict:
     conn = open_db(cfg)
     creator = CreatorRepo(conn).get(creator_id)
     if not creator:
@@ -15,10 +19,10 @@ def sync_creator(cfg: AppConfig, creator_id: str) -> dict:
     if creator.platform == "bilibili":
         from media2text.core.platform.bilibili.catalog import sync_creator as bili_sync
 
-        return bili_sync(cfg, creator_id)
+        return bili_sync(cfg, creator_id, mode=mode)
     from media2text.core.platform.douyin.catalog import sync_creator as dy_sync
 
-    return dy_sync(cfg, creator_id)
+    return dy_sync(cfg, creator_id, mode=mode)
 
 
 def _merge_download_results(parts: list[dict]) -> dict:

@@ -33,6 +33,7 @@ def creator_list_item(row, *, stale_days: int) -> dict[str, Any]:
         "unique_id": row.unique_id,
         "profile_url": row.profile_url,
         "monitor_enabled": bool(row.monitor_enabled),
+        "content_sync_enabled": bool(row.content_sync_enabled),
         "profile_stale": is_profile_stale(
             display_name=row.display_name,
             profile_synced_at=row.profile_synced_at,

@@ -350,7 +350,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
               <div className="video-placeholder">
                 <p>作品待下载</p>
                 <p className="video-placeholder-hint">
-                  请在「管理」页使用「同步并下载」或「下载作品」，并确保监控已开启
+                  请在「管理」页使用「同步历史作品」或「下载待发作品」
                 </p>
               </div>
             ) : canShowGallery && mediaPath ? (

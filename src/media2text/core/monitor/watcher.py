@@ -160,13 +160,13 @@ class MonitorWatcher:
     def _run_dynamic_tick(self, *, conn, creator_id: str | None = None) -> dict:
         creators = CreatorRepo(conn)
         targets = [
-            c for c in creators.list_monitored() if c.platform == "bilibili"
+            c for c in creators.list_content_sync_enabled() if c.platform == "bilibili"
         ]
         if creator_id:
             row = creators.get(creator_id)
             targets = (
                 [row]
-                if row and row.monitor_enabled and row.platform == "bilibili"
+                if row and row.content_sync_enabled and row.platform == "bilibili"
                 else []
             )
         now = datetime.now(timezone.utc).isoformat()
@@ -222,13 +222,13 @@ class MonitorWatcher:
         _ = new_content_kind
         creators = CreatorRepo(conn)
         targets = [
-            c for c in creators.list_monitored() if c.platform == platform
+            c for c in creators.list_content_sync_enabled() if c.platform == platform
         ]
         if creator_id:
             row = creators.get(creator_id)
             targets = (
                 [row]
-                if row and row.monitor_enabled and row.platform == platform
+                if row and row.content_sync_enabled and row.platform == platform
                 else []
             )
         max_n = self._cfg.monitor.max_creators_per_vod_tick

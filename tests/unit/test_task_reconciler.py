@@ -94,14 +94,16 @@ def test_reconcile_content_ensure_sync_when_vod_due(tmp_path, monkeypatch) -> No
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
-    cid = CreatorRepo(conn).add(
+    repo = CreatorRepo(conn)
+    cid = repo.add(
         sec_uid="MS4wLjABAAAArc1",
         profile_url="https://example.com/u",
         monitor_enabled=True,
         platform="douyin",
     )
+    repo.set_content_sync_enabled(cid, enabled=True)
     past = datetime.now(timezone.utc).isoformat()
-    CreatorRepo(conn).set_vod_due(cid, past)
+    repo.set_vod_due(cid, past)
     reconcile_content(cfg, conn)
     assert MonitorTaskRepo(conn).has_active_dedupe(f"sync_catalog:{cid}")
     creator = CreatorRepo(conn).get(cid)
@@ -119,13 +121,15 @@ def test_reconcile_download_after_sync_catalog_success(tmp_path, monkeypatch) ->
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
-    cid = CreatorRepo(conn).add(
+    repo = CreatorRepo(conn)
+    cid = repo.add(
         sec_uid="MS4wLjABAAAArc_dl",
         profile_url="https://example.com/u",
         monitor_enabled=True,
         platform="douyin",
     )
-    CreatorRepo(conn).mark_sync_needs_download(cid)
+    repo.set_content_sync_enabled(cid, enabled=True)
+    repo.mark_sync_needs_download(cid)
     reconcile_content(cfg, conn)
     assert MonitorTaskRepo(conn).has_active_dedupe(f"download:{cid}")
     creator = CreatorRepo(conn).get(cid)
@@ -141,12 +145,14 @@ def test_reconcile_clears_flag_when_download_already_pending(tmp_path, monkeypat
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
-    cid = CreatorRepo(conn).add(
+    repo = CreatorRepo(conn)
+    cid = repo.add(
         sec_uid="MS4wLjABAAAArc_dedupe",
         profile_url="https://example.com/u",
         monitor_enabled=True,
         platform="douyin",
     )
+    repo.set_content_sync_enabled(cid, enabled=True)
     MonitorTaskRepo(conn).enqueue(
         creator_id=cid,
         task_type="download",
@@ -154,8 +160,28 @@ def test_reconcile_clears_flag_when_download_already_pending(tmp_path, monkeypat
         priority=10,
         payload_json='{"platform":"douyin"}',
     )
-    CreatorRepo(conn).mark_sync_needs_download(cid)
+    repo.mark_sync_needs_download(cid)
     reconcile_content(cfg, conn)
-    creator = CreatorRepo(conn).get(cid)
+    creator = repo.get(cid)
     assert creator is not None
     assert creator.sync_needs_download == 0
+
+
+def test_reconcile_content_skips_when_content_sync_disabled(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.task_reconciler import reconcile_content
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    cid = repo.add(
+        sec_uid="MS4wLjABAAAArc_off",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+        platform="douyin",
+    )
+    repo.set_vod_due(cid, datetime.now(timezone.utc).isoformat())
+    reconcile_content(cfg, conn)
+    assert not MonitorTaskRepo(conn).has_active_dedupe(f"sync_catalog:{cid}")

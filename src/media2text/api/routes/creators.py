@@ -37,6 +37,7 @@ class CreatorPatchBody(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     monitor_enabled: bool | None = Field(default=None, alias="monitorEnabled")
+    content_sync_enabled: bool | None = Field(default=None, alias="contentSyncEnabled")
     auto_record_override: str | None = Field(default=None, alias="autoRecordOverride")
 
 
@@ -159,11 +160,14 @@ def patch_creator(
         repo.set_auto_record_override(creator_id, o)
     if body.monitor_enabled is not None:
         repo.set_monitor_enabled(creator_id, enabled=body.monitor_enabled)
+    if body.content_sync_enabled is not None:
+        repo.set_content_sync_enabled(creator_id, enabled=body.content_sync_enabled)
     row = repo.get(creator_id)
     return {
         "ok": True,
         "creator_id": creator_id,
         "monitor_enabled": bool(row.monitor_enabled) if row else None,
+        "content_sync_enabled": bool(row.content_sync_enabled) if row else None,
         "auto_record_override": row.auto_record_override if row else None,
     }
 

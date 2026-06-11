@@ -29,6 +29,7 @@ def _creator_list_item(row, *, stale_days: int) -> dict:
         "unique_id": row.unique_id,
         "profile_url": row.profile_url,
         "monitor_enabled": bool(row.monitor_enabled),
+        "content_sync_enabled": bool(row.content_sync_enabled),
         "profile_stale": is_profile_stale(
             display_name=row.display_name,
             profile_synced_at=row.profile_synced_at,
@@ -209,6 +210,38 @@ def monitor_cmd(
             "command": "creator monitor",
             "creator_id": creator_id,
             "monitor_enabled": enabled,
+        },
+        as_json=json_out,
+    )
+
+
+@app.command("content-sync")
+def content_sync_cmd(
+    creator_id: str = typer.Argument(...),
+    off: bool = typer.Option(False, "--off", help="Disable automatic work sync"),
+    json_out: bool = typer.Option(False, "--json"),
+) -> None:
+    cfg = AppConfig.load()
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    if not repo.get(creator_id):
+        emit(
+            {
+                "ok": False,
+                "command": "creator content-sync",
+                "error": "creator not found",
+            },
+            as_json=json_out,
+        )
+        raise typer.Exit(1)
+    enabled = not off
+    repo.set_content_sync_enabled(creator_id, enabled=enabled)
+    emit(
+        {
+            "ok": True,
+            "command": "creator content-sync",
+            "creator_id": creator_id,
+            "content_sync_enabled": enabled,
         },
         as_json=json_out,
     )
