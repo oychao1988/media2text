@@ -173,6 +173,60 @@ def test_playback_m3u8_returns_event_playlist(api_client, workspace) -> None:
     assert f"/api/sessions/{sid}/parts/1" in r.text
     assert "parts/seg-00001.m4s" not in r.text
     assert "application/vnd.apple.mpegurl" in r.headers.get("content-type", "")
+    assert "X-M2T-Missing-Parts" not in r.headers
+
+
+def test_playback_m3u8_reports_missing_parts_header(api_client, workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_hls_missing",
+        profile_url="https://example.com",
+        monitor_enabled=True,
+    )
+    session_dir = workspace / "creators" / "sec_hls_missing" / "live" / "20260612T120000Z"
+    session_dir.mkdir(parents=True)
+    master = session_dir / "master.m3u8"
+    master.write_text(
+        "\n".join(
+            [
+                "#EXTM3U",
+                "#EXTINF:600.0,",
+                "parts/seg-00001.m4s",
+                "#EXTINF:30.0,",
+                "parts/seg-00002.m4s",
+                "#EXT-X-ENDLIST",
+            ]
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    (session_dir / "parts").mkdir()
+    (session_dir / "parts" / "seg-00001.m4s").write_bytes(b"part1")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r1",
+        temp_path=str(master),
+        session_dir=str(session_dir),
+        pipeline_mode="streaming",
+    )
+    SegmentManifestRepo(conn).upsert_part(
+        session_id=sid,
+        part_index=1,
+        rel_path="parts/seg-00001.m4s",
+        state="closed",
+    )
+    SegmentManifestRepo(conn).upsert_part(
+        session_id=sid,
+        part_index=2,
+        rel_path="parts/seg-00002.m4s",
+        state="closed",
+    )
+    conn.close()
+
+    r = api_client.get(f"/api/sessions/{sid}/playback.m3u8")
+    assert r.status_code == 200
+    assert r.headers.get("X-M2T-Missing-Parts") == "2"
 
 
 def test_playback_part_streams_local_file(api_client, workspace) -> None:

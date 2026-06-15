@@ -156,8 +156,32 @@ def _build_live_item(
     }
 
 
+def _merge_vod_cloud_fields(
+    conn,
+    ws: Path,
+    media_path: str | None,
+    *,
+    status: str | None,
+    file_id: str | None,
+    rel_path: str | None,
+) -> dict[str, Any]:
+    upload = CloudUploadRepo(conn).find_done_by_local_path(ws, media_path)
+    if upload:
+        if upload.upload_status == "done" and not status:
+            status = "done"
+        file_id = file_id or upload.cloud_file_id
+        rel_path = rel_path or upload.cloud_relative_path
+    return {
+        "cloud_upload_status": status,
+        "cloud_file_id": file_id,
+        "cloud_relative_path": rel_path,
+        "cloud_available": _cloud_available(status, file_id, rel_path),
+    }
+
+
 def _build_vod_item(
     *,
+    conn,
     ws: Path,
     creator_id: str,
     row,
@@ -175,9 +199,18 @@ def _build_vod_item(
         "cloud_file_id": m_entry.get("cloud_file_id") if m_entry else None,
         "cloud_relative_path": m_entry.get("cloud_relative_path") if m_entry else None,
     }
-    cloud_status = manifest_cloud["cloud_upload_status"]
-    cloud_file_id = manifest_cloud["cloud_file_id"]
-    cloud_rel = manifest_cloud["cloud_relative_path"]
+    merged = _merge_vod_cloud_fields(
+        conn,
+        ws,
+        media_path,
+        status=manifest_cloud["cloud_upload_status"],
+        file_id=manifest_cloud["cloud_file_id"],
+        rel_path=manifest_cloud["cloud_relative_path"],
+    )
+    cloud_status = merged["cloud_upload_status"]
+    cloud_file_id = merged["cloud_file_id"]
+    cloud_rel = merged["cloud_relative_path"]
+    cloud_available = merged["cloud_available"]
 
     return {
         "kind": "vod",
@@ -199,7 +232,7 @@ def _build_vod_item(
         "cloud_upload_status": cloud_status,
         "cloud_file_id": cloud_file_id,
         "cloud_relative_path": cloud_rel,
-        "cloud_available": _cloud_available(cloud_status, cloud_file_id, cloud_rel),
+        "cloud_available": cloud_available,
         "has_transcript": ht,
         "has_summary": hs,
         "transcript_path": _resolve_transcript_path(
@@ -442,7 +475,13 @@ def list_creator_sessions(
         if row.sync_status not in ("downloaded", "failed", "listed"):
             continue
         m_entry = manifest_vod.get(row.aweme_id)
-        item = _build_vod_item(ws=ws, creator_id=creator_id, row=row, m_entry=m_entry)
+        item = _build_vod_item(
+            conn=conn,
+            ws=ws,
+            creator_id=creator_id,
+            row=row,
+            m_entry=m_entry,
+        )
         ht = item["has_transcript"]
         hs = item["has_summary"]
         if has_transcript is True and not ht:
