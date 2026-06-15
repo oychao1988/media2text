@@ -2095,6 +2095,38 @@ class CloudUploadRepo:
         ).fetchall()
         return [CloudUploadRow(**dict(r)) for r in rows]
 
+    def find_done_by_local_path(
+        self,
+        workspace: Path,
+        local_path: str | None,
+        *,
+        file_kinds: tuple[str, ...] = ("mp4", "flv", "m4s", "m3u8", "init_mp4"),
+    ) -> CloudUploadRow | None:
+        from media2text.core.storage.cloud_path import (
+            normalize_workspace_rel,
+            paths_match_workspace_rel,
+        )
+
+        target_rel = normalize_workspace_rel(workspace, local_path)
+        if not target_rel:
+            return None
+        rows = self._conn.execute(
+            """
+            SELECT * FROM cloud_uploads
+            WHERE upload_status = 'done'
+              AND cloud_file_id IS NOT NULL
+              AND local_path IS NOT NULL
+            ORDER BY uploaded_at DESC
+            """
+        ).fetchall()
+        for row in rows:
+            upload = CloudUploadRow(**dict(row))
+            if upload.file_kind not in file_kinds:
+                continue
+            if paths_match_workspace_rel(workspace, upload.local_path, target_rel):
+                return upload
+        return None
+
     def list_cleanup_candidates(
         self,
         *,

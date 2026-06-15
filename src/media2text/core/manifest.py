@@ -7,7 +7,7 @@ from pathlib import Path
 
 from media2text.core.live.segment_manifest import SegmentManifestRepo
 from media2text.core.live.transcript_writer import find_transcript_sidecar, _sidecar_lookup_media_path
-from media2text.core.storage.repos import AwemeRepo, CreatorRepo, DynamicRepo
+from media2text.core.storage.repos import AwemeRepo, CloudUploadRepo, CreatorRepo, DynamicRepo
 
 
 def _media_path_for_sidecars(
@@ -150,19 +150,24 @@ def refresh_manifest(
     if not creator:
         raise ValueError(f"creator not found for sec_uid={sec_uid}")
 
+    cloud_uploads = CloudUploadRepo(conn)
     vod_items: list[dict] = []
     for row in awemes.list_for_creator(creator.id):
-        vod_items.append(
-            {
-                "id": row.aweme_id,
-                "type": "vod",
-                "title": row.title,
-                "media_path": row.local_path,
-                "transcript_path": row.transcript_path,
-                "summary_path": _summary_sidecar_path(row.local_path),
-                "status": row.sync_status if row.transcribe_status != "done" else "transcribed",
-            }
-        )
+        entry: dict = {
+            "id": row.aweme_id,
+            "type": "vod",
+            "title": row.title,
+            "media_path": row.local_path,
+            "transcript_path": row.transcript_path,
+            "summary_path": _summary_sidecar_path(row.local_path),
+            "status": row.sync_status if row.transcribe_status != "done" else "transcribed",
+        }
+        upload = cloud_uploads.find_done_by_local_path(workspace, row.local_path)
+        if upload:
+            entry["cloud_file_id"] = upload.cloud_file_id
+            entry["cloud_relative_path"] = upload.cloud_relative_path
+            entry["cloud_upload_status"] = "done"
+        vod_items.append(entry)
 
     live_items: list[dict] = []
     live_rows = conn.execute(

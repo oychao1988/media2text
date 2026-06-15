@@ -66,7 +66,7 @@ def test_streaming_finalize_skips_remux(tmp_path, monkeypatch) -> None:
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
         patch("media2text.core.live.recording.concat_to_mp4") as mock_concat,
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch.object(core._state, "refresh_creator_manifest"),
         patch("media2text.core.live.recording.index_transcript_safe"),
     ):
         meta = core._finalize_recording(sid, str(flv), 4242)
@@ -129,7 +129,7 @@ def test_streaming_finalize_seals_partial_without_stt(tmp_path, monkeypatch) -> 
 
     with (
         patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.refresh_manifest"),
+        patch.object(core._state, "refresh_creator_manifest"),
         patch("media2text.core.live.recording.index_transcript_safe"),
     ):
         meta = core._finalize_recording(sid, str(flv), 5252)

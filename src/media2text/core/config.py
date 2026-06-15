@@ -168,6 +168,22 @@ class LiveConfig(BaseModel):
                 self.encode.video_bitrate = self.compress.video_bitrate
             if self.compress.audio_bitrate:
                 self.encode.audio_bitrate = self.compress.audio_bitrate
+        enc = (self.compress.encoder or "").strip().lower()
+        if enc and self.encode.video_codec == "auto":
+            codec_map = {
+                "videotoolbox": "auto",
+                "vt": "auto",
+                "libx264": "libx264",
+                "x264": "libx264",
+                "h264_videotoolbox": "h264_videotoolbox",
+                "hevc_videotoolbox": "hevc_videotoolbox",
+                "libx265": "libx265",
+            }
+            mapped = codec_map.get(enc)
+            if mapped:
+                self.encode.video_codec = mapped
+            elif enc not in ("auto", ""):
+                self.encode.video_codec = enc
         return self
 
     @model_validator(mode="after")

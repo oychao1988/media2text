@@ -16,6 +16,30 @@ def test_compress_alias_migrates_to_encode() -> None:
     assert cfg.live.encode.video_bitrate == "2M"
 
 
+def test_compress_encoder_alias_migrates_to_video_codec() -> None:
+    cfg = AppConfig.model_validate(
+        {
+            "live": {
+                "compress": {"enabled": True, "encoder": "libx264"},
+            }
+        }
+    )
+    assert cfg.live.encode.mode == "compress"
+    assert cfg.live.encode.video_codec == "libx264"
+
+
+def test_compress_videotoolbox_encoder_keeps_auto_codec() -> None:
+    cfg = AppConfig.model_validate(
+        {
+            "live": {
+                "compress": {"enabled": True, "encoder": "videotoolbox"},
+            }
+        }
+    )
+    assert cfg.live.encode.mode == "compress"
+    assert cfg.live.encode.video_codec == "auto"
+
+
 def test_resolve_video_encoder_copy_mode() -> None:
     name, args = resolve_video_encoder(LiveEncodeConfig(mode="copy"))
     assert name == "copy"

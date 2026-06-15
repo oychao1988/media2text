@@ -71,6 +71,55 @@ def _rewrite_init_uri(session_id: str, line: str) -> str | None:
     return None
 
 
+def _part_local_available(session_dir: Path, part_index: int, part_row) -> bool:
+    rel_name = (
+        part_row.rel_path
+        if part_row and part_row.rel_path
+        else f"parts/seg-{part_index:05d}.m4s"
+    )
+    part_path = session_dir / rel_name
+    if not part_path.is_file():
+        part_path = session_dir / "parts" / f"seg-{part_index:05d}.m4s"
+    return part_path.is_file() and part_path.stat().st_size > 0
+
+
+def _part_indices_from_playlist(text: str) -> list[int]:
+    indices: set[int] = set()
+    for line in text.splitlines():
+        idx = _part_index_from_uri(line.strip())
+        if idx is not None:
+            indices.add(idx)
+    return sorted(indices)
+
+
+def _missing_playback_parts(
+    conn,
+    cfg: AppConfig,
+    *,
+    session_id: str,
+    session_dir: Path,
+    raw_m3u8: str,
+) -> list[int]:
+    indices = _part_indices_from_playlist(raw_m3u8)
+    if not indices:
+        indices = [
+            row.part_index
+            for row in SegmentManifestRepo(conn).list_parts(session_id)
+            if row.part_index
+        ]
+    missing: list[int] = []
+    repo = SegmentManifestRepo(conn)
+    for part_index in indices:
+        part_row = repo.get_part(session_id, part_index)
+        if _part_local_available(session_dir, part_index, part_row):
+            continue
+        upload = find_part_upload(conn, session_id=session_id, part_index=part_index)
+        if upload and upload.cloud_file_id and cfg.aliyundrive.enabled:
+            continue
+        missing.append(part_index)
+    return missing
+
+
 def _rewrite_m3u8(
     text: str,
     *,
@@ -162,10 +211,20 @@ def get_playback_m3u8(
             raise HTTPException(status_code=502, detail="cloud playlist unavailable") from exc
 
     rewritten = _rewrite_m3u8(raw, session_id=session_id)
+    missing_parts = _missing_playback_parts(
+        conn,
+        cfg,
+        session_id=session_id,
+        session_dir=session_dir,
+        raw_m3u8=raw,
+    )
+    headers: dict[str, str] = {"Cache-Control": "no-cache"}
+    if missing_parts:
+        headers["X-M2T-Missing-Parts"] = ",".join(str(i) for i in missing_parts)
     return Response(
         content=rewritten,
         media_type="application/vnd.apple.mpegurl",
-        headers={"Cache-Control": "no-cache"},
+        headers=headers,
     )
 
 

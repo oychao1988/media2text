@@ -170,6 +170,55 @@ def test_list_sessions_cloud_from_uploads_table(workspace) -> None:
     assert live["media_available"] is False
 
 
+def test_list_sessions_vod_cloud_from_uploads_table(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_vod_cloud_row",
+        profile_url="https://example.com",
+        platform="douyin",
+    )
+    mp4 = workspace / "creators" / "sec_vod_cloud_row" / "videos" / "7123456789.mp4"
+    mp4.parent.mkdir(parents=True)
+    mp4.write_bytes(b"x")
+    conn.execute(
+        """
+        INSERT INTO awemes
+          (aweme_id, creator_id, title, create_time, media_type, sync_status, local_path, updated_at)
+        VALUES (?, ?, ?, ?, 'video', 'downloaded', ?, datetime('now'))
+        """,
+        ("7123456789", cid, "云备份作品", 1717500000, str(mp4)),
+    )
+    conn.commit()
+    from media2text.core.storage.repos import CloudUploadRepo
+
+    CloudUploadRepo(conn).create(
+        session_id="7123456789",
+        creator_id=cid,
+        platform="douyin",
+        file_name="7123456789.mp4",
+        file_kind="mp4",
+        local_path=str(mp4),
+        size=1,
+        pre_hash="vodabc",
+    )
+    upload_id = CloudUploadRepo(conn).list_for_session("7123456789")[0].id
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="fid-vod-table",
+        cloud_relative_path="media2text/douyin/sec_vod_cloud_row/videos/7123456789.mp4",
+    )
+    mp4.unlink()
+
+    payload = list_creator_sessions(conn, workspace=workspace, creator_id=cid)
+    conn.close()
+
+    vod_item = next(s for s in payload["sessions"] if s["kind"] == "vod")
+    assert vod_item["cloud_available"] is True
+    assert vod_item["cloud_file_id"] == "fid-vod-table"
+    assert vod_item["media_available"] is False
+
+
 def test_download_from_cloud_restores_file(workspace) -> None:
     cfg = AppConfig.model_validate(
         {
