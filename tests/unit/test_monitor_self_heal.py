@@ -89,6 +89,40 @@ def test_maybe_self_heal_skips_when_external_just_started(tmp_path, monkeypatch)
     takeover.assert_not_called()
 
 
+def test_maybe_self_heal_repairs_embedded_lock(tmp_path, monkeypatch) -> None:
+    msh._last_heal_at = 0.0
+    msh._heal_timestamps.clear()
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        desktop=DesktopConfig(auto_start_monitor=True, monitor_self_heal=True),
+    )
+    cfg.ensure_workspace()
+    sup = MagicMock()
+    sup.status_dict.return_value = {"managed_by": "embedded", "thread_alive": True}
+    sup.repair_embedded_lock.return_value = {
+        "ok": True,
+        "action": "repair_embedded_lock",
+        "pid": 12345,
+    }
+    running_checks = iter([(False, "embedded_thread_dead"), (True, None)])
+
+    def _effectively_running(*_args, **_kwargs):
+        return next(running_checks)
+
+    with (
+        patch(
+            "media2text.api.services.monitor_self_heal.monitor_effectively_running",
+            side_effect=_effectively_running,
+        ),
+        patch.object(sup, "takeover") as takeover,
+    ):
+        result = maybe_self_heal_monitor(cfg, sup, force=True)
+    assert result["healed"] is True
+    assert result["repair"]["action"] == "repair_embedded_lock"
+    sup.repair_embedded_lock.assert_called_once_with(cfg)
+    takeover.assert_not_called()
+
+
 def test_maybe_self_heal_cooldown(tmp_path, monkeypatch) -> None:
     msh._last_heal_at = time.monotonic()
     cfg = AppConfig(
