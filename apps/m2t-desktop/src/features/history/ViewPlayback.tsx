@@ -1,6 +1,6 @@
 import flvjs from 'flv.js';
 import Hls from 'hls.js';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type MutableRefObject } from 'react';
 import { listGalleryImages, mediaUrl, playbackM3u8Url } from '../../lib/api';
 import type { LiveSessionSummary } from '../../lib/types';
 import { useLayoutStore } from '../layout/useLayoutStore';
@@ -20,6 +20,30 @@ type Props = {
   session: LiveSessionSummary | null;
   onTimeUpdate?: (time: number) => void;
 };
+
+/** Stop hidden playback so it does not overlap live FLV preview audio. */
+export function releasePlaybackVideo(
+  video: HTMLVideoElement | null,
+  flvRef: MutableRefObject<flvjs.Player | null>,
+  hlsRef: MutableRefObject<Hls | null>,
+) {
+  if (flvRef.current) {
+    flvRef.current.destroy();
+    flvRef.current = null;
+  }
+  if (hlsRef.current) {
+    hlsRef.current.destroy();
+    hlsRef.current = null;
+  }
+  if (!video) return;
+  video.pause();
+  video.removeAttribute('src');
+  try {
+    video.load();
+  } catch {
+    /* jsdom lacks HTMLMediaElement.load */
+  }
+}
 
 function GalleryPlayback({ dirPath, active }: { dirPath: string; active?: boolean }) {
   const [images, setImages] = useState<string[]>([]);
@@ -182,6 +206,12 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
   }, [canPlayVideo, isHls, mediaPath, session]);
 
   useEffect(() => {
+    if (active) return undefined;
+    releasePlaybackVideo(videoRef.current, flvPlayerRef, hlsPlayerRef);
+    return undefined;
+  }, [active]);
+
+  useEffect(() => {
     const video = videoRef.current;
     if (!video || !src || !active || !canPlayVideo) return undefined;
 
@@ -196,17 +226,10 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
     };
     video.addEventListener('timeupdate', handleVideoTimeUpdate);
 
-    const destroyFlv = () => {
-      if (flvPlayerRef.current) {
-        flvPlayerRef.current.destroy();
-        flvPlayerRef.current = null;
-      }
-    };
-    const destroyHls = () => {
-      if (hlsPlayerRef.current) {
-        hlsPlayerRef.current.destroy();
-        hlsPlayerRef.current = null;
-      }
+    const stopPlayback = () => {
+      video.removeEventListener('error', onVideoError);
+      video.removeEventListener('timeupdate', handleVideoTimeUpdate);
+      releasePlaybackVideo(video, flvPlayerRef, hlsPlayerRef);
     };
 
     const nativeHlsSupported =
@@ -214,8 +237,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       video.canPlayType('application/x-mpegURL') !== '';
 
     if (useHlsPlaylist && nativeHlsSupported) {
-      destroyFlv();
-      destroyHls();
+      releasePlaybackVideo(video, flvPlayerRef, hlsPlayerRef);
       video.src = src;
       try {
         video.load();
@@ -226,14 +248,11 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       if (nativePlay && typeof nativePlay.catch === 'function') {
         void nativePlay.catch(() => undefined);
       }
-      return () => {
-        video.removeEventListener('error', onVideoError);
-        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
-      };
+      return stopPlayback;
     }
 
     if (useHlsPlaylist && Hls.isSupported()) {
-      destroyFlv();
+      releasePlaybackVideo(video, flvPlayerRef, hlsPlayerRef);
       const hls = new Hls({ enableWorker: false });
       hls.loadSource(src);
       hls.attachMedia(video);
@@ -245,15 +264,11 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       if (playPromise && typeof playPromise.catch === 'function') {
         void playPromise.catch(() => undefined);
       }
-      return () => {
-        video.removeEventListener('error', onVideoError);
-        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
-        destroyHls();
-      };
+      return stopPlayback;
     }
 
     if (canPlayFlv && flvjs.isSupported()) {
-      destroyHls();
+      releasePlaybackVideo(video, flvPlayerRef, hlsPlayerRef);
       const player = flvjs.createPlayer({ type: 'flv', url: src });
       player.attachMediaElement(video);
       player.load();
@@ -263,15 +278,10 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
       }
       player.on(flvjs.Events.ERROR, () => setError(true));
       flvPlayerRef.current = player;
-      return () => {
-        video.removeEventListener('error', onVideoError);
-        video.removeEventListener('timeupdate', handleVideoTimeUpdate);
-        destroyFlv();
-      };
+      return stopPlayback;
     }
 
-    destroyFlv();
-    destroyHls();
+    releasePlaybackVideo(video, flvPlayerRef, hlsPlayerRef);
     if (canPlayNative) {
       video.src = src;
       try {
@@ -280,12 +290,7 @@ export function ViewPlayback({ active, creatorName, session, onTimeUpdate }: Pro
         /* jsdom lacks HTMLMediaElement.load */
       }
     }
-    return () => {
-      video.removeEventListener('error', onVideoError);
-      video.removeEventListener('timeupdate', handleVideoTimeUpdate);
-      destroyFlv();
-      destroyHls();
-    };
+    return stopPlayback;
   }, [
     src,
     canPlayVideo,

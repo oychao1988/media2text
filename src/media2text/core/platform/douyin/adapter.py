@@ -103,7 +103,9 @@ class DouyinAdapterV1:
             if self._client:
                 payload = fetch_profile_api(self._client, sec_uid)
                 return parse_user_profile(payload, sec_uid=sec_uid)
-        except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError):
             pass
 
         if not session:
@@ -112,13 +114,17 @@ class DouyinAdapterV1:
         try:
             payload = fetch_profile_api_via_page(session, sec_uid)
             return parse_user_profile(payload, sec_uid=sec_uid)
-        except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError):
             pass
 
         try:
             payload = fetch_json(session, uri, params=params)
             return parse_user_profile(payload, sec_uid=sec_uid)
-        except (ParseFailed, AuthRequired, httpx.HTTPError, JSONDecodeError):
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError):
             pass
 
         try:
@@ -129,7 +135,9 @@ class DouyinAdapterV1:
                 profile = parse_profile_html_user(data, sec_uid=sec_uid)
                 if profile and profile.display_name:
                     return profile
-        except (ParseFailed, AuthRequired, json.JSONDecodeError):
+        except AuthRequired:
+            raise
+        except (ParseFailed, json.JSONDecodeError):
             pass
 
         raise ParseFailed("unable to load user profile")

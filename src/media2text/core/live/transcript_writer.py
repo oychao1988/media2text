@@ -8,6 +8,7 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 from media2text.core.transcribe.base import TranscriptResult, TranscriptSegment
 from media2text.core.transcribe.whisper import write_transcript_outputs
@@ -136,6 +137,63 @@ def _segments_from_payload(payload: dict) -> list[TranscriptSegment]:
             )
         )
     return segments
+
+
+def _read_sidecar_payload(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def load_merged_live_transcript(media_path: Path) -> dict[str, Any] | None:
+    """Merge segment checkpoints + partial sidecar for in-progress live reads."""
+    merged: list[TranscriptSegment] = []
+    engine = "deepgram"
+    model = "nova-3"
+
+    for path in list_segment_checkpoints(media_path):
+        payload = _read_sidecar_payload(path)
+        if payload is None:
+            continue
+        merged.extend(_segments_from_payload(payload))
+        engine = str(payload.get("engine") or engine)
+        model = str(payload.get("model") or model)
+
+    partial_path = media_path.with_suffix(".transcript.partial.json")
+    partial_payload = _read_sidecar_payload(partial_path)
+    if partial_payload is not None:
+        merged.extend(_segments_from_payload(partial_payload))
+        engine = str(partial_payload.get("engine") or engine)
+        model = str(partial_payload.get("model") or model)
+
+    if not merged:
+        return None
+
+    merged.sort(key=lambda s: (s.start, s.end))
+    return {
+        "partial": True,
+        "segments": [
+            {"start": s.start, "end": s.end, "text": s.text} for s in merged
+        ],
+        "text": "\n".join(s.text for s in merged),
+        "engine": engine,
+        "model": model,
+    }
+
+
+def live_transcript_sidecar_mtime(media_path: Path) -> float | None:
+    """Newest mtime across partial + segment checkpoints (for WS poll)."""
+    mtimes: list[float] = []
+    partial = media_path.with_suffix(".transcript.partial.json")
+    if partial.is_file():
+        mtimes.append(partial.stat().st_mtime)
+    for path in list_segment_checkpoints(media_path):
+        mtimes.append(path.stat().st_mtime)
+    return max(mtimes) if mtimes else None
 
 
 def merge_transcript_checkpoints(

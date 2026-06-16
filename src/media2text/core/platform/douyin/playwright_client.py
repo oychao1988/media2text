@@ -7,10 +7,10 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
-from playwright.sync_api import Response, sync_playwright
+from playwright.sync_api import Response
 
 from media2text.core.errors import AuthRequired, ParseFailed
-from media2text.core.playwright_env import launch_chromium, playwright_exclusive
+from media2text.core.playwright_env import launch_chromium, managed_playwright, playwright_exclusive
 from media2text.core.platform.douyin.parse import _user_sec_uid, map_http_error
 
 _PROFILE_API_MARKER = "user/profile/other"
@@ -141,7 +141,7 @@ def fetch_json(
         url = f"{url}?{urlencode(params)}"
 
     with playwright_exclusive():
-        with sync_playwright() as p:
+        with managed_playwright() as p:
             browser = launch_chromium(p, headless=True)
             context = browser.new_context(storage_state=str(session_path))
             try:
@@ -208,7 +208,7 @@ def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, 
         if _PROFILE_API_MARKER in response.url and response.status == 200:
             captured.append(response)
 
-    with sync_playwright() as p:
+    with managed_playwright() as p:
         browser = launch_chromium(p, headless=True)
         context = _new_douyin_context(browser, session_path)
         page = context.new_page()
@@ -245,6 +245,27 @@ def capture_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None,
     """One browser visit: warm session on home, then profile XHR capture + HTML."""
     with playwright_exclusive():
         return _visit_profile_page(session_path, sec_uid)
+
+
+def probe_douyin_session(session_path: Path) -> None:
+    """Raise AuthRequired when the saved Douyin session no longer works."""
+    url = "https://www.douyin.com/?recommend=1"
+    with playwright_exclusive():
+        with managed_playwright() as p:
+            browser = launch_chromium(p, headless=True)
+            context = _new_douyin_context(browser, session_path)
+            page = context.new_page()
+            try:
+                page.goto(url, wait_until="domcontentloaded", timeout=45_000)
+                page.wait_for_timeout(1200)
+                content = page.content()
+                if "登录" in content and "passport" in content:
+                    raise AuthRequired("login required on douyin home")
+                if _is_verify_challenge_page(content):
+                    raise ParseFailed("douyin verify challenge on home page")
+            finally:
+                context.close()
+                browser.close()
 
 
 def fetch_profile_api_via_page(session_path: Path, sec_uid: str) -> dict:
@@ -292,7 +313,7 @@ def fetch_aweme_post_snapshots_until_cursor(
             return
         _store_aweme_post_snapshot(snapshots, url=response.url, payload=data)
 
-    with sync_playwright() as p:
+    with managed_playwright() as p:
         browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()
@@ -333,7 +354,7 @@ def fetch_aweme_post_snapshots_via_page(session_path: Path, sec_uid: str) -> dic
             return
         _store_aweme_post_snapshot(snapshots, url=response.url, payload=data)
 
-    with sync_playwright() as p:
+    with managed_playwright() as p:
         browser = launch_chromium(p, headless=True)
         context = browser.new_context(storage_state=str(session_path))
         page = context.new_page()

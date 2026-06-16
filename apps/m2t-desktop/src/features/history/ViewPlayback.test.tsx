@@ -172,4 +172,22 @@ describe('ViewPlayback hls.js', () => {
       expect(screen.getByText(/云端分段不可用/)).toBeInTheDocument();
     });
   });
+
+  it('stops playback when active becomes false', async () => {
+    const pauseSpy = vi.spyOn(HTMLMediaElement.prototype, 'pause');
+    const session = baseSession({ media_format: 'hls' });
+    const { rerender } = render(
+      <ViewPlayback active creatorName="主播" session={session} />,
+    );
+    await waitFor(() => {
+      expect(mockHlsInstances.length).toBeGreaterThan(0);
+    });
+    const hls = mockHlsInstances[0]!;
+    rerender(<ViewPlayback active={false} creatorName="主播" session={session} />);
+    await waitFor(() => {
+      expect(hls.destroy).toHaveBeenCalled();
+      expect(pauseSpy).toHaveBeenCalled();
+    });
+    pauseSpy.mockRestore();
+  });
 });

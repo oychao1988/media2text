@@ -213,6 +213,60 @@ def test_hls_transcript_picks_newest_partial(api_client, workspace) -> None:
     )
 
 
+def test_transcript_merges_checkpoint_and_partial(api_client, workspace) -> None:
+    """Live API returns checkpoint segments + current partial (STT/ffmpeg reconnect)."""
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_merge",
+        profile_url="https://www.douyin.com/user/sec_merge",
+        platform="douyin",
+    )
+    live_dir = workspace / "creators" / "sec_merge" / "live"
+    live_dir.mkdir(parents=True)
+    anchor = live_dir / "20260616T125140Z.flv"
+    anchor.write_bytes(b"\x00")
+    checkpoint = live_dir / "20260616T125140Z.transcript.seg0.json"
+    checkpoint.write_text(
+        json.dumps(
+            {
+                "segments": [
+                    {"start": 0.0, "end": 120.0, "text": "开场白"},
+                    {"start": 120.0, "end": 600.0, "text": "第一段内容"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    partial = anchor.with_suffix(".transcript.partial.json")
+    partial.write_text(
+        json.dumps(
+            {
+                "partial": True,
+                "segments": [
+                    {"start": 1386.6, "end": 1391.4, "text": "最近一句"},
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="room1",
+        temp_path=str(anchor),
+    )
+    conn.close()
+
+    tr = api_client.get(f"/api/sessions/{sid}/transcript")
+    assert tr.status_code == 200
+    body = tr.json()
+    assert body["partial"] is True
+    assert len(body["segments"]) == 3
+    assert "开场白" in body["text"]
+    assert "第一段内容" in body["text"]
+    assert "最近一句" in body["text"]
+
+
 def test_transcript_not_found(api_client, workspace) -> None:
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)

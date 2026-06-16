@@ -8,12 +8,10 @@ from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.platform.bilibili.auth import (
     login_interactive as bilibili_login,
-    session_exists as bilibili_session_exists,
     session_path as bilibili_session_path,
 )
 from media2text.core.platform.douyin.auth import (
     login_interactive as douyin_login,
-    session_exists as douyin_session_exists,
     session_path as douyin_session_path,
 )
 
@@ -113,28 +111,34 @@ def login(
 @app.command("status")
 def status(
     platform: str = typer.Option("douyin", "--platform"),
+    validate: bool = typer.Option(
+        True,
+        "--validate/--no-validate",
+        help="Probe saved session online (Douyin opens headless browser)",
+    ),
     json_out: bool = typer.Option(False, "--json"),
 ) -> None:
     key = _normalize_platform(platform)
     cfg = AppConfig.load()
+    from media2text.core.platform.session_validate import platform_auth_snapshot
+
+    snap = platform_auth_snapshot(cfg, key, validate=validate, refresh=True)
+    payload = snap.as_dict()
     ws = cfg.ensure_workspace()
     if key == "aliyundrive":
-        exists = _aliyundrive_token_exists(cfg)
         session = cfg.aliyundrive_token_path()
     elif key == "bilibili":
-        exists = bilibili_session_exists(ws)
         session = bilibili_session_path(ws)
     else:
-        exists = douyin_session_exists(ws)
         session = douyin_session_path(ws)
     emit(
         {
             "ok": True,
             "command": "auth status",
             "platform": key,
-            "session_exists": exists,
+            "session_exists": payload["configured"],
             "session_path": str(session),
-            "auth_required": not exists,
+            **payload,
         },
         as_json=json_out,
     )

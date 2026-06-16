@@ -1,6 +1,7 @@
 import flvjs from 'flv.js';
 import { useEffect, useRef, useState } from 'react';
 import { getApiBaseUrl } from '../../lib/api';
+import { releaseLiveFlvPlayer } from './liveFlvPlayer';
 import { RecordBanner } from './RecordBanner';
 import { StreamUnavailable } from './StreamUnavailable';
 
@@ -8,7 +9,6 @@ type Props = {
   creatorId: string | null;
   sessionId: string | null;
   attachStream?: boolean;
-  visible?: boolean;
   showRecordBanner: boolean;
   onRecordingStarted?: () => void;
 };
@@ -23,12 +23,12 @@ export function LivePlayer({
   creatorId,
   sessionId,
   attachStream = true,
-  visible = true,
   showRecordBanner,
   onRecordingStarted,
 }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const playerRef = useRef<flvjs.Player | null>(null);
+  const generationRef = useRef(0);
   const [loading, setLoading] = useState(false);
   const [streamError, setStreamError] = useState(false);
   const [retryKey, setRetryKey] = useState(0);
@@ -38,22 +38,12 @@ export function LivePlayer({
     !sessionId || (showRecordBanner && !loading && !streamError);
 
   useEffect(() => {
-    if (!visible) return;
     const video = videoRef.current;
-    if (!video) return;
-    if (video.paused && playerRef.current) {
-      void playerRef.current.play().catch(() => undefined);
-    }
-  }, [visible]);
-
-  useEffect(() => {
     if (!shouldStream) {
       setLoading(false);
       setStreamError(false);
-      if (playerRef.current) {
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
+      generationRef.current += 1;
+      releaseLiveFlvPlayer(video, playerRef);
       return undefined;
     }
 
@@ -63,31 +53,26 @@ export function LivePlayer({
       return undefined;
     }
 
-    const video = videoRef.current;
     if (!video) return undefined;
 
-    let cancelled = false;
+    const generation = ++generationRef.current;
     setLoading(true);
     setStreamError(false);
 
     const markReady = () => {
-      if (!cancelled) setLoading(false);
+      if (generation === generationRef.current) setLoading(false);
     };
 
     const onVideoReady = () => markReady();
     video.addEventListener('loadeddata', onVideoReady);
+    releaseLiveFlvPlayer(video, playerRef);
 
     void (async () => {
       try {
         const base = await getApiBaseUrl();
+        if (generation !== generationRef.current) return;
+
         const url = `${base}/api/sessions/${sessionId}/stream/proxy`;
-        if (cancelled) return;
-
-        if (playerRef.current) {
-          playerRef.current.destroy();
-          playerRef.current = null;
-        }
-
         const player = flvjs.createPlayer(
           { type: 'flv', url, isLive: true },
           FLV_LIVE_CONFIG,
@@ -95,7 +80,7 @@ export function LivePlayer({
         player.attachMediaElement(video);
         player.on(flvjs.Events.MEDIA_INFO, markReady);
         player.on(flvjs.Events.ERROR, () => {
-          if (!cancelled) {
+          if (generation === generationRef.current) {
             setStreamError(true);
             setLoading(false);
           }
@@ -116,14 +101,14 @@ export function LivePlayer({
           }
         }
 
-        if (!cancelled) {
-          playerRef.current = player;
-          markReady();
-        } else {
-          player.destroy();
+        if (generation !== generationRef.current) {
+          releaseLiveFlvPlayer(video, { current: player });
+          return;
         }
+        playerRef.current = player;
+        markReady();
       } catch {
-        if (!cancelled) {
+        if (generation === generationRef.current) {
           setStreamError(true);
           setLoading(false);
         }
@@ -131,12 +116,9 @@ export function LivePlayer({
     })();
 
     return () => {
-      cancelled = true;
+      generationRef.current += 1;
       video.removeEventListener('loadeddata', onVideoReady);
-      if (playerRef.current) {
-        playerRef.current.destroy();
-        playerRef.current = null;
-      }
+      releaseLiveFlvPlayer(video, playerRef);
     };
   }, [sessionId, retryKey, shouldStream]);
 
@@ -146,13 +128,7 @@ export function LivePlayer({
         <div className="video-frame">
           {shouldStream ? (
             <>
-              <video
-                ref={videoRef}
-                className="live-video"
-                controls
-                autoPlay
-                playsInline
-              />
+              <video ref={videoRef} className="live-video" controls playsInline />
               {loading ? (
                 <div className="video-overlay video-placeholder" aria-busy="true">
                   <div className="app-bootstrap-spinner" aria-hidden="true" />

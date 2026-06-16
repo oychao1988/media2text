@@ -6,7 +6,6 @@ import { useLiveStatus } from '../live/useLiveStatus';
 
 type Props = {
   active?: boolean;
-  keepStream?: boolean;
   creatorId: string | null;
   showRecordBanner?: boolean;
   onRecordingStarted?: () => void;
@@ -14,7 +13,6 @@ type Props = {
 
 export function ViewLive({
   active,
-  keepStream = false,
   creatorId,
   showRecordBanner = false,
   onRecordingStarted,
@@ -23,8 +21,8 @@ export function ViewLive({
   const { activeSessionId, refresh } = useLiveStatus(creatorId);
 
   useEffect(() => {
-    if ((active || keepStream) && creatorId) void getApiBaseUrl();
-  }, [active, keepStream, creatorId]);
+    if (active && creatorId) void getApiBaseUrl();
+  }, [active, creatorId]);
 
   const sessionId = useMemo(() => {
     if (activeSessionId) return activeSessionId;
@@ -34,21 +32,14 @@ export function ViewLive({
     return null;
   }, [activeSessionId, creatorId, selected]);
 
-  const viewClass = [
-    'center-view',
-    active ? 'active' : '',
-    keepStream && !active ? 'pinned' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const viewClass = ['center-view', active ? 'active' : ''].filter(Boolean).join(' ');
 
   return (
     <div className={viewClass} id="view-live" aria-hidden={!active}>
       <LivePlayer
         creatorId={creatorId}
         sessionId={sessionId}
-        attachStream={keepStream}
-        visible={Boolean(active)}
+        attachStream={Boolean(active)}
         showRecordBanner={showRecordBanner}
         onRecordingStarted={() => {
           void refresh();
