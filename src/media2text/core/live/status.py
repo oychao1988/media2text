@@ -6,11 +6,12 @@ from typing import Any
 
 from media2text.core.config import AppConfig
 from media2text.core.live.post_process_pool import resolve_post_process_workers
+from media2text.core.runtime.monitor_lock import monitor_effectively_running, read_lock_pid
 from media2text.core.runtime.status import (
     _age_sec,
+    _live_poll_interval_sec,
     collect_active_recordings,
     collect_queue_counts,
-    read_daemon_pid,
 )
 from media2text.core.storage.repos import PostProcessJobRepo
 
@@ -28,6 +29,15 @@ def build_live_status(
     active = recordings["items"]
     queues = collect_queue_counts(conn)
     queues["post_process"]["max_workers"] = resolve_post_process_workers(cfg)
+
+    live_poll_sec = _live_poll_interval_sec(cfg)
+    running, lock_reason = monitor_effectively_running(
+        ws,
+        cfg,
+        supervisor_status={"managed_by": "none", "thread_alive": False},
+        live_poll_sec=live_poll_sec,
+    )
+    lock_pid = read_lock_pid(ws / ".monitor-watch.lock")
 
     in_flight = jobs.list_in_flight(limit=50)
     if creator_id:
@@ -48,7 +58,9 @@ def build_live_status(
     return {
         "ok": True,
         "command": command,
-        "daemon_lock_pid": read_daemon_pid(ws),
+        "daemon_lock_pid": lock_pid,
+        "daemon_lock_valid": lock_reason is None and running,
+        "daemon_lock_reason": lock_reason,
         "live_tick": {
             "interval_sec": cfg.live.live_poll_interval_sec,
         },

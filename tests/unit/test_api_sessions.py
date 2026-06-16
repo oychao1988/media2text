@@ -87,7 +87,22 @@ def test_build_live_status_shape(workspace) -> None:
     payload = build_live_status(cfg, conn)
     conn.close()
     assert payload["daemon_lock_pid"] is None
+    assert payload["daemon_lock_valid"] is False
+    assert payload["daemon_lock_reason"] == "lock_missing"
     assert isinstance(payload["active_recordings"], list)
+
+
+def test_build_live_status_includes_daemon_lock_valid(workspace, monkeypatch) -> None:
+    cfg = AppConfig(workspace=workspace)
+    (workspace / ".monitor-watch.lock").write_text("581", encoding="utf-8")
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: False,
+    )
+    conn = open_db(cfg)
+    payload = build_live_status(cfg, conn)
+    assert payload["daemon_lock_valid"] is False
+    assert payload["daemon_lock_reason"] == "lock_pid_mismatch"
 
 
 def test_manifest_not_found(api_client, workspace) -> None:

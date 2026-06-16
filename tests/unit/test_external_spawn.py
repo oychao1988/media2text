@@ -34,9 +34,14 @@ def test_spawn_cli_monitor_daemon_waits_for_lock(tmp_path, monkeypatch) -> None:
         "media2text.core.runtime.external_spawn.subprocess.Popen",
         fake_popen,
     )
+
+    def _alive(pid: int) -> bool:
+        return pid == spawned_pid
+
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", _alive)
     monkeypatch.setattr(
-        "media2text.core.runtime.external_spawn._pid_alive",
-        lambda pid: pid == spawned_pid,
+        "media2text.core.runtime.external_spawn.is_monitor_watch_pid",
+        _alive,
     )
     result = spawn_cli_monitor_daemon(cfg, wait_sec=2.0)
     assert result["ok"] is True
@@ -50,8 +55,17 @@ def test_spawn_blocks_when_external_already_running(tmp_path, monkeypatch) -> No
     ws = cfg.ensure_workspace()
     external_pid = 424242
     (ws / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
+
+    def _alive(pid: int) -> bool:
+        return pid == external_pid
+
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", _alive)
     monkeypatch.setattr(
-        "media2text.core.runtime.external_spawn._pid_alive",
+        "media2text.core.runtime.external_spawn.is_monitor_watch_pid",
+        lambda pid: pid == external_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
         lambda pid: pid == external_pid,
     )
     result = spawn_cli_monitor_daemon(cfg)

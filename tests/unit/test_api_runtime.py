@@ -66,7 +66,7 @@ def test_runtime_start_stop(api_client, workspace) -> None:
     assert stop.status_code == 200
 
 
-def test_runtime_stop_external(api_client, workspace) -> None:
+def test_runtime_stop_external(api_client, workspace, monkeypatch) -> None:
     external_pid = 919191
     (workspace / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
     alive = {external_pid}
@@ -77,6 +77,15 @@ def test_runtime_stop_external(api_client, workspace) -> None:
     def fake_kill(pid: int, sig: int) -> None:
         alive.discard(pid)
 
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", fake_alive)
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor.is_monitor_watch_pid",
+        fake_alive,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        fake_alive,
+    )
     with (
         patch("media2text.core.runtime.supervisor._pid_alive", fake_alive),
         patch("media2text.core.runtime.supervisor.os.kill", fake_kill),
@@ -86,13 +95,22 @@ def test_runtime_stop_external(api_client, workspace) -> None:
     assert r.json()["stopped"] is True
 
 
-def test_runtime_with_lock_external(api_client, workspace) -> None:
+def test_runtime_with_lock_external(api_client, workspace, monkeypatch) -> None:
     pid = os.getpid()
     (workspace / ".monitor-watch.lock").write_text(str(pid), encoding="utf-8")
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda p: p == pid,
+    )
+    from datetime import datetime, timezone
+
+    from media2text.core.runtime.heartbeat import write_heartbeat
+
+    write_heartbeat(workspace, last_tick_at=datetime.now(timezone.utc).isoformat())
     r = api_client.get("/api/runtime")
     body = r.json()
     assert body["daemon"]["running"] is True
-    assert body["managed_by"] in ("external", "none")
+    assert body["managed_by"] == "external"
 
 
 def test_runtime_handoff_to_external(api_client, workspace) -> None:

@@ -51,11 +51,20 @@ def test_supervisor_external_lock_blocks_start(tmp_path, monkeypatch) -> None:
     external_pid = 424242
     (ws / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
     sup = MonitorSupervisor()
-    with patch(
-        "media2text.core.runtime.supervisor._pid_alive",
-        side_effect=lambda pid: pid == external_pid,
-    ):
-        result = sup.start(cfg)
+
+    def _alive(pid: int) -> bool:
+        return pid == external_pid
+
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", _alive)
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor.is_monitor_watch_pid",
+        lambda pid: pid == external_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: pid == external_pid,
+    )
+    result = sup.start(cfg)
     assert result["ok"] is False
     assert result["already_running_external"] is True
     assert result["pid"] == external_pid
@@ -82,11 +91,20 @@ def test_supervisor_stop_not_owner_for_external(tmp_path, monkeypatch) -> None:
     external_pid = 515151
     (ws / ".monitor-watch.lock").write_text(str(external_pid), encoding="utf-8")
     sup = MonitorSupervisor()
-    with patch(
-        "media2text.core.runtime.supervisor._pid_alive",
-        side_effect=lambda pid: pid == external_pid,
-    ):
-        result = sup.stop(cfg)
+
+    def _alive(pid: int) -> bool:
+        return pid == external_pid
+
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", _alive)
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor.is_monitor_watch_pid",
+        lambda pid: pid == external_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: pid == external_pid,
+    )
+    result = sup.stop(cfg)
     assert result["ok"] is False
     assert result["not_owner"] is True
 
@@ -106,10 +124,16 @@ def test_supervisor_stop_external_and_takeover(tmp_path, monkeypatch) -> None:
     def fake_kill(pid: int, sig: int) -> None:
         alive.discard(pid)
 
+    monkeypatch.setattr("media2text.core.runtime.monitor_lock._pid_alive", fake_alive)
     monkeypatch.setattr(
-        "media2text.core.runtime.supervisor._pid_alive",
+        "media2text.core.runtime.supervisor.is_monitor_watch_pid",
         fake_alive,
     )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        fake_alive,
+    )
+    monkeypatch.setattr("media2text.core.runtime.supervisor._pid_alive", fake_alive)
     monkeypatch.setattr("media2text.core.runtime.supervisor.os.kill", fake_kill)
 
     stop_result = sup.stop_external(cfg)
@@ -120,3 +144,18 @@ def test_supervisor_stop_external_and_takeover(tmp_path, monkeypatch) -> None:
         takeover = sup.takeover(cfg)
     assert takeover["ok"] is True
     assert takeover["start"]["managed_by"] == "embedded"
+
+
+def test_supervisor_start_clears_fake_external_lock(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    ws = cfg.ensure_workspace()
+    (ws / ".monitor-watch.lock").write_text("581", encoding="utf-8")
+    sup = MonitorSupervisor()
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: False,
+    )
+    with patch.object(MonitorSupervisor, "_run_daemon_thread", lambda self: None):
+        result = sup.start(cfg)
+    assert result["ok"] is True

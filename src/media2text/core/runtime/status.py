@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from datetime import datetime, timezone
 from pathlib import Path
@@ -10,6 +9,16 @@ from typing import Any, Literal
 
 from media2text.core.config import AppConfig
 from media2text.core.live.post_process_pool import resolve_post_process_workers
+from media2text.core.runtime.heartbeat import (
+    _age_sec,
+    heartbeat_stale_sec,
+    read_heartbeat,
+)
+from media2text.core.runtime.monitor_lock import (
+    is_monitor_watch_pid,
+    monitor_effectively_running,
+    read_lock_pid,
+)
 from media2text.core.storage.repos import (
     CreatorRepo,
     LiveSessionRepo,
@@ -22,36 +31,14 @@ from media2text.core.workspace import open_db
 HealthState = Literal["stopped", "degraded", "healthy"]
 ManagedBy = Literal["embedded", "external", "none"]
 
-HEARTBEAT_NAME = ".runtime-heartbeat"
 LOG_NAME = "monitor-watch.log"
+
+# Re-export for callers that import from status
+HEARTBEAT_NAME = ".runtime-heartbeat"
 
 
 def _live_poll_interval_sec(cfg: AppConfig) -> int:
     return cfg.live.live_poll_interval_sec or cfg.monitor.live_poll_interval_sec
-
-
-def _pid_alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-        return True
-    except OSError:
-        return False
-
-
-def read_heartbeat(workspace: Path) -> dict[str, Any] | None:
-    path = workspace / HEARTBEAT_NAME
-    if not path.is_file():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-
-
-def write_heartbeat(workspace: Path, *, last_tick_at: str) -> None:
-    path = workspace / HEARTBEAT_NAME
-    payload = {"last_tick_at": last_tick_at}
-    path.write_text(json.dumps(payload), encoding="utf-8")
 
 
 def collect_queue_counts(conn) -> dict[str, Any]:
@@ -158,21 +145,8 @@ def _parse_iso(value: str | None) -> datetime | None:
         return None
 
 
-def _age_sec(since: str | None) -> float | None:
-    start = _parse_iso(since)
-    if not start:
-        return None
-    return (datetime.now(timezone.utc) - start).total_seconds()
-
-
 def read_daemon_pid(workspace: Path) -> int | None:
-    lock = workspace / ".monitor-watch.lock"
-    if not lock.is_file():
-        return None
-    try:
-        return int(lock.read_text().strip())
-    except (OSError, ValueError):
-        return None
+    return read_lock_pid(workspace / ".monitor-watch.lock")
 
 
 def compute_health(
@@ -187,7 +161,8 @@ def compute_health(
     if not running:
         return "stopped", ["monitor not running"]
     reasons: list[str] = []
-    if tick_age_sec is None or tick_age_sec > 2 * live_poll_sec:
+    stale_tick_sec = heartbeat_stale_sec(live_poll_sec)
+    if tick_age_sec is None or tick_age_sec > stale_tick_sec:
         reasons.append("live tick stale")
     if snapshots_stale > 0:
         reasons.append(f"{snapshots_stale} creator snapshots stale")
@@ -214,16 +189,23 @@ def build_runtime_status(
         monitored_creators = len(CreatorRepo(conn).list_monitored())
 
         sup = supervisor_status or {}
+        live_poll_sec = _live_poll_interval_sec(cfg)
+        running, lock_reason = monitor_effectively_running(
+            ws,
+            cfg,
+            supervisor_status=sup,
+            live_poll_sec=live_poll_sec,
+        )
+        lock_pid = read_lock_pid(ws / ".monitor-watch.lock")
+
         managed_by: ManagedBy = sup.get("managed_by", "none")
-        lock_pid = read_daemon_pid(ws)
-        running = bool(sup.get("running") or (lock_pid and _pid_alive(lock_pid)))
-        if managed_by == "embedded" and sup.get("thread_alive"):
-            running = True
-        elif managed_by == "external" and lock_pid and _pid_alive(lock_pid):
-            running = True
-        elif managed_by == "none" and lock_pid and _pid_alive(lock_pid):
-            managed_by = "external"
-            running = True
+        if running:
+            if sup.get("thread_alive"):
+                managed_by = "embedded"
+            else:
+                managed_by = "external"
+        elif lock_pid and not is_monitor_watch_pid(lock_pid):
+            managed_by = "none"
 
         last_tick_at = sup.get("last_tick_at")
         if last_tick_at is None and managed_by == "external":
@@ -232,7 +214,6 @@ def build_runtime_status(
                 last_tick_at = heartbeat.get("last_tick_at")
 
         tick_age_sec = _age_sec(last_tick_at) if last_tick_at else None
-        live_poll_sec = _live_poll_interval_sec(cfg)
         failed_recent = queues["monitor_tasks"]["failed_recent_24h"]
         health, health_reasons = compute_health(
             running=running,
@@ -242,10 +223,20 @@ def build_runtime_status(
             failed_recent_24h=failed_recent,
             threshold_failed=cfg.desktop.runtime_failed_recent_threshold,
         )
+        if (
+            not running
+            and sup.get("thread_alive")
+            and lock_reason == "heartbeat_stale"
+        ):
+            health = "degraded"
+            if "live tick stale" not in health_reasons:
+                health_reasons = ["live tick stale"]
 
         pid = sup.get("pid") if managed_by == "embedded" else lock_pid
         if managed_by == "embedded" and pid is None:
             pid = os.getpid()
+
+        lock_valid = lock_reason is None and running
 
         return {
             "ok": True,
@@ -256,6 +247,8 @@ def build_runtime_status(
                 "running": running,
                 "pid": pid if running else None,
                 "lock_pid": lock_pid,
+                "lock_valid": lock_valid,
+                "lock_reason": lock_reason,
                 "started_at": sup.get("started_at"),
                 "last_tick_at": last_tick_at,
                 "tick_age_sec": round(tick_age_sec, 1) if tick_age_sec is not None else None,

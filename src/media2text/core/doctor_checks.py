@@ -6,7 +6,7 @@ import os
 import shutil
 from pathlib import Path
 
-from media2text.core.archive.health import is_index_stale, monitor_lock_pid
+from media2text.core.archive.health import is_index_stale, monitor_lock_pid, monitor_lock_valid
 from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
 from media2text.core.playwright_env import smoke_launch_chromium
@@ -170,6 +170,23 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         )
 
     warnings: list[dict] = []
+    lock_pid = monitor_lock_pid(ws)
+    lock_valid = monitor_lock_valid(ws)
+    if lock_pid is not None and not lock_valid:
+        warnings.append(
+            {
+                "code": "monitor_lock_pid_mismatch",
+                "message": (
+                    f".monitor-watch.lock references PID {lock_pid} which is not "
+                    "a media2text monitor watch process"
+                ),
+                "hint": (
+                    "Remove data/.monitor-watch.lock or run "
+                    "media2text serve with desktop.auto_start_monitor / "
+                    "POST /api/runtime/takeover"
+                ),
+            }
+        )
     if cfg.live.effective_pipeline_mode() == "legacy":
         warnings.append(
             {
@@ -222,5 +239,6 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         "warnings": warnings,
         "compliance_accepted": is_compliance_accepted(ws),
         "index_stale": is_index_stale(conn, ws),
-        "monitor_lock_pid": monitor_lock_pid(ws),
+        "monitor_lock_pid": lock_pid,
+        "monitor_lock_valid": lock_valid,
     }

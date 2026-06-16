@@ -11,9 +11,12 @@ from typing import Any
 
 import structlog
 
-from media2text.core.archive.health import monitor_lock_pid
 from media2text.core.config import AppConfig
-from media2text.core.runtime.supervisor import _pid_alive
+from media2text.core.runtime.monitor_lock import (
+    clear_invalid_monitor_lock,
+    is_monitor_watch_pid,
+    read_lock_pid,
+)
 
 log = structlog.get_logger()
 
@@ -36,8 +39,9 @@ def spawn_cli_monitor_daemon(
     """Start external monitor watch; return lock PID when ready."""
     ws = cfg.ensure_workspace()
     lock_path = ws / ".monitor-watch.lock"
-    existing = monitor_lock_pid(ws)
-    if existing and _pid_alive(existing) and existing != os.getpid():
+    clear_invalid_monitor_lock(lock_path)
+    existing = read_lock_pid(lock_path)
+    if existing and is_monitor_watch_pid(existing) and existing != os.getpid():
         return {
             "ok": False,
             "already_running_external": True,
@@ -75,8 +79,8 @@ def spawn_cli_monitor_daemon(
 
     deadline = time.monotonic() + wait_sec
     while time.monotonic() < deadline:
-        pid = monitor_lock_pid(ws)
-        if pid and _pid_alive(pid) and pid != os.getpid():
+        pid = read_lock_pid(lock_path)
+        if pid and is_monitor_watch_pid(pid) and pid != os.getpid():
             log.info("monitor_external_spawned", pid=pid, spawn_pid=proc.pid)
             return {
                 "ok": True,
