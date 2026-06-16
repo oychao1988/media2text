@@ -31,6 +31,7 @@ SH-1 提供 `clear_invalid_monitor_lock` Python API 后，运维入口 `bin/moni
 source .venv/bin/activate
 
 pytest tests/unit/test_monitor_lock.py tests/unit/test_process_lock.py -v
+python scripts/verify_monitor_watch_daemon_smoke.py
 ```
 
 **手动冒烟**（勿纳入 CI / `issue_verify`）
