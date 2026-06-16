@@ -17,7 +17,6 @@ from media2text.core.runtime.monitor_lock import (
     is_monitor_watch_pid,
     read_lock_pid,
 )
-from media2text.core.runtime.supervisor import _pid_alive
 
 log = structlog.get_logger()
 
