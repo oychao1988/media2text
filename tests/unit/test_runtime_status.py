@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta, timezone
+import os
 
 import pytest
 
@@ -29,7 +30,7 @@ def test_compute_health_stopped() -> None:
 def test_compute_health_degraded_stale_tick() -> None:
     health, reasons = compute_health(
         running=True,
-        tick_age_sec=50,
+        tick_age_sec=100,
         live_poll_sec=10,
         snapshots_stale=0,
         failed_recent_24h=0,
@@ -109,3 +110,50 @@ def test_count_stale_snapshots_no_snapshot(tmp_path, monkeypatch) -> None:
     cid = CreatorRepo(conn).list_monitored()[0].id
     LiveSnapshotRepo(conn).upsert(cid, is_live=False)
     assert count_stale_snapshots(conn, cfg) == 0
+
+
+def test_build_runtime_status_rejects_fake_lock_pid(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data", live=LiveConfig(live_poll_interval_sec=10))
+    ws = cfg.ensure_workspace()
+    (ws / ".monitor-watch.lock").write_text("581", encoding="utf-8")
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: False,
+    )
+    conn = open_db(cfg)
+    payload = build_runtime_status(cfg, conn=conn)
+    assert payload["daemon"]["running"] is False
+    assert payload["daemon"]["lock_valid"] is False
+    assert payload["daemon"]["lock_reason"] == "lock_pid_mismatch"
+    assert payload["health"] == "stopped"
+
+
+def test_build_runtime_status_embedded_heartbeat_stale_health_degraded(tmp_path, monkeypatch) -> None:
+    from media2text.core.runtime.heartbeat import write_heartbeat
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data", live=LiveConfig(live_poll_interval_sec=10))
+    ws = cfg.ensure_workspace()
+    (ws / ".monitor-watch.lock").write_text(str(os.getpid()), encoding="utf-8")
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    write_heartbeat(ws, last_tick_at=stale)
+    sup = {"managed_by": "embedded", "thread_alive": True, "running": True}
+    payload = build_runtime_status(cfg, conn=open_db(cfg), supervisor_status=sup)
+    assert payload["daemon"]["running"] is False
+    assert payload["health"] == "degraded"
+
+
+def test_build_runtime_status_embedded_heartbeat_stale_not_running(tmp_path, monkeypatch) -> None:
+    from media2text.core.runtime.heartbeat import write_heartbeat
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data", live=LiveConfig(live_poll_interval_sec=10))
+    ws = cfg.ensure_workspace()
+    (ws / ".monitor-watch.lock").write_text(str(os.getpid()), encoding="utf-8")
+    stale = (datetime.now(timezone.utc) - timedelta(seconds=120)).isoformat()
+    write_heartbeat(ws, last_tick_at=stale)
+    sup = {"managed_by": "embedded", "thread_alive": True, "running": True}
+    payload = build_runtime_status(cfg, conn=open_db(cfg), supervisor_status=sup)
+    assert payload["daemon"]["running"] is False
+    assert payload["daemon"]["lock_reason"] == "heartbeat_stale"

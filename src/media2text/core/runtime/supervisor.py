@@ -13,7 +13,11 @@ from typing import Any
 
 import structlog
 
-from media2text.core.archive.health import monitor_lock_pid
+from media2text.core.runtime.monitor_lock import (
+    clear_invalid_monitor_lock,
+    is_monitor_watch_pid,
+    read_lock_pid,
+)
 from media2text.core.config import AppConfig
 from media2text.core.monitor.watcher import MonitorWatcher
 from media2text.core.process_lock import (
@@ -22,7 +26,7 @@ from media2text.core.process_lock import (
     clear_stale_workspace_lock,
     release_workspace_lock,
 )
-from media2text.core.runtime.status import write_heartbeat
+from media2text.core.runtime.heartbeat import write_heartbeat
 
 log = structlog.get_logger()
 
@@ -69,8 +73,9 @@ class MonitorSupervisor:
     def start(self, cfg: AppConfig, *, creator_id: str | None = None) -> dict[str, Any]:
         ws = cfg.ensure_workspace()
         lock_path = ws / ".monitor-watch.lock"
-        pid = monitor_lock_pid(ws)
-        if pid and _pid_alive(pid) and not self._holds_embedded_lock(pid):
+        clear_invalid_monitor_lock(lock_path)
+        pid = read_lock_pid(lock_path)
+        if pid and is_monitor_watch_pid(pid) and not self._holds_embedded_lock(pid):
             return {
                 "ok": False,
                 "already_running_external": True,
@@ -90,8 +95,8 @@ class MonitorSupervisor:
         try:
             self._lock_fd = acquire_workspace_lock(lock_path)
         except LockError as exc:
-            ext_pid = monitor_lock_pid(ws)
-            if ext_pid and _pid_alive(ext_pid):
+            ext_pid = read_lock_pid(lock_path)
+            if ext_pid and is_monitor_watch_pid(ext_pid):
                 return {
                     "ok": False,
                     "already_running_external": True,
@@ -128,8 +133,8 @@ class MonitorSupervisor:
                 }
             ext_pid = None
             if check_cfg is not None:
-                ext_pid = monitor_lock_pid(check_cfg.ensure_workspace())
-            if ext_pid and _pid_alive(ext_pid):
+                ext_pid = read_lock_pid(check_cfg.ensure_workspace() / ".monitor-watch.lock")
+            if ext_pid and is_monitor_watch_pid(ext_pid):
                 return {
                     "ok": False,
                     "not_owner": True,
@@ -166,8 +171,8 @@ class MonitorSupervisor:
             }
         ws = cfg.ensure_workspace()
         lock_path = ws / ".monitor-watch.lock"
-        pid = monitor_lock_pid(ws)
-        if pid is None or not _pid_alive(pid):
+        pid = read_lock_pid(lock_path)
+        if pid is None or not is_monitor_watch_pid(pid):
             clear_stale_workspace_lock(lock_path)
             return {"ok": True, "stopped": False, "message": "no external daemon"}
         if self._holds_embedded_lock(pid):
@@ -239,13 +244,13 @@ class MonitorSupervisor:
 
     def status(self, cfg: AppConfig) -> SupervisorStatus:
         ws = cfg.ensure_workspace()
-        lock_pid = monitor_lock_pid(ws)
+        lock_pid = read_lock_pid(ws / ".monitor-watch.lock")
         thread_alive = self._thread is not None and self._thread.is_alive()
         if thread_alive:
             managed_by = "embedded"
             running = True
             pid = os.getpid()
-        elif lock_pid and _pid_alive(lock_pid):
+        elif lock_pid and is_monitor_watch_pid(lock_pid):
             managed_by = "external"
             running = True
             pid = lock_pid
@@ -286,9 +291,8 @@ class MonitorSupervisor:
     def _clear_lock_for_pid(lock_path: Path, pid: int) -> None:
         if not lock_path.is_file():
             return
-        try:
-            recorded = int(lock_path.read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
+        recorded = read_lock_pid(lock_path)
+        if recorded is None:
             lock_path.unlink(missing_ok=True)
             return
         if recorded == pid:

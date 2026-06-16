@@ -8,7 +8,7 @@ from typing import TYPE_CHECKING
 
 import structlog
 
-from media2text.core.runtime.status import write_heartbeat
+from media2text.core.runtime.heartbeat import write_heartbeat
 from media2text.core.storage.repos import LiveSessionRepo
 
 from media2text.core.config import AppConfig

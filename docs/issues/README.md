@@ -239,3 +239,15 @@
 |------|--------|----------|------|
 | 1 | [#145](https://github.com/oychao1988/media2text/issues/145) | [monitor-daemon-v3-phase1.md](./monitor-daemon-v3-phase1.md) | `issue-145-monitor-daemon-v3-phase1` |
 | 2 | （待开单） | [monitor-daemon-v3-phase2.md](./monitor-daemon-v3-phase2.md) | `issue-*-monitor-daemon-v3-phase2` |
+
+### Monitor 自愈与可信锁（2026-06-16，待实现）
+
+规格：[monitor-self-heal-design](../superpowers/specs/2026-06-16-monitor-self-heal-design.md) · 计划：[monitor-self-heal-implementation](../superpowers/plans/2026-06-16-monitor-self-heal-implementation.md)
+
+| 顺序 | GitHub | 规格正文 | 分支 |
+|------|--------|----------|------|
+| SH-1 | [#313](https://github.com/oychao1988/media2text/issues/313) | [monitor-self-heal-sh1-trusted-lock.md](./monitor-self-heal-sh1-trusted-lock.md) | `issue-313-monitor-self-heal-sh1` |
+| SH-2 | [#314](https://github.com/oychao1988/media2text/issues/314) | [monitor-self-heal-sh2-recovery-watchdog.md](./monitor-self-heal-sh2-recovery-watchdog.md) | `issue-314-monitor-self-heal-sh2` |
+| SH-3 | [#315](https://github.com/oychao1988/media2text/issues/315) | [monitor-self-heal-sh3-ops-docs.md](./monitor-self-heal-sh3-ops-docs.md) | `issue-315-monitor-self-heal-sh3` |
+
+**合并顺序**：#313 → #314；#315 可与 #314 并行（均依赖 #313）。

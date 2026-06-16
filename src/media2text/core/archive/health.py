@@ -7,14 +7,18 @@ from media2text.core.archive.indexer import _collect_transcript_paths
 
 
 def monitor_lock_pid(workspace: Path) -> int | None:
-    lock = workspace / ".monitor-watch.lock"
-    if not lock.is_file():
-        return None
-    try:
-        raw = lock.read_text(encoding="utf-8").strip()
-        return int(raw) if raw else None
-    except (OSError, ValueError):
-        return None
+    from media2text.core.runtime.monitor_lock import read_lock_pid
+
+    return read_lock_pid(workspace / ".monitor-watch.lock")
+
+
+def monitor_lock_valid(workspace: Path) -> bool:
+    from media2text.core.runtime.monitor_lock import is_monitor_watch_pid, read_lock_pid
+
+    pid = read_lock_pid(workspace / ".monitor-watch.lock")
+    if pid is None:
+        return True
+    return is_monitor_watch_pid(pid)
 
 
 def is_index_stale(conn: sqlite3.Connection, workspace: Path) -> bool:

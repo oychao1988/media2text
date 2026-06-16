@@ -9,9 +9,14 @@ from media2text.core.workspace import open_db
 
 
 @pytest.fixture
-def api_client(workspace):
+def api_client(workspace, monkeypatch):
     clear_health_cache()
-    cfg = AppConfig.load()
+    cfg = AppConfig(workspace=workspace)
+    monkeypatch.setattr("media2text.core.config.AppConfig.load", lambda: cfg)
+    monkeypatch.setattr(
+        "media2text.core.logging.enable_monitor_log_sink",
+        lambda _ws: workspace / "monitor-watch.log",
+    )
     app = create_app()
     api = app.state.api_app
 
