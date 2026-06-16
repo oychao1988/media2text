@@ -3,8 +3,6 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from media2text.core.config import AppConfig
 from media2text.core.errors import AuthRequired
 from media2text.core.platform.session_validate import (

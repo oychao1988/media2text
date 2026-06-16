@@ -8,12 +8,10 @@ from media2text.core.config import AppConfig
 from media2text.core.json_out import emit
 from media2text.core.platform.bilibili.auth import (
     login_interactive as bilibili_login,
-    session_exists as bilibili_session_exists,
     session_path as bilibili_session_path,
 )
 from media2text.core.platform.douyin.auth import (
     login_interactive as douyin_login,
-    session_exists as douyin_session_exists,
     session_path as douyin_session_path,
 )
 
