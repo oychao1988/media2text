@@ -117,6 +117,7 @@ async def run_runtime_health_loop(app: FastAPI, cfg: AppConfig, stop: asyncio.Ev
     global _curator_tick_counter
     prev: dict[str, Any] | None = None
     last_publish_at = 0.0
+    last_self_heal_check = 0.0
     heartbeat_sec = float(cfg.desktop.runtime_ws_interval_sec)
     while not stop.is_set():
         try:
@@ -127,6 +128,14 @@ async def run_runtime_health_loop(app: FastAPI, cfg: AppConfig, stop: asyncio.Ev
                 last_publish_at=last_publish_at,
                 heartbeat_sec=heartbeat_sec,
             )
+            now = time.monotonic()
+            if now - last_self_heal_check >= float(cfg.desktop.monitor_self_heal_check_every_sec):
+                last_self_heal_check = now
+                supervisor: MonitorSupervisor | None = getattr(app.state, "supervisor", None)
+                if supervisor is not None:
+                    from media2text.api.services.monitor_self_heal import maybe_self_heal_monitor
+
+                    maybe_self_heal_monitor(cfg, supervisor)
             _curator_tick_counter += 1
             if _curator_tick_counter >= _CURATOR_IDLE_TICK_EVERY:
                 _curator_tick_counter = 0

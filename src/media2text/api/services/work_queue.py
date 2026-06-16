@@ -84,6 +84,8 @@ def recover_stale_work(
     older_than_sec: int = 120,
 ) -> dict[str, Any]:
     """Reset monitor tasks / post-process jobs stuck in ``running``."""
+    from media2text.core.live.session_recovery import recover_orphan_sessions
+
     conn = open_db(cfg)
     try:
         mt_repo = MonitorTaskRepo(conn)
@@ -92,11 +94,13 @@ def recover_stale_work(
         if LiveSessionRepo(conn).list_active():
             content_released = mt_repo.release_running_content_tasks()
         pp_reset = PostProcessJobRepo(conn).reset_stale_running(older_than_sec=older_than_sec)
+        orphan = recover_orphan_sessions(cfg, conn)
         return {
             "ok": True,
             "monitor_tasks_reset": mt_reset,
             "content_tasks_released": content_released,
             "post_process_reset": pp_reset,
+            "orphan_sessions_recovered": orphan,
             "older_than_sec": older_than_sec,
         }
     finally:
