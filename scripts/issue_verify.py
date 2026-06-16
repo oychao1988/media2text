@@ -19,6 +19,19 @@ SKIP_PREFIXES = (
     "cd ",
 )
 
+# Long-running daemons must not block issue_verify / CI (see docs/issues/issue-verify-monitor-daemon-smoke.md).
+BLOCKING_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(r"bin/monitor-watch-daemon\.sh\b"),
+    re.compile(r"\bmedia2text\s+monitor\s+watch\b.*--daemon\b"),
+    re.compile(r"\bmedia2text\s+serve\b"),
+    re.compile(r"\bpnpm\b.*\btauri\s+dev\b"),
+    re.compile(r"\bnohup\b.*\bmonitor\s+watch\b"),
+)
+
+
+def is_blocking_command(cmd: str) -> bool:
+    return any(p.search(cmd) for p in BLOCKING_PATTERNS)
+
 
 def find_issue_md(*, issue: int | None = None, slug: str | None = None, branch: str | None = None) -> Path:
     if slug:
@@ -142,6 +155,10 @@ def main() -> int:
 
     failed = 0
     for cmd in commands:
+        if is_blocking_command(cmd):
+            print(f"\n$ {cmd}")
+            print("SKIP (blocking daemon / long-running process)")
+            continue
         code = run_command(cmd, dry_run=args.dry_run)
         if code != 0:
             print(f"FAILED (exit {code}): {cmd}", file=sys.stderr)

@@ -251,3 +251,9 @@
 | SH-3 | [#315](https://github.com/oychao1988/media2text/issues/315) | [monitor-self-heal-sh3-ops-docs.md](./monitor-self-heal-sh3-ops-docs.md) | `issue-315-monitor-self-heal-sh3` |
 
 **合并顺序**：#313 → #314；#315 可与 #314 并行（均依赖 #313）。
+
+**跟进**（#315 验证/CI）：
+
+| GitHub | 规格正文 | 分支 |
+|--------|----------|------|
+| [#322](https://github.com/oychao1988/media2text/issues/322) | [issue-verify-monitor-daemon-smoke.md](./issue-verify-monitor-daemon-smoke.md) | `issue-322-issue-verify-daemon-smoke` |
