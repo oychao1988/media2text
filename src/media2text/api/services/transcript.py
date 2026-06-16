@@ -8,7 +8,12 @@ from typing import Any
 
 from fastapi import HTTPException
 
-from media2text.core.live.transcript_writer import transcript_sidecar_media_paths
+from media2text.core.live.transcript_writer import (
+    list_segment_checkpoints,
+    live_transcript_sidecar_mtime,
+    load_merged_live_transcript,
+    transcript_sidecar_media_paths,
+)
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.models import LiveSessionRow
 
@@ -54,23 +59,26 @@ def transcript_media_candidates(row: LiveSessionRow) -> list[Path]:
     return out
 
 
-def _partial_sidecar_score(path: Path) -> tuple[float, int, float]:
-    """Rank partial sidecars: higher segment end, then count, then mtime."""
+def _live_transcript_score(media_path: Path) -> tuple[float, int, float] | None:
+    """Rank live sidecars (checkpoints + partial): end time, count, mtime."""
+    merged = load_merged_live_transcript(media_path)
+    if merged is None:
+        return None
+    segments = merged.get("segments") or []
+    if not isinstance(segments, list) or not segments:
+        return None
     seg_end = 0.0
-    seg_count = 0
-    payload = _read_json_sidecar(path)
-    if payload:
-        segments = payload.get("segments") or []
-        if isinstance(segments, list):
-            seg_count = len(segments)
-            for seg in segments:
-                if not isinstance(seg, dict):
-                    continue
-                try:
-                    seg_end = max(seg_end, float(seg.get("end") or 0))
-                except (TypeError, ValueError):
-                    continue
-    return (seg_end, seg_count, path.stat().st_mtime)
+    for seg in segments:
+        if not isinstance(seg, dict):
+            continue
+        try:
+            seg_end = max(seg_end, float(seg.get("end") or 0))
+        except (TypeError, ValueError):
+            continue
+    mtime = live_transcript_sidecar_mtime(media_path)
+    if mtime is None:
+        return None
+    return (seg_end, len(segments), mtime)
 
 
 def _pick_best_transcript_media(row: LiveSessionRow) -> Path | None:
@@ -81,9 +89,12 @@ def _pick_best_transcript_media(row: LiveSessionRow) -> Path | None:
     for media in transcript_media_candidates(row):
         for candidate in transcript_sidecar_media_paths(media):
             partial = candidate.with_suffix(".transcript.partial.json")
-            if not partial.is_file():
+            checkpoints = list_segment_checkpoints(candidate)
+            if not partial.is_file() and not checkpoints:
                 continue
-            score = _partial_sidecar_score(partial)
+            score = _live_transcript_score(candidate)
+            if score is None:
+                continue
             if best_score is None or score > best_score:
                 best_score = score
                 best_media = candidate
@@ -116,19 +127,11 @@ def _read_json_sidecar(path: Path) -> dict[str, Any] | None:
 
 def read_transcript_payload(media_path: Path) -> dict[str, Any]:
     """Load partial or final transcript; return API shape."""
-    partial_path = media_path.with_suffix(".transcript.partial.json")
     final_json = media_path.with_suffix(".transcript.json")
 
-    payload = _read_json_sidecar(partial_path)
-    if payload is not None:
-        segments = payload.get("segments") or []
-        return {
-            "partial": True,
-            "segments": segments if isinstance(segments, list) else [],
-            "text": str(payload.get("text") or ""),
-            "engine": payload.get("engine"),
-            "model": payload.get("model"),
-        }
+    live_payload = load_merged_live_transcript(media_path)
+    if live_payload is not None:
+        return live_payload
 
     payload = _read_json_sidecar(final_json)
     if payload is not None:
@@ -171,9 +174,9 @@ def transcript_mtime(row: LiveSessionRow) -> float | None:
     if media is None:
         return None
     mtimes: list[float] = []
-    partial = media.with_suffix(".transcript.partial.json")
-    if partial.is_file():
-        mtimes.append(partial.stat().st_mtime)
+    live_mtime = live_transcript_sidecar_mtime(media)
+    if live_mtime is not None:
+        mtimes.append(live_mtime)
     final = media.with_suffix(".transcript.json")
     if final.is_file():
         mtimes.append(final.stat().st_mtime)

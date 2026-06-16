@@ -70,6 +70,7 @@ from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorT
 log = structlog.get_logger()
 FFMPEG_STARTUP_GRACE_SEC = 2
 TRANSCRIPT_STALL_RECONNECT_SEC = 90
+STT_RECONNECT_MIN_SEC = 15.0
 HLS_STALL_GRACE_SEC = 45
 HLS_STALL_POLL_THRESHOLD = 3
 
@@ -114,6 +115,7 @@ class LiveRecordingCore:
         self._hls_discontinuity_seq: dict[str, int] = {}
         self._hls_stall_polls: dict[str, int] = {}
         self._stall_recovery_inflight: set[str] = set()
+        self._stt_last_reconnect_mono: dict[str, float] = {}
 
     @property
     def _processes(self) -> dict[str, Popen]:
@@ -852,6 +854,7 @@ class LiveRecordingCore:
     def _clear_streaming_session_state(self, session_id: str) -> None:
         self._streaming_transcript_anchor.pop(session_id, None)
         self._stt_checkpoint_counter.pop(session_id, None)
+        self._stt_last_reconnect_mono.pop(session_id, None)
         self._partial_notifiers.pop(session_id, None)
         self._hls_part_index.pop(session_id, None)
         self._hls_discontinuity_seq.pop(session_id, None)
@@ -1020,9 +1023,21 @@ class LiveRecordingCore:
 
     def _handle_stt_disconnect(self, row, creator) -> None:
         session_id = row.id
+        now = time.monotonic()
+        last = self._stt_last_reconnect_mono.get(session_id)
+        if last is not None and (now - last) < STT_RECONNECT_MIN_SEC:
+            return
+
         stt = self._stt_sessions.pop(session_id, None)
+        streaming_merge = (
+            self._use_streaming_pipeline(session_id)
+            and session_id not in self._streaming_legacy_finalize
+        )
         if stt is not None:
-            offset = stt.writer.segment_end_sec()
+            if streaming_merge and stt.writer.segment_count() > 0:
+                offset = self._checkpoint_streaming_stt(session_id, stt)
+            else:
+                offset = stt.writer.segment_end_sec()
             try:
                 stt.stop(timeout=5, finalize=False)
             except Exception as exc:  # noqa: BLE001
@@ -1064,6 +1079,7 @@ class LiveRecordingCore:
             with stage_event(self._conn, session_id=session_id, stage="streaming_stt"):
                 new_stt.start()
             self._stt_sessions[session_id] = new_stt
+            self._stt_last_reconnect_mono[session_id] = now
             self._state.record_pipeline_event(
                 session_id=session_id,
                 stage="streaming_stt",

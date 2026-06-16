@@ -208,6 +208,8 @@ def test_stt_disconnect_degrades_when_reconnect_disabled(tmp_path, monkeypatch) 
 
     mock_stt = MagicMock()
     mock_stt.is_alive.return_value = False
+    mock_stt.writer.segment_count.return_value = 0
+    mock_stt.writer.segment_end_sec.return_value = 0.0
     core = LiveRecordingCore(
         cfg,
         conn=conn,
@@ -254,6 +256,8 @@ def test_stt_disconnect_restarts_when_reconnect_enabled(tmp_path, monkeypatch) -
 
     dead_stt = MagicMock()
     dead_stt.is_alive.return_value = False
+    dead_stt.writer.segment_count.return_value = 0
+    dead_stt.writer.segment_end_sec.return_value = 0.0
     new_stt = MagicMock()
     new_stt.is_alive.return_value = True
 
@@ -279,6 +283,67 @@ def test_stt_disconnect_restarts_when_reconnect_enabled(tmp_path, monkeypatch) -
     new_stt.start.assert_called_once()
     events = PipelineEventRepo(conn).list_for_session(sid)
     assert ("streaming_stt", "reconnected") in {(e.stage, e.status) for e in events}
+
+
+def test_stt_disconnect_checkpoints_segments_before_reconnect(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _streaming_cfg(tmp_path)
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
+    cid = creators.add(
+        sec_uid="MS4wLjABAAAAstt_ckpt",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    flv = tmp_path / "data/creators/MS4wLjABAAAAstt_ckpt/live/x.flv"
+    flv.parent.mkdir(parents=True)
+    flv.write_bytes(b"x" * 64)
+    sid = sessions.create(
+        creator_id=cid,
+        room_id="1",
+        temp_path=str(flv),
+        ffmpeg_pid=4242,
+    )
+    row = sessions.get(sid)
+    creator = creators.get(cid)
+
+    writer = TranscriptWriter(flv, flush_interval_sec=0)
+    writer.add_final("checkpoint me", start=0.0, end=12.0)
+
+    dead_stt = MagicMock()
+    dead_stt.is_alive.return_value = False
+    dead_stt.writer = writer
+    new_stt = MagicMock()
+    new_stt.is_alive.return_value = True
+
+    core = LiveRecordingCore(
+        cfg,
+        conn=conn,
+        adapter=MagicMock(),
+        platform="douyin",
+        processes={},
+        notify=MagicMock(),
+    )
+    core._stt_sessions[sid] = dead_stt
+    core._stream_urls[sid] = "https://example.com/live.flv"
+
+    with patch(
+        "media2text.core.live.recording.StreamingSttSession",
+        return_value=new_stt,
+    ) as mock_ctor:
+        core._handle_stt_disconnect(row, creator)
+
+    checkpoint = flv.with_name("x.transcript.seg0.json")
+    assert checkpoint.is_file()
+    assert "checkpoint me" in checkpoint.read_text(encoding="utf-8")
+    assert not flv.with_suffix(".transcript.partial.json").exists()
+    mock_ctor.assert_called_once()
+    assert mock_ctor.call_args.kwargs["offset_sec"] == 12.0
 
 
 def test_poll_marks_degraded_when_stt_dies(tmp_path, monkeypatch) -> None:
@@ -343,6 +408,7 @@ def test_poll_marks_degraded_when_stt_dies(tmp_path, monkeypatch) -> None:
     with (
         patch.object(core, "_process_alive", return_value=True),
         patch.object(core, "_recording_still_live", return_value=True),
+        patch("media2text.core.live.task_reconciler._pid_alive", return_value=True),
     ):
         core.poll_active_recordings()
         reconcile_live(cfg, conn)

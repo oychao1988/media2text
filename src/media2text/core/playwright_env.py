@@ -67,6 +67,20 @@ def ensure_playwright_browsers_path() -> Path:
     return resolved
 
 
+@contextmanager
+def managed_playwright() -> Iterator[Playwright]:
+    """Enter sync_playwright after fixing PLAYWRIGHT_BROWSERS_PATH.
+
+    Playwright resolves browser binaries when the driver starts; calling
+    ensure_playwright_browsers_path() only inside launch_chromium() is too late.
+    """
+    from playwright.sync_api import sync_playwright
+
+    ensure_playwright_browsers_path()
+    with sync_playwright() as playwright:
+        yield playwright
+
+
 def launch_chromium(playwright: Playwright, *, headless: bool = True) -> Browser:
     """Launch Chromium for automation.
 
@@ -74,6 +88,7 @@ def launch_chromium(playwright: Playwright, *, headless: bool = True) -> Browser
     instead of Playwright's separate ``chromium_headless_shell`` build, which can
     SIGSEGV on some macOS setups.
     """
+    ensure_playwright_browsers_path()
     if headless:
         for kwargs in (
             {"headless": True, "channel": "chromium"},

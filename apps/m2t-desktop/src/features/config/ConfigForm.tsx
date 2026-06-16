@@ -68,6 +68,25 @@ function readonlyStatus(
   );
 }
 
+function authStatusLabel(status: AuthPlatformStatus['status'], configured?: boolean): string {
+  switch (status) {
+    case 'ok':
+      return '已登录';
+    case 'expired':
+      return '会话已失效';
+    case 'unknown':
+      return '无法验证';
+    case 'missing':
+      return '未登录';
+    default:
+      return configured ? '已保存会话' : '未登录';
+  }
+}
+
+function authStatusClass(status: AuthPlatformStatus['status']): string {
+  return status === 'ok' ? ' ok' : ' warn';
+}
+
 function PlatformAuthStatus({
   platform,
   auth,
@@ -77,15 +96,21 @@ function PlatformAuthStatus({
   auth: Record<string, AuthPlatformStatus>;
   onLogin: (p: string) => void;
 }) {
-  const configured = auth[platform]?.configured;
+  const row = auth[platform];
+  const status = row?.status;
+  const configured = row?.configured;
+  const label = authStatusLabel(status, configured);
+  const loginLabel =
+    status === 'ok' ? '重新登录' : status === 'expired' ? '重新登录' : '登录';
   return (
     <span
       id={`cfg-auth-status-${platform}`}
-      className={`platform-config-status${configured ? ' ok' : ' warn'}`}
+      className={`platform-config-status${authStatusClass(status)}`}
+      title={row?.error ?? undefined}
     >
-      {configured ? '已登录' : '未登录'}
+      {label}
       <button type="button" className="auth-inline" onClick={() => onLogin(platform)}>
-        {configured ? '重新登录' : '登录'}
+        {loginLabel}
       </button>
     </span>
   );
@@ -275,7 +300,7 @@ export function ConfigForm() {
       await apiPost(`/api/auth/login/${platform}`);
       showToast(`已发起 ${platform} 登录`, 'success');
       const authRes = await apiGet<{ platforms: Record<string, AuthPlatformStatus> }>(
-        '/api/auth/status',
+        '/api/auth/status?refresh=1',
         true,
       );
       setAuth(authRes.platforms ?? {});

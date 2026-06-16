@@ -101,10 +101,6 @@ export function AppShell() {
     centerView === 'playback' ? 'history' : centerView === 'history' ? 'history' : centerTab;
   const showRecordBanner = selected?.status_light === 'red';
 
-  const keepLiveStream =
-    (centerView === 'live' || centerView === 'history') &&
-    Boolean(selected?.active_session_id);
-
   const historySessionRow = useMemo(() => {
     if (transcriptSelection.mode !== 'history' || !selectedId) return null;
     return {
@@ -364,7 +360,6 @@ export function AppShell() {
                 <>
                   <ViewLive
                     active={activeCreatorTab === 'live' && centerView !== 'playback'}
-                    keepStream={keepLiveStream}
                     creatorId={selectedId}
                     showRecordBanner={showRecordBanner}
                     onRecordingStarted={() => void refreshLive()}

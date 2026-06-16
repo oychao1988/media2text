@@ -13,12 +13,15 @@ def _stub_auth_spawn():
 
 
 def test_auth_status(api_client) -> None:
-    r = api_client.get("/api/auth/status")
+    r = api_client.get("/api/auth/status", params={"validate": "false"})
     assert r.status_code == 200
     body = r.json()
     assert body["ok"] is True
     assert "douyin" in body["platforms"]
-    assert "configured" in body["platforms"]["douyin"]
+    douyin = body["platforms"]["douyin"]
+    assert "configured" in douyin
+    assert "valid" in douyin
+    assert "status" in douyin
 
 
 def test_auth_login_spawned(api_client) -> None:

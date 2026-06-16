@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
+import { ApiError, apiDelete, apiGet, apiPatch, apiPost } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import { openExternalUrl } from '../../lib/tauriBridge';
 import type { ConfigDto, Creator } from '../../lib/types';
@@ -344,8 +344,10 @@ export function ManagePage() {
       }
       await load({ silent: true });
       await refreshSidebar();
-    } catch {
-      showToast(kind === 'download' ? '加入下载队列失败' : '同步失败', 'error');
+    } catch (err) {
+      if (!(err instanceof ApiError)) {
+        showToast(kind === 'download' ? '加入下载队列失败' : '同步失败', 'error');
+      }
     } finally {
       setSyncBusy(null);
     }

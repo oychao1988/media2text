@@ -22,6 +22,9 @@ function extractErrorMessage(body: unknown, status: number): string {
     if (typeof obj.detail === 'string') return obj.detail;
     if (obj.detail && typeof obj.detail === 'object') {
       const d = obj.detail as Record<string, unknown>;
+      if (d.auth_required === true) {
+        return '登录已失效，请重新登录对应平台账号';
+      }
       if (typeof d.error === 'string') {
         const extra = typeof d.detail === 'string' ? d.detail : '';
         const code = d.error;

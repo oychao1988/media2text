@@ -203,6 +203,10 @@ export type ConfigDto = {
 
 export type AuthPlatformStatus = {
   configured: boolean;
+  valid?: boolean;
+  auth_required?: boolean;
+  status?: 'ok' | 'missing' | 'expired' | 'unknown';
+  error?: string;
 };
 
 export type ActiveRecording = {

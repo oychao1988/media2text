@@ -1,7 +1,10 @@
 from pathlib import Path
 
+import json
+
 from media2text.core.live.transcript_writer import (
     TranscriptWriter,
+    load_merged_live_transcript,
     merge_transcript_checkpoints,
     seal_partial_transcript,
 )
@@ -72,3 +75,37 @@ def test_checkpoint_segment_and_merge(tmp_path: Path) -> None:
     assert "段一" in body
     assert "段二" in body
     assert not checkpoint.exists()
+
+
+def test_load_merged_live_transcript_checkpoint_and_partial(tmp_path: Path) -> None:
+    media = tmp_path / "20260603T120000Z.flv"
+    media.write_bytes(b"x")
+    checkpoint = media.parent / f"{media.stem}.transcript.seg0.json"
+    checkpoint.write_text(
+        json.dumps(
+            {
+                "segments": [{"start": 0.0, "end": 2.0, "text": "段一"}],
+                "engine": "deepgram",
+                "model": "nova-3",
+            }
+        ),
+        encoding="utf-8",
+    )
+    partial = media.with_suffix(".transcript.partial.json")
+    partial.write_text(
+        json.dumps(
+            {
+                "partial": True,
+                "segments": [{"start": 2.0, "end": 3.5, "text": "段二"}],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    payload = load_merged_live_transcript(media)
+    assert payload is not None
+    assert payload["partial"] is True
+    assert len(payload["segments"]) == 2
+    assert payload["text"] == "段一\n段二"
+    assert payload["segments"][0]["text"] == "段一"
+    assert payload["segments"][1]["text"] == "段二"
