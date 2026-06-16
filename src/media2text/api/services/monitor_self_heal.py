@@ -57,6 +57,28 @@ def maybe_self_heal_monitor(
         log.warning("monitor_self_heal_gave_up", reason=reason)
         return {"ok": True, "healed": False, "skipped": "hourly_limit", "reason": reason}
 
+    sup_status = supervisor.status_dict(cfg)
+    if sup_status.get("thread_alive") and reason == "embedded_thread_dead":
+        repair = supervisor.repair_embedded_lock(cfg)
+        if repair.get("ok"):
+            running, _ = monitor_effectively_running(
+                ws,
+                cfg,
+                supervisor_status=sup_status,
+                live_poll_sec=live_poll,
+            )
+            if running:
+                recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
+                _last_heal_at = now
+                _heal_timestamps.append(now)
+                log.info("monitor_self_heal_ok", reason=reason, action="repair_embedded_lock")
+                return {
+                    "ok": True,
+                    "healed": True,
+                    "reason": reason,
+                    "repair": repair,
+                }
+
     clear_invalid_monitor_lock(lock_path)
     pid = read_lock_pid(lock_path)
     if pid and is_monitor_watch_pid(pid):

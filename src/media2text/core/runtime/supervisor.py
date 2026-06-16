@@ -17,6 +17,7 @@ from media2text.core.runtime.monitor_lock import (
     clear_invalid_monitor_lock,
     is_monitor_watch_pid,
     read_lock_pid,
+    write_lock_record,
 )
 from media2text.core.config import AppConfig
 from media2text.core.monitor.watcher import MonitorWatcher
@@ -209,8 +210,34 @@ class MonitorSupervisor:
         log.info("monitor_external_stopped", pid=pid)
         return {"ok": True, "stopped": True, "pid": pid, "managed_by": "none"}
 
+    def repair_embedded_lock(self, cfg: AppConfig) -> dict[str, Any]:
+        """Rewrite embedded lock when the monitor thread is alive but lock metadata is wrong."""
+        if not self._is_embedded_running():
+            return {"ok": False, "error": "thread_not_alive"}
+        ws = cfg.ensure_workspace()
+        lock_path = ws / ".monitor-watch.lock"
+        clear_invalid_monitor_lock(lock_path)
+        write_lock_record(lock_path, pid=os.getpid(), mode="embedded")
+        if self._lock_path is None:
+            self._lock_path = lock_path
+        log.info("monitor_embedded_lock_repaired", pid=os.getpid())
+        return {"ok": True, "action": "repair_embedded_lock", "pid": os.getpid()}
+
     def takeover(self, cfg: AppConfig, *, creator_id: str | None = None) -> dict[str, Any]:
         """Stop external CLI daemon if present, then start embedded supervisor."""
+        if self._is_embedded_running():
+            lock_path = cfg.ensure_workspace() / ".monitor-watch.lock"
+            if read_lock_pid(lock_path) != os.getpid():
+                repair = self.repair_embedded_lock(cfg)
+                return {"ok": repair.get("ok", False), "repair": repair}
+            return {
+                "ok": False,
+                "start": {
+                    "ok": False,
+                    "already_running": True,
+                    "error": "embedded monitor supervisor already running",
+                },
+            }
         stop_result = self.stop_external(cfg)
         if not stop_result.get("ok"):
             return stop_result

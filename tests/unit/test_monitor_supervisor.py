@@ -159,3 +159,30 @@ def test_supervisor_start_clears_fake_external_lock(tmp_path, monkeypatch) -> No
     with patch.object(MonitorSupervisor, "_run_daemon_thread", lambda self: None):
         result = sup.start(cfg)
     assert result["ok"] is True
+
+
+def test_supervisor_repair_embedded_lock_and_takeover(tmp_path, monkeypatch) -> None:
+    import json
+    import os
+    from unittest.mock import MagicMock
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    ws = cfg.ensure_workspace()
+    sup = MonitorSupervisor()
+    fake_thread = MagicMock()
+    fake_thread.is_alive.return_value = True
+    sup._thread = fake_thread
+    sup._lock_path = ws / ".monitor-watch.lock"
+    sup._lock_fd = -1
+    (ws / ".monitor-watch.lock").write_text("581", encoding="utf-8")
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_monitor_watch_pid",
+        lambda pid: False,
+    )
+    takeover = sup.takeover(cfg)
+    assert takeover["ok"] is True
+    assert takeover["repair"]["action"] == "repair_embedded_lock"
+    lock = json.loads((ws / ".monitor-watch.lock").read_text(encoding="utf-8"))
+    assert lock["pid"] == os.getpid()
+    assert lock["mode"] == "embedded"

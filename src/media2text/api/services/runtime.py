@@ -82,7 +82,8 @@ def recover_runtime_stale_work(
 def takeover_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
     result = supervisor.takeover(cfg)
     start = result.get("start") or {}
-    if start.get("ok"):
+    repair = result.get("repair") or {}
+    if result.get("ok") and (start.get("ok") or repair.get("ok")):
         recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
     return result
 
