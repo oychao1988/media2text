@@ -240,7 +240,7 @@
 | 1 | [#145](https://github.com/oychao1988/media2text/issues/145) | [monitor-daemon-v3-phase1.md](./monitor-daemon-v3-phase1.md) | `issue-145-monitor-daemon-v3-phase1` |
 | 2 | （待开单） | [monitor-daemon-v3-phase2.md](./monitor-daemon-v3-phase2.md) | `issue-*-monitor-daemon-v3-phase2` |
 
-### Monitor 自愈与可信锁（2026-06-16，待实现）
+### Monitor 自愈与可信锁（2026-06-16，已交付）
 
 规格：[monitor-self-heal-design](../superpowers/specs/2026-06-16-monitor-self-heal-design.md) · 计划：[monitor-self-heal-implementation](../superpowers/plans/2026-06-16-monitor-self-heal-implementation.md)
 
