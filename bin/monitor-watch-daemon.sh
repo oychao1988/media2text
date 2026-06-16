@@ -11,12 +11,11 @@ LOCK_FILE="data/.monitor-watch.lock"
 : "${PLAYWRIGHT_BROWSERS_PATH:=$HOME/Library/Caches/ms-playwright}"
 export PLAYWRIGHT_BROWSERS_PATH
 
-# 清理残锁：进程已死但锁仍在
-if [ -f "$LOCK_FILE" ]; then
-    OLD_PID=$(cat "$LOCK_FILE" 2>/dev/null)
-    if [ -n "$OLD_PID" ] && ! kill -0 "$OLD_PID" 2>/dev/null; then
-        rm -f "$LOCK_FILE"
-    fi
-fi
+# 清理残锁：PID 非 monitor watch 或进程已死
+.venv/bin/python -c "
+from pathlib import Path
+from media2text.core.runtime.monitor_lock import clear_invalid_monitor_lock
+clear_invalid_monitor_lock(Path('data/.monitor-watch.lock'))
+"
 
 exec .venv/bin/media2text monitor watch --daemon --json

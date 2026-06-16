@@ -1,7 +1,7 @@
 # Monitor 自愈与可信锁 — 设计规格
 
 **日期:** 2026-06-16  
-**状态:** Draft（SH-1 实施中）  
+**状态:** Implemented（SH-1–SH-3，2026-06-16）  
 **修订:** 2026-06-16 — 采纳 Eng Review 推荐：SH6 滑动窗口、`heartbeat.py` 拆分、`live status` 字段、embedded heartbeat_stale、`stale_sec` 下限、JSON 写锁、TOCTOU 说明  
 **动机:** 生产环境反复出现「锁文件 PID 被系统复用 → 误判监控在跑 → serve 放弃自启 → 僵尸录制未 finalize」；严重影响直播监控可用性。  
 **实现计划:** [2026-06-16-monitor-self-heal-implementation.md](../plans/2026-06-16-monitor-self-heal-implementation.md)  
