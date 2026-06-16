@@ -471,6 +471,10 @@ class DesktopConfig(BaseModel):
     api_port: int = 8765
     theme: str = "light"
     auto_start_monitor: bool = False
+    monitor_self_heal: bool = True
+    monitor_self_heal_cooldown_sec: int = 120
+    monitor_self_heal_max_per_hour: int = 3
+    monitor_self_heal_check_every_sec: int = 30
     runtime_ws_interval_sec: int = 30
     runtime_http_fallback_sec: int = 60
     runtime_failed_recent_threshold: int = 10
