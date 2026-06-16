@@ -11,7 +11,13 @@ from media2text.core.workspace import open_db
 @pytest.fixture
 def api_client(workspace, monkeypatch):
     clear_health_cache()
-    cfg = AppConfig(workspace=workspace)
+    cfg = AppConfig(
+        workspace=workspace,
+        desktop={
+            "auto_start_monitor": False,
+            "monitor_self_heal": False,
+        },
+    )
     monkeypatch.setattr("media2text.core.config.AppConfig.load", lambda: cfg)
     monkeypatch.setattr(
         "media2text.core.logging.enable_monitor_log_sink",

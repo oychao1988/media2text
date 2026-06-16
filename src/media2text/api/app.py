@@ -54,12 +54,21 @@ async def lifespan(app: FastAPI):
     if api_app is not None:
         api_app.state.supervisor = supervisor
     if cfg.desktop.auto_start_monitor:
-        start_result = supervisor.start(cfg)
-        if start_result.get("already_running_external"):
-            log.info(
-                "monitor_auto_start_deferred_external",
-                pid=start_result.get("pid"),
-            )
+        from media2text.core.runtime.monitor_lock import (
+            clear_invalid_monitor_lock,
+            is_monitor_watch_pid,
+            read_lock_pid,
+        )
+
+        lock_path = cfg.ensure_workspace() / ".monitor-watch.lock"
+        pid = read_lock_pid(lock_path)
+        if pid and not is_monitor_watch_pid(pid):
+            clear_invalid_monitor_lock(lock_path)
+            supervisor.start(cfg)
+        elif pid and is_monitor_watch_pid(pid):
+            log.info("monitor_auto_start_deferred_external", pid=pid)
+        else:
+            supervisor.start(cfg)
     stop = asyncio.Event()
     drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
     notify_drain_task = asyncio.create_task(run_notify_drain_loop(cfg, stop))

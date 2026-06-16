@@ -100,6 +100,10 @@ desktop:
   api_port: 8765
   theme: light                    # light | dark; synced with localStorage m2t-desktop-theme
   auto_start_monitor: true        # serve 启动时尝试内嵌监控；若已有 CLI daemon 则沿用终端进程
+  monitor_self_heal: true          # serve / health loop 假锁或心跳过期时自愈 takeover
+  monitor_self_heal_cooldown_sec: 120
+  monitor_self_heal_max_per_hour: 3
+  monitor_self_heal_check_every_sec: 30
   runtime_ws_interval_sec: 30     # WS runtime.health heartbeat (PR2)
   runtime_http_fallback_sec: 60   # HTTP poll when WS down (PR2)
   runtime_failed_recent_threshold: 10
