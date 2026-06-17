@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig
 from media2text.core.live.hls_recorder import restore_hls_init_if_empty
-from media2text.core.live.recording import LiveRecordingCore, RECONNECT_COOLDOWN_SEC
+from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
