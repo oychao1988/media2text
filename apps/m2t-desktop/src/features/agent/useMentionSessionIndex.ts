@@ -53,7 +53,7 @@ export function useMentionSessionIndex(creators: CreatorRef[], query: string, op
       return;
     }
     const res = await apiGet<{ ok: boolean; sessions: LiveSessionSummary[] }>(
-      `/api/creators/${creatorId}/sessions?limit=100`,
+      `/api/creators/${creatorId}/sessions?limit=100&include_cloud=false`,
       true,
     );
     const sessions = (res.sessions ?? []).filter(

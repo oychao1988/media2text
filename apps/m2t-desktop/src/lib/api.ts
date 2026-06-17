@@ -87,6 +87,9 @@ export async function apiFetch<T = unknown>(
   try {
     res = await fetch(url, fetchInit);
   } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw err;
+    }
     const msg = err instanceof Error ? err.message : '网络请求失败';
     if (!silent && !skipToast) showToast(msg, 'error');
     throw new ApiError(msg, 0);
@@ -117,8 +120,12 @@ export async function apiFetch<T = unknown>(
   return (body ?? ({} as T)) as T;
 }
 
-export async function apiGet<T = unknown>(path: string, silent?: boolean): Promise<T> {
-  return apiFetch<T>(path, { method: 'GET', silent });
+export async function apiGet<T = unknown>(
+  path: string,
+  silent?: boolean,
+  signal?: AbortSignal,
+): Promise<T> {
+  return apiFetch<T>(path, { method: 'GET', silent, signal });
 }
 
 export async function apiPost<T = unknown>(

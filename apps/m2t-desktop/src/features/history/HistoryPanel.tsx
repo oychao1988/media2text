@@ -1,8 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ConfirmDialog } from '../../components/ConfirmDialog';
-import { ApiError, apiDelete, apiGet, apiPost } from '../../lib/api';
+import { ApiError, apiDelete, apiPost, getApiBaseUrl } from '../../lib/api';
 import { showToast } from '../../lib/toast';
 import type { LiveGroup, LiveSessionSummary } from '../../lib/types';
+import {
+  cancelPendingHistoryEnrich,
+  fetchHistory,
+  invalidateHistoryCache,
+  readHistoryCache,
+  scheduleHistoryEnrich,
+  type HistoryFilter,
+} from './historyCache';
 import {
   formatSessionDuration,
   historyKindLabel,
@@ -15,8 +23,6 @@ import {
   sessionLocalLabel,
   sessionStatusTag,
 } from './sessionDisplay';
-
-type Filter = 'all' | 'transcript' | 'summary';
 
 type Props = {
   creatorId: string | null;
@@ -40,11 +46,20 @@ function groupByDate(sessions: LiveSessionSummary[]): Map<string, LiveSessionSum
   return map;
 }
 
-function SessionTags({ session }: { session: LiveSessionSummary }) {
+function SessionTags({
+  session,
+  detailsPending,
+}: {
+  session: LiveSessionSummary;
+  detailsPending?: boolean;
+}) {
   const duration = formatSessionDuration(session.started_at, session.ended_at);
   const statusTag = sessionStatusTag(session);
-  const local = sessionLocalLabel(session);
-  const cloud = sessionCloudLabel(session);
+  const local = sessionLocalLabel(session, { pending: detailsPending });
+  const cloud = sessionCloudLabel(session, {
+    pending:
+      detailsPending && session.cloud_upload_status == null && !session.cloud_available,
+  });
 
   return (
     <>
@@ -67,90 +82,104 @@ function SessionTags({ session }: { session: LiveSessionSummary }) {
   );
 }
 
-type HistoryCacheEntry = {
-  sessions: LiveSessionSummary[];
-  groups: LiveGroup[];
-};
-
-function historyCacheKey(creatorId: string, filter: Filter) {
-  return `${creatorId}:${filter}`;
-}
-
 export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
-  const cacheRef = useRef(new Map<string, HistoryCacheEntry>());
+  const requestRef = useRef(0);
+  const listAbortRef = useRef<AbortController | null>(null);
   const [sessions, setSessions] = useState<LiveSessionSummary[]>([]);
   const [groups, setGroups] = useState<LiveGroup[]>([]);
-  const [filter, setFilter] = useState<Filter>('all');
+  const [filter, setFilter] = useState<HistoryFilter>('all');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [detailsLoading, setDetailsLoading] = useState(false);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<PendingAction | null>(null);
 
-  const invalidateCache = useCallback(() => {
-    if (!creatorId) return;
-    for (const key of [...cacheRef.current.keys()]) {
-      if (key.startsWith(`${creatorId}:`)) cacheRef.current.delete(key);
-    }
+  useEffect(() => {
+    if (creatorId) void getApiBaseUrl();
   }, [creatorId]);
 
-  const loadSessions = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      if (!creatorId) return;
-      const key = historyCacheKey(creatorId, filter);
-      if (!opts?.silent) {
-        const cached = cacheRef.current.get(key);
-        if (cached) {
-          setSessions(cached.sessions);
-          setGroups(cached.groups);
-          setLoading(false);
-          setRefreshing(true);
-        } else {
-          setLoading(true);
-          setRefreshing(false);
-        }
+  const reload = useCallback(
+    async (id: string, nextFilter: HistoryFilter, opts?: { background?: boolean }) => {
+      const reqId = ++requestRef.current;
+      listAbortRef.current?.abort();
+      const listAbort = new AbortController();
+      listAbortRef.current = listAbort;
+
+      const cached = readHistoryCache(id, nextFilter);
+      if (cached) {
+        setSessions(cached.sessions);
+        setGroups(cached.groups);
+        setLoading(false);
+        setDetailsLoading(!cached.enriched);
+      } else if (!opts?.background) {
+        setSessions([]);
+        setGroups([]);
+        setLoading(true);
+        setDetailsLoading(false);
       }
 
       try {
-        const params = new URLSearchParams();
-        if (filter === 'transcript') params.set('has_transcript', 'true');
-        if (filter === 'summary') params.set('has_summary', 'true');
-        const q = params.toString();
-        const res = await apiGet<{
-          ok: boolean;
-          sessions: LiveSessionSummary[];
-          live_groups: LiveGroup[];
-        }>(`/api/creators/${creatorId}/sessions${q ? `?${q}` : ''}`, true);
-        const entry: HistoryCacheEntry = {
-          sessions: res.sessions ?? [],
-          groups: res.live_groups ?? [],
-        };
-        cacheRef.current.set(key, entry);
+        const entry = await fetchHistory(id, nextFilter, listAbort.signal);
+        if (reqId !== requestRef.current) return;
         setSessions(entry.sessions);
         setGroups(entry.groups);
-      } catch {
-        if (!opts?.silent && !cacheRef.current.get(key)) {
+        setLoading(false);
+
+        const cachedAfter = readHistoryCache(id, nextFilter);
+        if (cachedAfter?.enriched) {
+          setSessions(cachedAfter.sessions);
+          setDetailsLoading(false);
+          return;
+        }
+
+        if (!entry.sessions.length) {
+          setDetailsLoading(false);
+          return;
+        }
+
+        setDetailsLoading(true);
+        scheduleHistoryEnrich(id, nextFilter, entry.sessions, {
+          isStale: () => reqId !== requestRef.current,
+          onComplete: (enriched) => {
+            if (reqId !== requestRef.current) return;
+            setSessions(enriched);
+            setDetailsLoading(false);
+          },
+        });
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') return;
+        if (reqId !== requestRef.current) return;
+        if (!readHistoryCache(id, nextFilter)) {
           setSessions([]);
           setGroups([]);
         }
+        setDetailsLoading(false);
       } finally {
-        setLoading(false);
-        setRefreshing(false);
+        if (reqId === requestRef.current) {
+          setLoading(false);
+        }
       }
     },
-    [creatorId, filter],
+    [],
   );
 
   useEffect(() => {
     if (!creatorId) {
+      requestRef.current += 1;
+      listAbortRef.current?.abort();
+      cancelPendingHistoryEnrich();
       setSessions([]);
       setGroups([]);
       setLoading(false);
-      setRefreshing(false);
+      setDetailsLoading(false);
       return;
     }
-    void loadSessions();
-  }, [creatorId, loadSessions]);
+    if (!active) return;
+    void reload(creatorId, filter);
+    return () => {
+      cancelPendingHistoryEnrich();
+    };
+  }, [active, creatorId, filter, reload]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -176,8 +205,8 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
     try {
       await apiPost(`/api/creators/${creatorId}/history/vod/${session.item_id}/retry-download`);
       showToast('已加入下载队列', 'success');
-      invalidateCache();
-      await loadSessions({ silent: true });
+      invalidateHistoryCache(creatorId);
+      await reload(creatorId, filter, { background: true });
     } catch (err) {
       const msg =
         err instanceof ApiError
@@ -211,8 +240,8 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
         await apiDelete(`/api/creators/${creatorId}/history/${session.kind}/${session.item_id}`);
         showToast('已删除记录', 'success');
       }
-      invalidateCache();
-      await loadSessions({ silent: true });
+      invalidateHistoryCache(creatorId);
+      await reload(creatorId, filter, { background: true });
     } catch {
       /* toast handled by api */
     } finally {
@@ -282,7 +311,7 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
         />
       </div>
 
-      <div className={`history-list${refreshing ? ' is-refreshing' : ''}`} id="history-list">
+      <div className="history-list" id="history-list">
         {loading ? <p className="hint">加载历史…</p> : null}
         {!loading && !filtered.length ? <p className="hint">暂无匹配记录</p> : null}
         {[...byDate.entries()].map(([day, rows]) => (
@@ -314,7 +343,7 @@ export function HistoryPanel({ creatorId, active, onSessionSelect }: Props) {
                   <div className="session-main">
                     <div className="session-time">{historyRowTitle(s)}</div>
                     <div className="session-meta">
-                      <SessionTags session={s} />
+                      <SessionTags session={s} detailsPending={detailsLoading} />
                     </div>
                   </div>
                   <div

@@ -71,6 +71,20 @@ def test_sessions_filter_has_transcript(api_client, workspace) -> None:
     assert r2.json()["sessions"] == []
 
 
+def test_sessions_cloud_endpoint(api_client, workspace) -> None:
+    cid = _seed_creator_sessions(workspace)
+    r = api_client.get(f"/api/creators/{cid}/sessions?include_cloud=false")
+    assert r.status_code == 200
+    session = r.json()["sessions"][0]
+    assert session["cloud_available"] is False
+
+    sid = session["item_id"]
+    cloud = api_client.get(f"/api/creators/{cid}/sessions/cloud?keys=live:{sid}")
+    assert cloud.status_code == 200
+    item = cloud.json()["items"][f"live:{sid}"]
+    assert "cloud_available" in item
+
+
 def test_live_status(api_client, workspace) -> None:
     r = api_client.get("/api/live/status")
     assert r.status_code == 200

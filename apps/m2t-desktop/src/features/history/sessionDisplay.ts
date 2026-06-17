@@ -78,7 +78,11 @@ export function sessionCloudAvailable(session: LiveSessionSummary): boolean {
   return false;
 }
 
-export function sessionCloudLabel(session: LiveSessionSummary): { text: string; className: string } {
+export function sessionCloudLabel(
+  session: LiveSessionSummary,
+  opts?: { pending?: boolean },
+): { text: string; className: string } {
+  if (opts?.pending) return { text: '云端 …', className: 'miss' };
   const status = session.cloud_upload_status;
   if (status === 'failed') return { text: '云端失败', className: 'fail' };
   if (status === 'skipped') return { text: '云端跳过', className: 'miss' };
@@ -99,7 +103,11 @@ export function sessionIsListedPending(session: LiveSessionSummary): boolean {
   return session.kind === 'vod' && session.status === 'listed';
 }
 
-export function sessionLocalLabel(session: LiveSessionSummary): { text: string; className: string } {
+export function sessionLocalLabel(
+  session: LiveSessionSummary,
+  opts?: { pending?: boolean },
+): { text: string; className: string } {
+  if (opts?.pending) return { text: '本地 …', className: 'miss' };
   if (sessionIsListedPending(session)) return { text: '本地 —', className: 'miss' };
   if (session.media_available) return { text: '本地 ✓', className: 'ok' };
   if (sessionMediaPath(session)) return { text: '本地缺失', className: 'miss' };

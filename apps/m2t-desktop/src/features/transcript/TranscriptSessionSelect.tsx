@@ -60,7 +60,7 @@ export function TranscriptSessionSelect() {
     void (async () => {
       try {
         const res = await apiGet<SessionsResponse>(
-          `/api/creators/${selectedId}/sessions`,
+          `/api/creators/${selectedId}/sessions?include_cloud=false&limit=100`,
           true,
         );
         if (cancelled) return;

@@ -2,9 +2,9 @@ import json
 
 import pytest
 
-from media2text.api.services.sessions_list import list_creator_sessions
+from media2text.api.services.sessions_list import list_creator_session_cloud, list_creator_sessions
 from media2text.core.config import AppConfig
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
+from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
 pytestmark = pytest.mark.desktop
@@ -166,3 +166,125 @@ def test_list_sessions_live_display_label(workspace) -> None:
     live = next(s for s in payload["sessions"] if s["item_id"] == sid)
     assert live["display_label"]
     assert "直播" in live["display_label"]
+
+
+def test_list_sessions_include_cloud_false(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_no_cloud",
+        profile_url="https://www.douyin.com/user/sec_no_cloud",
+        platform="douyin",
+    )
+    mp4 = workspace / "creators" / "sec_no_cloud" / "live" / "x.mp4"
+    mp4.parent.mkdir(parents=True)
+    mp4.write_bytes(b"x")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(mp4),
+    )
+    upload_id = CloudUploadRepo(conn).create(
+        session_id=sid,
+        creator_id=cid,
+        platform="douyin",
+        file_name="x.mp4",
+        file_kind="mp4",
+        local_path=str(mp4),
+        size=1,
+        pre_hash="abc",
+    )
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="fid-1",
+        cloud_relative_path="media2text/douyin/sec_no_cloud/live/x.mp4",
+    )
+
+    without = list_creator_sessions(
+        conn, workspace=workspace, creator_id=cid, include_cloud=False
+    )
+    cloud = list_creator_session_cloud(conn, workspace=workspace, creator_id=cid)
+    conn.close()
+
+    assert without["sessions"][0]["cloud_available"] is False
+    assert without["sessions"][0]["cloud_file_id"] is None
+    assert cloud["items"][f"live:{sid}"]["cloud_available"] is True
+    assert cloud["items"][f"live:{sid}"]["cloud_file_id"] == "fid-1"
+
+
+def test_list_session_cloud_filters_keys(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_cloud_keys",
+        profile_url="https://www.douyin.com/user/sec_cloud_keys",
+        platform="douyin",
+    )
+    mp4 = workspace / "creators" / "sec_cloud_keys" / "live" / "x.mp4"
+    mp4.parent.mkdir(parents=True)
+    mp4.write_bytes(b"x")
+    sid = LiveSessionRepo(conn).create(
+        creator_id=cid,
+        room_id="r",
+        temp_path=str(mp4),
+    )
+    upload_id = CloudUploadRepo(conn).create(
+        session_id=sid,
+        creator_id=cid,
+        platform="douyin",
+        file_name="x.mp4",
+        file_kind="mp4",
+        local_path=str(mp4),
+        size=1,
+        pre_hash="abc",
+    )
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="fid-1",
+        cloud_relative_path="media2text/douyin/sec_cloud_keys/live/x.mp4",
+    )
+
+    payload = list_creator_session_cloud(
+        conn,
+        workspace=workspace,
+        creator_id=cid,
+        keys={"live:missing"},
+    )
+    conn.close()
+
+    assert payload["items"] == {}
+
+
+def test_list_sessions_fast_path_paginates_without_full_scan(workspace) -> None:
+    cfg = AppConfig.model_validate({"workspace": str(workspace)})
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="sec_fast",
+        profile_url="https://www.douyin.com/user/sec_fast",
+        platform="douyin",
+    )
+    for i in range(120):
+        conn.execute(
+            """
+            INSERT INTO live_sessions
+              (id, creator_id, room_id, started_at, status)
+            VALUES (?, ?, 'r', ?, 'completed')
+            """,
+            (f"live-{i:03d}", cid, f"2026-01-{(i % 28) + 1:02d}T12:00:00+00:00"),
+        )
+    conn.commit()
+
+    payload = list_creator_sessions(
+        conn,
+        workspace=workspace,
+        creator_id=cid,
+        limit=50,
+        include_cloud=False,
+    )
+    conn.close()
+
+    assert payload["ok"] is True
+    assert payload["total"] == 120
+    assert len(payload["sessions"]) == 50
+    assert payload["sessions"][0]["kind"] == "live"
+    assert payload["sessions"][0]["cloud_available"] is False

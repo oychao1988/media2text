@@ -16,7 +16,7 @@ from media2text.api.services import live_snapshot as live_snapshot_svc
 from media2text.api.services import recording as recording_svc
 from media2text.api.services.events_hub import events_hub
 from media2text.api.services import creator_tasks as creator_tasks_svc
-from media2text.api.services.sessions_list import list_creator_sessions
+from media2text.api.services.sessions_list import list_creator_session_cloud, list_creator_sessions
 from media2text.core.config import AppConfig
 from media2text.core.creator import service as creator_svc
 from media2text.core.creator.service import VALID_AUTO_RECORD_OVERRIDES
@@ -271,6 +271,7 @@ def list_sessions(
     has_transcript: bool | None = Query(None),
     has_summary: bool | None = Query(None),
     status: str | None = Query(None),
+    include_cloud: bool = Query(True),
     cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
 ) -> dict:
@@ -285,8 +286,32 @@ def list_sessions(
         has_transcript=has_transcript,
         has_summary=has_summary,
         status=status,
+        include_cloud=include_cloud,
     )
     return result
+
+
+@router.get("/{creator_id}/sessions/cloud")
+def list_session_cloud(
+    creator_id: str,
+    keys: str | None = Query(
+        None,
+        description="Optional comma-separated keys live:<id> or vod:<id>",
+    ),
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
+    if not CreatorRepo(conn).get(creator_id):
+        raise HTTPException(status_code=404, detail="creator not found")
+    key_set: set[str] | None = None
+    if keys:
+        key_set = {part.strip() for part in keys.split(",") if part.strip()}
+    return list_creator_session_cloud(
+        conn,
+        workspace=cfg.ensure_workspace(),
+        creator_id=creator_id,
+        keys=key_set,
+    )
 
 
 @router.get("/{creator_id}/history/{kind}/{item_id}/transcript")
