@@ -25,17 +25,17 @@ spec: docs/superpowers/specs/2026-06-03-live-pipeline-v2-design.md
 
 ### Task 1 — Worker 上限
 
-- [ ] `probe_workers` 上限为 Playwright 槽位数（当前 2），`probe_parallelism` 再大也不超过槽位
-- [ ] `run_live_probe_tick` 传入监控博主数量 `n_targets`，用于动态预算
+- [x] `probe_workers` 上限为 Playwright 槽位数（当前 2），`probe_parallelism` 再大也不超过槽位
+- [x] `run_live_probe_tick` 传入监控博主数量 `n_targets`，用于动态预算
 
 ### Task 2 — Tick 预算
 
-- [ ] `probe_budget_sec` 随 `n_targets` 缩放（避免 10 博主 × 4 并行在固定 40s 内必然超时）
-- [ ] 单元测试覆盖 worker cap 逻辑
+- [x] `probe_budget_sec` 随 `n_targets` 缩放（避免 10 博主 × 4 并行在固定 40s 内必然超时）
+- [x] 单元测试覆盖 worker cap 逻辑
 
 ### Task 3 — Probe 期间锁等待
 
-- [ ] `ProbeExecutionGuard.is_active()` 时 Playwright 锁超时延长至 **90s**（仅 probe tick 内）
+- [x] `ProbeExecutionGuard.is_active()` 时 Playwright 锁超时延长至 **90s**（仅 probe tick 内）
 
 ## 验证命令
 
