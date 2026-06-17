@@ -130,6 +130,19 @@ def archive_hls_init(session_dir: Path, *, discontinuity_seq: int) -> Path | Non
     return dest
 
 
+def restore_hls_init_if_empty(session_dir: Path) -> bool:
+    """Copy the newest archived init when reconnect left init.mp4 empty."""
+    init = session_dir / "init.mp4"
+    if init.is_file() and init.stat().st_size > 0:
+        return False
+    archives = sorted(session_dir.glob("init-*.mp4"), reverse=True)
+    for arc in archives:
+        if arc.is_file() and arc.stat().st_size > 0:
+            shutil.copy2(arc, init)
+            return True
+    return False
+
+
 def append_discontinuity_to_playlist(session_dir: Path) -> None:
     """Append one DISCONTINUITY marker per reconnect (D13; may repeat)."""
     master = session_dir / "master.m3u8"
