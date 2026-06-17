@@ -29,21 +29,21 @@ spec: docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
 
 ### Task 1 — HLS stall 阈值与分片时长对齐
 
-- [ ] HLS stall grace / poll 阈值考虑 `segment_duration_sec`：长分片下不在「分片间歇期」误判 stall（例如 grace ≥ min(segment_duration * 0.1, 120s) 或可配置）
-- [ ] `_hls_recording_healthy`：分片文件 mtime 在分片周期内未变但 ffmpeg log 仍增长时视为健康
+- [x] HLS stall grace / poll 阈值考虑 `segment_duration_sec`：长分片下不在「分片间歇期」误判 stall（例如 grace ≥ min(segment_duration * 0.1, 120s) 或可配置）
+- [x] `_hls_recording_healthy`：分片文件 mtime 在分片周期内未变但 ffmpeg log 仍增长时视为健康
 
 ### Task 2 — 重连互斥与冷却
 
-- [ ] 同一 session 在 `_stall_recovery_inflight` 或最近一次重连后 **冷却窗口**（如 120s）内不重复触发 transcript-stall 与 hls-stall 两条路径
-- [ ] 若 transcript-stall 已触发 `full` reconnect，同 tick 跳过 `hls_only` reconnect
+- [x] 同一 session 在 `_stall_recovery_inflight` 或最近一次重连后 **冷却窗口**（如 120s）内不重复触发 transcript-stall 与 hls-stall 两条路径
+- [x] 若 transcript-stall 已触发 `full` reconnect，同 tick 跳过 `hls_only` reconnect
 
 ### Task 3 — 重连后 init 完整性
 
-- [ ] `_reconnect_hls_ffmpeg_only` / `_spawn_hls_recording`：新 ffmpeg 启动后校验 `init.mp4` 非空；若 0 字节则从 `init-{n}.mp4` 回退复制（与 rotate 逻辑一致）
+- [x] `_reconnect_hls_ffmpeg_only` / `_spawn_hls_recording`：新 ffmpeg 启动后校验 `init.mp4` 非空；若 0 字节则从 `init-{n}.mp4` 回退复制（与 rotate 逻辑一致）
 
 ### Task 4 — 单测
 
-- [ ] 新增/更新 `tests/unit/test_hls_recorder.py` 或 `test_recording_stall.py`：长分片配置下不应在 grace 内触发 hls stall；互斥与冷却断言
+- [x] 新增/更新 `tests/unit/test_hls_recorder.py` 或 `test_recording_stall.py`：长分片配置下不应在 grace 内触发 hls stall；互斥与冷却断言
 
 ## 验证命令
 
