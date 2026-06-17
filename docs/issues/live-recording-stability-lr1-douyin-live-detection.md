@@ -29,21 +29,21 @@ spec: docs/superpowers/specs/2026-05-20-media2text-douyin-design.md
 
 ### Task 1 — 解析与 HTTP 路径
 
-- [ ] `parse_profile_live`：`is_live=True` **仅当** `live_status=1`（`room_id` 单独存在不算在线）
-- [ ] `parse_profile_html`：优先 `RENDER_DATA`；博主 offline 时**忽略** HTML 内推广直播链接
-- [ ] `resolve_live_via_http`：仅走签名 API；API 失败时**抛错**触发 Playwright，不做无签名 HTML 兜底
+- [x] `parse_profile_live`：`is_live=True` **仅当** `live_status=1`（`room_id` 单独存在不算在线）
+- [x] `parse_profile_html`：优先 `RENDER_DATA`；博主 offline 时**忽略** HTML 内推广直播链接
+- [x] `resolve_live_via_http`：仅走签名 API；API 失败时**抛错**触发 Playwright，不做无签名 HTML 兜底
 
 ### Task 2 — Playwright 与匿名回退
 
-- [ ] `get_live_room`：无有效会话时仍可通过匿名 Playwright 探测
-- [ ] 会话探测失败（含 `AuthRequired`）后自动尝试匿名上下文；匿名发现 `is_live` 则返回
-- [ ] `_visit_profile_page`：存在 `RENDER_DATA` 时不因导航栏登录链接触发 `AuthRequired`；支持 `session_path=None`
+- [x] `get_live_room`：无有效会话时仍可通过匿名 Playwright 探测
+- [x] 会话探测失败（含 `AuthRequired`）后自动尝试匿名上下文；匿名发现 `is_live` 则返回
+- [x] `_visit_profile_page`：存在 `RENDER_DATA` 时不因导航栏登录链接触发 `AuthRequired`；支持 `session_path=None`
 
 ### Task 3 — 单测
 
-- [ ] `tests/unit/test_parse_profile_html.py`：offline + 推广链接 → `is_live=False`
-- [ ] `tests/unit/test_resolve_live_via_http.py`：API 失败抛错、无 HTML 兜底
-- [ ] `tests/unit/test_douyin_live_playwright_fallback.py`：匿名回退场景
+- [x] `tests/unit/test_parse_profile_html.py`：offline + 推广链接 → `is_live=False`
+- [x] `tests/unit/test_resolve_live_via_http.py`：API 失败抛错、无 HTML 兜底
+- [x] `tests/unit/test_douyin_live_playwright_fallback.py`：匿名回退场景
 
 ## 验证命令
 
