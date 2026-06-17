@@ -38,6 +38,7 @@ from media2text.core.live.hls_recorder import (
     part_rel_path,
     read_hls_ffmpeg_log_tail,
     rotate_hls_after_reconnect,
+    restore_hls_init_if_empty,
     spawn_hls_recorder,
     stop_hls_recorder,
 )
@@ -73,6 +74,7 @@ TRANSCRIPT_STALL_RECONNECT_SEC = 90
 STT_RECONNECT_MIN_SEC = 15.0
 HLS_STALL_GRACE_SEC = 45
 HLS_STALL_POLL_THRESHOLD = 3
+RECONNECT_COOLDOWN_SEC = 120.0
 
 
 class LiveRecordingCore:
@@ -115,6 +117,7 @@ class LiveRecordingCore:
         self._hls_discontinuity_seq: dict[str, int] = {}
         self._hls_stall_polls: dict[str, int] = {}
         self._stall_recovery_inflight: set[str] = set()
+        self._stall_reconnect_cooldown_until: dict[str, float] = {}
         self._stt_last_reconnect_mono: dict[str, float] = {}
 
     @property
@@ -524,6 +527,38 @@ class LiveRecordingCore:
             )
             return None
 
+    def _in_reconnect_cooldown(self, session_id: str) -> bool:
+        until = self._stall_reconnect_cooldown_until.get(session_id, 0.0)
+        return time.monotonic() < until
+
+    def _mark_reconnect_cooldown(self, session_id: str) -> None:
+        self._stall_reconnect_cooldown_until[session_id] = (
+            time.monotonic() + RECONNECT_COOLDOWN_SEC
+        )
+
+    def _hls_stall_grace_sec(self) -> float:
+        seg = float(self._cfg.live.media.segment_duration_sec)
+        return min(max(seg * 0.15, HLS_STALL_GRACE_SEC), 180.0)
+
+    def _hls_stall_poll_threshold(self) -> int:
+        seg = self._cfg.live.media.segment_duration_sec
+        if seg >= 300:
+            return max(HLS_STALL_POLL_THRESHOLD, int(seg / 60))
+        return HLS_STALL_POLL_THRESHOLD
+
+    def _hls_within_segment_quiet_period(self, session_dir: Path) -> bool:
+        """Latest fmp4 part may stop growing between long HLS segment rollovers."""
+        seg = float(self._cfg.live.media.segment_duration_sec)
+        parts_dir = session_dir / "parts"
+        if not parts_dir.is_dir():
+            return False
+        segments = sorted(parts_dir.glob("seg-*.m4s"))
+        if not segments:
+            return False
+        latest = segments[-1]
+        age = time.time() - latest.stat().st_mtime
+        return age < seg * 1.05
+
     def _maybe_recover_stalled_stream(
         self,
         row,
@@ -531,37 +566,41 @@ class LiveRecordingCore:
         *,
         ffmpeg_alive: bool,
         stt_alive: bool | None,
-    ) -> None:
+    ) -> bool:
+        """Return True when a stall reconnect was triggered."""
         if row.status != "recording":
-            return
+            return False
         if row.id in self._streaming_legacy_finalize:
-            return
+            return False
         if not self._use_streaming_pipeline(row.id):
-            return
+            return False
         if row.id in self._stall_recovery_inflight:
-            return
+            return False
+        if self._in_reconnect_cooldown(row.id):
+            return False
         attempts = row.reconnect_attempts or 0
         if attempts >= self._cfg.live.max_reconnect_attempts:
-            return
+            return False
 
         stale_sec = self._transcript_partial_age_sec(row)
         if stale_sec is None or stale_sec < TRANSCRIPT_STALL_RECONNECT_SEC:
-            return
+            return False
 
         if row.temp_path is None:
-            return
+            return False
 
         tasks = MonitorTaskRepo(self._conn)
         if tasks.has_active_dedupe(f"reconnect_rec:{row.id}") or tasks.has_active_dedupe(
             f"reconnect_stt:{row.id}"
         ):
-            return
+            return False
 
         self._stall_recovery_inflight.add(row.id)
+        triggered = False
         try:
             if not ffmpeg_alive:
                 if row.ffmpeg_pid is None:
-                    return
+                    return False
                 log.warning(
                     "live_stream_stall_reconnect",
                     session_id=row.id,
@@ -575,10 +614,11 @@ class LiveRecordingCore:
                     row.temp_path,
                     row.ffmpeg_pid,
                 )
-                return
+                self._mark_reconnect_cooldown(row.id)
+                return True
 
             if row.ffmpeg_pid is None:
-                return
+                return False
 
             if stt_alive is False:
                 log.warning(
@@ -588,7 +628,8 @@ class LiveRecordingCore:
                     mode="stt_only",
                 )
                 self._handle_stt_disconnect(row, creator)
-                return
+                self._mark_reconnect_cooldown(row.id)
+                return True
 
             log.warning(
                 "live_stream_stall_reconnect",
@@ -603,6 +644,8 @@ class LiveRecordingCore:
                 row.temp_path,
                 row.ffmpeg_pid,
             )
+            self._mark_reconnect_cooldown(row.id)
+            triggered = True
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "live_stream_stall_reconnect_failed",
@@ -611,8 +654,19 @@ class LiveRecordingCore:
             )
         finally:
             self._stall_recovery_inflight.discard(row.id)
+        return triggered
 
     def _hls_recording_healthy(self, session_id: str, session_dir: Path) -> bool:
+        if self._hls_within_segment_quiet_period(session_dir):
+            return True
+        master = session_dir / "master.m3u8"
+        if master.is_file():
+            msize = master.stat().st_size
+            mkey = f"{session_id}:master"
+            mprev = self._flv_size_snapshots.get(mkey)
+            self._flv_size_snapshots[mkey] = msize
+            if mprev is not None and msize > mprev:
+                return True
         if self._hls_media_growing(session_id, session_dir):
             return True
         log_path = session_dir / HLS_FFMPEG_LOG
@@ -643,20 +697,22 @@ class LiveRecordingCore:
             return
         if row.id in self._stall_recovery_inflight:
             return
+        if self._in_reconnect_cooldown(row.id):
+            return
         attempts = row.reconnect_attempts or 0
         if attempts >= self._cfg.live.max_reconnect_attempts:
             return
         session_dir = self._resolve_session_dir(row.id)
         if session_dir is None:
             return
-        if self._recording_age_sec(row.started_at) < HLS_STALL_GRACE_SEC:
+        if self._recording_age_sec(row.started_at) < self._hls_stall_grace_sec():
             return
         if self._hls_recording_healthy(row.id, session_dir):
             self._hls_stall_polls.pop(row.id, None)
             return
         stall = self._hls_stall_polls.get(row.id, 0) + 1
         self._hls_stall_polls[row.id] = stall
-        if stall < HLS_STALL_POLL_THRESHOLD:
+        if stall < self._hls_stall_poll_threshold():
             return
         tasks = MonitorTaskRepo(self._conn)
         if tasks.has_active_dedupe(f"reconnect_rec:{row.id}"):
@@ -670,6 +726,7 @@ class LiveRecordingCore:
                 mode="hls_only",
             )
             self._reconnect_hls_ffmpeg_only(row.id, creator)
+            self._mark_reconnect_cooldown(row.id)
             self._hls_stall_polls.pop(row.id, None)
         except Exception as exc:  # noqa: BLE001
             log.warning(
@@ -740,6 +797,7 @@ class LiveRecordingCore:
         self._stream_urls[session_id] = stream_url
         self._hls_discontinuity_seq[session_id] = discontinuity_seq
         time.sleep(FFMPEG_STARTUP_GRACE_SEC)
+        restore_hls_init_if_empty(session_dir)
         log.info(
             "live_recording_reconnected_hls",
             session_id=session_id,
@@ -785,18 +843,19 @@ class LiveRecordingCore:
         )
 
         if still_live:
-            self._maybe_recover_stalled_stream(
+            stream_reconnected = self._maybe_recover_stalled_stream(
                 row,
                 creator,
                 ffmpeg_alive=ffmpeg_alive,
                 stt_alive=stt_alive,
             )
-            self._maybe_recover_stalled_hls(
-                row,
-                creator,
-                ffmpeg_alive=ffmpeg_alive,
-                stt_alive=stt_alive,
-            )
+            if not stream_reconnected:
+                self._maybe_recover_stalled_hls(
+                    row,
+                    creator,
+                    ffmpeg_alive=ffmpeg_alive,
+                    stt_alive=stt_alive,
+                )
 
         try:
             profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
