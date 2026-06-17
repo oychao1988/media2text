@@ -19,16 +19,23 @@ _PLAYWRIGHT_EXCLUSIVE = threading.Semaphore(2)
 # Timeout for acquiring the Playwright slot — tasks that wait longer fail fast
 # so the pool stays available for live-critical tasks.
 _PLAYWRIGHT_ACQUIRE_TIMEOUT = 30.0
+_PLAYWRIGHT_PROBE_ACQUIRE_TIMEOUT = 90.0
 
 
 @contextmanager
 def playwright_exclusive(timeout: float | None = None) -> Iterator[None]:
-    acquired = _PLAYWRIGHT_EXCLUSIVE.acquire(
-        blocking=True, timeout=timeout if timeout is not None else _PLAYWRIGHT_ACQUIRE_TIMEOUT
-    )
+    if timeout is None:
+        from media2text.core.live.probe_guard import ProbeExecutionGuard
+
+        timeout = (
+            _PLAYWRIGHT_PROBE_ACQUIRE_TIMEOUT
+            if ProbeExecutionGuard.is_active()
+            else _PLAYWRIGHT_ACQUIRE_TIMEOUT
+        )
+    acquired = _PLAYWRIGHT_EXCLUSIVE.acquire(blocking=True, timeout=timeout)
     if not acquired:
         raise TimeoutError(
-            f"failed to acquire Playwright exclusive lock within {timeout if timeout is not None else _PLAYWRIGHT_ACQUIRE_TIMEOUT}s"
+            f"failed to acquire Playwright exclusive lock within {timeout}s"
         )
     try:
         yield

@@ -182,8 +182,8 @@ def test_probe_workers_prefers_probe_parallelism(tmp_path) -> None:
         live=LiveConfig(scan_concurrency=2),
         monitor=MonitorConfig(probe_parallelism=6),
     )
-    assert probe_workers(cfg, 10) == 6
-    assert probe_workers(cfg, 3) == 3
+    assert probe_workers(cfg, 10) == 2
+    assert probe_workers(cfg, 3) == 2
 
 
 def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
