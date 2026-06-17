@@ -257,3 +257,15 @@
 | GitHub | 规格正文 | 分支 |
 |--------|----------|------|
 | [#322](https://github.com/oychao1988/media2text/issues/322) | [issue-verify-monitor-daemon-smoke.md](./issue-verify-monitor-daemon-smoke.md) | `issue-322-issue-verify-daemon-smoke` |
+
+### Live Recording Stability（2026-06-17 事故修复）
+
+Epic manifest：`python scripts/epic_verify.py live-recording-stability-2026-06-17`
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| LR-1 | [#325](https://github.com/oychao1988/media2text/issues/325) | [lr1-douyin-live-detection](./live-recording-stability-lr1-douyin-live-detection.md) | `issue-325-lr1-douyin-live-detection` |
+| LR-2 | [#326](https://github.com/oychao1988/media2text/issues/326) | [lr2-probe-concurrency](./live-recording-stability-lr2-probe-concurrency.md) | `issue-326-lr2-probe-concurrency` |
+| LR-3 | [#327](https://github.com/oychao1988/media2text/issues/327) | [lr3-hls-stall-reconnect](./live-recording-stability-lr3-hls-stall-reconnect.md) | `issue-327-lr3-hls-stall-reconnect` |
+
+**合并顺序**：#325 → #326 → #327。

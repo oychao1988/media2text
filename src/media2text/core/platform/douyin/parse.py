@@ -141,7 +141,12 @@ def parse_profile_live(payload: dict) -> LiveRoomInfo:
 
     room_id_str = str(room_id)
     live_status = user.get("live_status")
-    is_live = live_status in (1, "1", True) or bool(room_id_str)
+    if live_status in (0, "0", False):
+        is_live = False
+    elif live_status in (1, "1", True):
+        is_live = True
+    else:
+        is_live = False
 
     web_rid: str | None = None
     stream_flv_url: str | None = None
@@ -209,30 +214,36 @@ def _live_room_from_profile_html(html: str) -> LiveRoomInfo | None:
 
 
 def parse_profile_html(html: str) -> LiveRoomInfo:
-    live_from_link = _live_room_from_profile_html(html)
-    if live_from_link:
-        return live_from_link
+    """Parse live state from profile HTML.
 
+    Prefer structured user state (RENDER_DATA / embedded JSON) over scraping the
+    first ``live.douyin.com`` link, which is often a recommended stream and not
+    the profile owner's room.
+    """
     render = re.search(r'id="RENDER_DATA"[^>]*>([^<]+)', html)
     if render:
         try:
             data = json.loads(unquote(render.group(1)))
             user = _dig(data, "app", "user", "info") or _dig(data, "user", "user")
             if isinstance(user, dict):
-                info = parse_profile_live({"user": user})
-                if info.is_live and info.room_id:
-                    return info
+                return parse_profile_live({"user": user})
         except (json.JSONDecodeError, ParseFailed):
             pass
 
     room_match = re.search(r'"room_id"\s*:\s*"?(\d+)"?', html)
-    if not room_match:
-        return LiveRoomInfo(room_id=None, is_live=False)
+    if room_match:
+        room_id = room_match.group(1)
+        if room_id in ("0", ""):
+            return LiveRoomInfo(room_id=None, is_live=False)
+        live_hint = re.search(r'"live_status"\s*:\s*(\d+)', html)
+        is_live = live_hint.group(1) == "1" if live_hint else False
+        return LiveRoomInfo(room_id=room_id, is_live=is_live)
 
-    room_id = room_match.group(1)
-    live_hint = re.search(r'"live_status"\s*:\s*(\d+)', html)
-    is_live = live_hint.group(1) == "1" if live_hint else True
-    return LiveRoomInfo(room_id=room_id, is_live=is_live)
+    live_from_link = _live_room_from_profile_html(html)
+    if live_from_link:
+        return live_from_link
+
+    return LiveRoomInfo(room_id=None, is_live=False)
 
 
 def _aweme_post_list_field(payload: dict) -> list | None:

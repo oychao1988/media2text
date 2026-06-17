@@ -1,0 +1,20 @@
+# Epic verification — Live recording stability (2026-06-17 incident)
+# Run: python scripts/epic_verify.py live-recording-stability-2026-06-17
+name: live-recording-stability-2026-06-17
+spec: docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-17-live-recording-stability-acceptance.md
+readme_section: Live Recording Stability（2026-06-17）
+issues: [325, 326, 327]
+
+steps:
+  - name: issue-325
+    run: python scripts/issue_verify.py --issue 325
+
+  - name: issue-326
+    run: python scripts/issue_verify.py --issue 326
+
+  - name: issue-327
+    run: python scripts/issue_verify.py --issue 327
+
+  - name: hls-regression
+    run: pytest tests/unit/test_hls_recorder.py -v --tb=short -q

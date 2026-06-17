@@ -4,9 +4,9 @@ import json
 
 import httpx
 
-from media2text.core.errors import AuthRequired, ParseFailed
+from media2text.core.errors import ParseFailed
 from media2text.core.platform.douyin.models import LiveRoomInfo
-from media2text.core.platform.douyin.parse import map_http_error, parse_profile_html, parse_profile_live
+from media2text.core.platform.douyin.parse import map_http_error, parse_profile_live
 
 _PROFILE_UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -66,18 +66,11 @@ def fetch_profile_api(client: httpx.Client, sec_uid: str) -> dict:
 
 
 def resolve_live_via_http(client: httpx.Client, sec_uid: str) -> LiveRoomInfo:
-    """HTTP fallback for live probe when Playwright is unavailable."""
-    info: LiveRoomInfo | None = None
-    try:
-        payload = fetch_profile_api(client, sec_uid)
-        info = parse_profile_live(payload)
-        if info.is_live and info.room_id:
-            return info
-    except (ParseFailed, AuthRequired, httpx.HTTPError, json.JSONDecodeError):
-        pass
+    """Live probe via signed profile/other API.
 
-    html = fetch_profile_page(client, sec_uid)
-    html_info = parse_profile_html(html)
-    if html_info.is_live and html_info.room_id:
-        return html_info
-    return info if info is not None else html_info
+    Raises on block/parse failure so ``get_live_room`` can fall back to Playwright
+    (browser page intercept). Unsigned profile HTML is not used here because it
+    often contains promoted ``live.douyin.com`` links unrelated to the creator.
+    """
+    payload = fetch_profile_api(client, sec_uid)
+    return parse_profile_live(payload)
