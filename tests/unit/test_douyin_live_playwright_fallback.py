@@ -52,7 +52,7 @@ def test_get_live_room_falls_back_to_playwright_when_http_fails(tmp_path: Path) 
     pw_live.assert_called_once_with(session, "MS4wLjABAAAAtest")
 
 
-def test_get_live_room_playwright_runtime_error_surfaces_http_error(
+def test_get_live_room_playwright_runtime_error_surfaces_playwright_error(
     tmp_path: Path,
 ) -> None:
     client = MagicMock()
@@ -71,7 +71,7 @@ def test_get_live_room_playwright_runtime_error_surfaces_http_error(
             side_effect=RuntimeError("playwright_chromium_launch_failed"),
         ),
     ):
-        with pytest.raises(ParseFailed, match="http blocked"):
+        with pytest.raises(RuntimeError, match="playwright_chromium_launch_failed"):
             adapter.get_live_room(sec_uid="MS4wLjABAAAAtest")
 
 

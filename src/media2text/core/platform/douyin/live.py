@@ -3,6 +3,7 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import httpx
 import structlog
 
 from media2text.core.config import AppConfig
@@ -67,7 +68,7 @@ class LiveWatcher:
         if session.is_file():
             client = client_from_storage(session)
             return DouyinAdapterV1(client, session_path=session)
-        return DouyinAdapterV1(None, fixture_root=FIXTURE_ROOT)
+        return DouyinAdapterV1(httpx.Client(), session_path=None)
 
     def run_once(
         self,

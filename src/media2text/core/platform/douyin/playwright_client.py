@@ -199,8 +199,24 @@ def _matching_profile_payload(responses: list[Response], sec_uid: str) -> dict |
     return None
 
 
-def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, str]:
-    """Open profile in Chromium; return captured profile/other JSON (if any) and final HTML."""
+def _new_anonymous_douyin_context(browser):
+    return browser.new_context(
+        user_agent=_DOUYIN_UA,
+        locale="zh-CN",
+        viewport={"width": 1920, "height": 1080},
+    )
+
+
+def _profile_page_has_render_data(content: str) -> bool:
+    return bool(content and 'id="RENDER_DATA"' in content)
+
+
+def _visit_profile_page(session_path: Path | None, sec_uid: str) -> tuple[dict | None, str]:
+    """Open profile in Chromium; return captured profile/other JSON (if any) and final HTML.
+
+  ``session_path=None`` uses an anonymous browser context (no saved login). Public
+  profile pages still emit signed ``profile/other`` XHR without user login.
+    """
     url = f"https://www.douyin.com/user/{sec_uid}"
     captured: list[Response] = []
 
@@ -210,7 +226,10 @@ def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, 
 
     with managed_playwright() as p:
         browser = launch_chromium(p, headless=True)
-        context = _new_douyin_context(browser, session_path)
+        if session_path and session_path.is_file():
+            context = _new_douyin_context(browser, session_path)
+        else:
+            context = _new_anonymous_douyin_context(browser)
         page = context.new_page()
         page.on("response", on_response)
         try:
@@ -231,17 +250,23 @@ def _visit_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, 
             # static HTML still contains nav/footer login links.
             if payload is not None:
                 return payload, content
-            if "登录" in content and "passport" in content:
-                raise AuthRequired("login required on profile page")
+            # Public profile pages also show nav login links; RENDER_DATA means the
+            # page loaded and HTML parse / a later anonymous retry can proceed.
+            if _profile_page_has_render_data(content):
+                return None, content
             if _is_verify_challenge_page(content):
                 raise ParseFailed("douyin verify challenge on profile page")
+            if "登录" in content and "passport" in content:
+                raise AuthRequired("login required on profile page")
             return payload, content
         finally:
             context.close()
             browser.close()
 
 
-def capture_profile_page(session_path: Path, sec_uid: str) -> tuple[dict | None, str]:
+def capture_profile_page(
+    session_path: Path | None, sec_uid: str
+) -> tuple[dict | None, str]:
     """One browser visit: warm session on home, then profile XHR capture + HTML."""
     with playwright_exclusive():
         return _visit_profile_page(session_path, sec_uid)

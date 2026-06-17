@@ -56,33 +56,58 @@ class DouyinAdapterV1:
             return self._session_path
         raise AuthRequired("no session")
 
-    def _live_room_via_playwright(self, session: Path, sec_uid: str) -> LiveRoomInfo:
+    def _live_room_via_playwright(self, session: Path | None, sec_uid: str) -> LiveRoomInfo:
         from media2text.core.platform.douyin.parse import parse_profile_html
         from media2text.core.platform.douyin.playwright_client import capture_profile_page
 
-        try:
-            payload, html = capture_profile_page(session, sec_uid)
-            if payload:
-                try:
-                    return parse_profile_live(payload)
-                except ParseFailed:
-                    pass
-            if html:
-                return parse_profile_html(html)
-        except (ParseFailed, AuthRequired):
-            pass
+        attempts: list[Path | None] = []
+        if session:
+            attempts.append(session)
+        if None not in attempts:
+            attempts.append(None)
 
-        params = {
-            "sec_user_id": sec_uid,
-            "publish_video_strategy_type": "2",
-            "personal_center_strategy": "1",
-        }
-        payload = fetch_json(
-            session,
-            "https://www.douyin.com/aweme/v1/web/user/profile/other/",
-            params=params,
-        )
-        return parse_profile_live(payload)
+        last_info: LiveRoomInfo | None = None
+        for attempt in attempts:
+            try:
+                payload, html = capture_profile_page(attempt, sec_uid)
+                info: LiveRoomInfo | None = None
+                if payload:
+                    try:
+                        info = parse_profile_live(payload)
+                    except ParseFailed:
+                        pass
+                if info is None and html:
+                    info = parse_profile_html(html)
+                if info is None:
+                    continue
+                if info.is_live and info.room_id:
+                    return info
+                last_info = info
+            except AuthRequired:
+                continue
+            except ParseFailed:
+                continue
+
+        if last_info is not None:
+            return last_info
+
+        if session:
+            params = {
+                "sec_user_id": sec_uid,
+                "publish_video_strategy_type": "2",
+                "personal_center_strategy": "1",
+            }
+            try:
+                payload = fetch_json(
+                    session,
+                    "https://www.douyin.com/aweme/v1/web/user/profile/other/",
+                    params=params,
+                )
+                return parse_profile_live(payload)
+            except (AuthRequired, ParseFailed, httpx.HTTPError, JSONDecodeError, RuntimeError):
+                pass
+
+        raise ParseFailed("profile API response not captured from page")
 
     def get_user_profile(self, *, sec_uid: str) -> UserProfile:
         if self._fixture_root:
@@ -153,11 +178,6 @@ class DouyinAdapterV1:
                 info.stream_flv_url = reflow.stream_flv_url
             return info
 
-        if not self._client and not (
-            self._session_path and self._session_path.is_file()
-        ):
-            raise AuthRequired("no session")
-
         session = self._session_path if self._session_path and self._session_path.is_file() else None
         http_exc: Exception | None = None
 
@@ -169,19 +189,14 @@ class DouyinAdapterV1:
             except (ParseFailed, httpx.HTTPError, JSONDecodeError) as exc:
                 http_exc = exc
 
-        if session:
-            try:
-                return self._live_room_via_playwright(session, sec_uid)
-            except AuthRequired:
-                raise
-            except (ParseFailed, httpx.HTTPError, JSONDecodeError, RuntimeError):
-                if http_exc is not None:
-                    raise http_exc
-                raise
-
-        if http_exc is not None:
-            raise http_exc
-        raise AuthRequired("no session")
+        try:
+            return self._live_room_via_playwright(session, sec_uid)
+        except AuthRequired:
+            raise
+        except (ParseFailed, httpx.HTTPError, JSONDecodeError, RuntimeError) as pw_exc:
+            if http_exc is not None:
+                raise pw_exc from http_exc
+            raise
 
     def is_live(self, *, sec_uid: str, room_id: str | None = None) -> bool:
         if room_id == "offline":
