@@ -1,0 +1,190 @@
+<div class="local-panel" id="local-panel">
+  <div class="local-actions">
+    <button type="button" class="btn-add primary" id="local-btn-add-file">
+      <span aria-hidden="true">＋</span> 添加文件
+    </button>
+    <button type="button" class="btn-add" id="local-btn-add-folder">
+      <span aria-hidden="true">📁</span> 添加文件夹
+    </button>
+    <button type="button" class="btn-ghost" id="local-btn-refresh" title="增量扫描已登记的文件夹">
+      刷新扫描
+    </button>
+    <span class="hint-inline" style="font-size:11px;color:var(--text-dim);margin-left:4px;">
+      登记至当前博主 · 路径全局唯一
+    </span>
+  </div>
+
+  <div class="local-toolbar">
+    <button class="chip active" type="button" data-local-filter="all">全部</button>
+    <button class="chip" type="button" data-local-filter="pending-transcript">待转写</button>
+    <button class="chip" type="button" data-local-filter="pending-summary">待摘要</button>
+    <input
+      class="local-search"
+      type="search"
+      id="local-search"
+      placeholder="搜索文件名或路径…"
+      aria-label="搜索本地登记项"
+    />
+  </div>
+
+  <div class="local-body" id="local-body">
+    <div class="local-list-wrap" id="local-list">
+      <div class="local-group" data-local-group="single">
+        <div class="local-group-title">单独登记</div>
+
+        <div
+          class="local-item-row selected"
+          tabindex="0"
+          role="button"
+          data-local-id="loc-1"
+          data-kind="video"
+          data-name="interview_cut.mp4"
+          data-path="/Volumes/Archive/interview_cut.mp4"
+          data-has-transcript="1"
+          data-has-summary="0"
+          data-source="1"
+        >
+          <div class="local-item-head">
+            <div class="local-item-icon" aria-hidden="true">🎬</div>
+            <div class="local-item-main">
+              <div class="local-item-name">interview_cut.mp4</div>
+              <div class="local-item-path">/Volumes/Archive/interview_cut.mp4</div>
+            </div>
+          </div>
+          <div class="local-item-meta">
+            <span class="tag kind-video">video</span>
+            <span>1:02:33 · 890 MB</span>
+            <span class="tag ok">✓ 转写</span>
+            <span class="tag miss">无摘要</span>
+            <span class="tag ok">源 ✓</span>
+          </div>
+          <div class="local-item-actions">
+            <button type="button" class="btn-xs" data-action="preview">预览</button>
+            <button type="button" class="btn-xs" data-action="transcribe">重新转写</button>
+            <button type="button" class="btn-xs" data-action="summarize">生成摘要</button>
+            <button type="button" class="btn-xs danger" data-action="remove">移除</button>
+          </div>
+        </div>
+
+        <div
+          class="local-item-row"
+          tabindex="0"
+          role="button"
+          data-local-id="loc-2"
+          data-kind="document"
+          data-name="meeting_notes.md"
+          data-path="/Users/me/Downloads/meeting_notes.md"
+          data-has-transcript="0"
+          data-has-summary="1"
+          data-source="1"
+        >
+          <div class="local-item-head">
+            <div class="local-item-icon" aria-hidden="true">📄</div>
+            <div class="local-item-main">
+              <div class="local-item-name">meeting_notes.md</div>
+              <div class="local-item-path">/Users/me/Downloads/meeting_notes.md</div>
+            </div>
+          </div>
+          <div class="local-item-meta">
+            <span class="tag kind-doc">document</span>
+            <span>12 KB</span>
+            <span class="tag miss">— 转写</span>
+            <span class="tag ok">✓ 摘要</span>
+            <span class="tag ok">源 ✓</span>
+          </div>
+          <div class="local-item-actions">
+            <button type="button" class="btn-xs" data-action="preview">预览</button>
+            <button type="button" class="btn-xs" data-action="summarize">重新摘要</button>
+            <button type="button" class="btn-xs danger" data-action="remove">移除</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="local-group" data-local-group="scan">
+        <div class="local-group-title">
+          来自 ~/Recordings/exports
+          <span class="folder-badge">扫描 · 12 项</span>
+        </div>
+
+        <div
+          class="local-item-row"
+          tabindex="0"
+          role="button"
+          data-local-id="loc-3"
+          data-kind="audio"
+          data-name="podcast_ep42.m4a"
+          data-path="/Users/me/Recordings/exports/podcast_ep42.m4a"
+          data-has-transcript="0"
+          data-has-summary="0"
+          data-source="1"
+          data-running="transcribe"
+        >
+          <div class="local-item-head">
+            <div class="local-item-icon" aria-hidden="true">🎧</div>
+            <div class="local-item-main">
+              <div class="local-item-name">podcast_ep42.m4a</div>
+              <div class="local-item-path">/Users/me/Recordings/exports/podcast_ep42.m4a</div>
+            </div>
+          </div>
+          <div class="local-item-meta">
+            <span class="tag kind-audio">audio</span>
+            <span>58m · 52 MB</span>
+            <span class="tag running">转写中…</span>
+            <span class="tag miss">无摘要</span>
+            <span class="tag ok">源 ✓</span>
+          </div>
+          <div class="local-item-actions">
+            <button type="button" class="btn-xs busy" data-action="transcribe" disabled>转写中</button>
+            <button type="button" class="btn-xs" data-action="summarize" disabled>摘要</button>
+            <button type="button" class="btn-xs danger" data-action="remove">移除</button>
+          </div>
+        </div>
+
+        <div
+          class="local-item-row disabled"
+          tabindex="0"
+          role="button"
+          data-local-id="loc-4"
+          data-kind="video"
+          data-name="old_clip.mp4"
+          data-path="/Users/me/Recordings/exports/old_clip.mp4"
+          data-has-transcript="1"
+          data-has-summary="0"
+          data-source="0"
+          title="源文件已移动或删除"
+        >
+          <div class="local-item-head">
+            <div class="local-item-icon" aria-hidden="true">🎬</div>
+            <div class="local-item-main">
+              <div class="local-item-name">old_clip.mp4</div>
+              <div class="local-item-path">/Users/me/Recordings/exports/old_clip.mp4</div>
+            </div>
+          </div>
+          <div class="local-item-meta">
+            <span class="tag kind-video">video</span>
+            <span class="tag ok">✓ 转写</span>
+            <span class="tag miss">无摘要</span>
+            <span class="tag fail">源缺失</span>
+          </div>
+          <div class="local-item-actions">
+            <button type="button" class="btn-xs" data-action="remove">移除登记</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="local-preview" id="local-preview" aria-label="本地媒体预览">
+      <div class="local-preview-head" id="local-preview-head">
+        预览 · <strong id="local-preview-title">interview_cut.mp4</strong>
+        <span style="margin-left:8px;font-family:var(--mono);font-size:10px;">GET …/local/items/{id}/media</span>
+      </div>
+      <div class="local-preview-stage video" id="local-preview-stage">
+        <div class="video-frame-mini">
+          <div class="play-icon" aria-hidden="true">▶</div>
+          <p>外部路径 · Range 播放</p>
+          <p style="font-size:10px;opacity:0.7;">/Volumes/Archive/interview_cut.mp4</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

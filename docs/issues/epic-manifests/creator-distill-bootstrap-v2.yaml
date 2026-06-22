@@ -1,0 +1,29 @@
+# Epic verification — Creator Distill Bootstrap v2
+# Run: python scripts/epic_verify.py creator-distill-bootstrap-v2
+name: m2t-creator-distill-bootstrap-v2
+spec: docs/superpowers/specs/2026-06-07-m2t-creator-distill-bootstrap-v2-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-08-m2t-creator-distill-bootstrap-v2-acceptance.md
+readme_section: Creator Distill Bootstrap v2
+issues: [222, 223, 224, 225]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: issue-222
+    run: python scripts/issue_verify.py --issue 222
+
+  - name: issue-223
+    run: python scripts/issue_verify.py --issue 223
+
+  - name: issue-224
+    run: python scripts/issue_verify.py --issue 224
+
+  - name: issue-225
+    run: python scripts/issue_verify.py --issue 225
+
+  - name: distill-pytest
+    run: pytest tests/unit/test_creator_distill*.py tests/unit/test_api_agent_distill_status.py tests/unit/test_doctor_distill_web.py -v -m "agent or desktop" --tb=short -q
+
+  - name: distill-ruff
+    run: ruff check src/media2text/agent/creator_distill/ src/media2text/api/config_dto.py src/media2text/core/doctor_checks.py

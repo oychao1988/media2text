@@ -1,0 +1,31 @@
+# Epic verification — Live Segment Media spec gap follow-up (G1–G4)
+# Run: python scripts/epic_verify.py live-segment-media-gap-fix
+name: live-segment-media-gap-fix
+spec: docs/superpowers/specs/2026-06-09-live-segment-media-pipeline-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-09-live-segment-media-acceptance.md
+readme_section: Live Segment Media — Spec Gap Follow-up
+depends_on_epic: live-segment-media
+issues: [281, 282, 283, 284]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+    optional: true
+
+  - name: issue-281
+    run: python scripts/issue_verify.py --issue 281
+
+  - name: issue-282
+    run: python scripts/issue_verify.py --issue 282
+
+  - name: issue-283
+    run: python scripts/issue_verify.py --issue 283
+
+  - name: issue-284
+    run: python scripts/issue_verify.py --issue 284
+
+  - name: hls-reconnect-regression
+    run: pytest tests/unit/test_hls_recorder.py -v --tb=short -q
+
+  - name: segment-pipeline-regression
+    run: pytest tests/unit/test_segment_process.py tests/unit/test_task_scheduler_segment_order.py -v --tb=short -q
