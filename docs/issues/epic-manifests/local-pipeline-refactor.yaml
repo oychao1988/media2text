@@ -1,0 +1,41 @@
+# Epic verification — Local Pipeline Refactor (Execution Engine v2)
+# Run: python scripts/epic_verify.py local-pipeline-refactor
+name: local-pipeline-refactor
+spec: docs/superpowers/specs/2026-06-08-m2t-local-pipeline-refactor-design.md
+acceptance_doc: docs/superpowers/verification/2026-06-09-m2t-local-pipeline-refactor-acceptance.md
+readme_section: Local Pipeline Refactor
+issues: [230, 231, 232, 233, 234, 235, 236, 237]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: issue-230
+    run: python scripts/issue_verify.py --issue 230
+
+  - name: issue-231
+    run: python scripts/issue_verify.py --issue 231
+
+  - name: issue-232
+    run: python scripts/issue_verify.py --issue 232
+
+  - name: issue-233
+    run: python scripts/issue_verify.py --issue 233
+
+  - name: issue-234
+    run: python scripts/issue_verify.py --issue 234
+
+  - name: issue-235
+    run: python scripts/issue_verify.py --issue 235
+
+  - name: issue-236
+    run: python scripts/issue_verify.py --issue 236
+
+  - name: issue-237
+    run: python scripts/issue_verify.py --issue 237
+
+  - name: live-pytest-core
+    run: pytest tests/unit/test_probe_guard.py tests/unit/test_task_reconciler.py tests/unit/test_task_scheduler.py tests/unit/test_session_runtime.py tests/unit/test_live_scheduler.py -v --tb=short -q
+
+  - name: state-writer-ci
+    run: python scripts/check_no_direct_live_repo.py
