@@ -124,6 +124,36 @@ pgrep -fl "monitor watch"    # 确认在跑
 
 脚本会设置 `PLAYWRIGHT_BROWSERS_PATH`（默认 `~/Library/Caches/ms-playwright`）并清理已死进程留下的锁；抖音直播 reflow 依赖该路径下的 Chromium。
 
+收到 SIGTERM/SIGINT（含 Desktop「停止终端守护」、`takeover` 前的 stop）时会先 `scheduler.stop()` 再退出，避免 ffmpeg / 队列任务孤儿化。
+
+**macOS 开机自启（LaunchAgent 示例）**：在项目根目录创建 `~/Library/LaunchAgents/com.media2text.monitor.plist`（路径按本机修改）：
+
+```xml
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.media2text.monitor</string>
+  <key>WorkingDirectory</key><string>/Users/YOU/Documents/Projects/media2text</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOU/Documents/Projects/media2text/bin/monitor-watch-daemon.sh</string>
+  </array>
+  <key>RunAtLoad</key><true/>
+  <key>KeepAlive</key><true/>
+  <key>StandardOutPath</key><string>/Users/YOU/Documents/Projects/media2text/data/monitor-watch.log</string>
+  <key>StandardErrorPath</key><string>/Users/YOU/Documents/Projects/media2text/data/monitor-watch.log</string>
+</dict>
+</plist>
+```
+
+```bash
+launchctl load ~/Library/LaunchAgents/com.media2text.monitor.plist
+launchctl list | grep media2text
+```
+
+Desktop 与 CLI **同一时刻仅一个 monitor owner**（锁文件互斥）。`desktop.auto_start_monitor=true` 时：已有 CLI 则 Desktop **沿用** CLI；无 CLI 则 Desktop 自动启内嵌监控。切换见 DaemonCard「改用 Desktop / 改用终端」或 `POST /api/runtime/takeover|handoff`。
+
 同一时间只能有一个 daemon（锁文件 `data/.monitor-watch.lock`）。再次启动若报 `already_running`，说明已有实例在运行。
 
 ### 作品同步说明

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
+import signal
 import threading
-import time
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -21,6 +21,21 @@ from media2text.core.live.scheduler import MonitorScheduler
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
+
+
+def _graceful_stop_event(existing: threading.Event | None) -> threading.Event:
+    """Return supervisor stop event, or create one wired to SIGTERM/SIGINT for CLI daemon."""
+    if existing is not None:
+        return existing
+    stop = threading.Event()
+
+    def _handle(signum: int, _frame) -> None:
+        log.info("monitor_watch_shutdown_signal", signum=signum)
+        stop.set()
+
+    signal.signal(signal.SIGTERM, _handle)
+    signal.signal(signal.SIGINT, _handle)
+    return stop
 
 
 def _merge_live_results(douyin: dict, bilibili: dict) -> dict:
@@ -128,12 +143,9 @@ class MonitorWatcher:
             log.warning("recover_orphan_sessions_failed", error=str(exc))
         scheduler = MonitorScheduler(self, self._cfg, on_live_tick=on_live_tick)
         scheduler.start(creator_id=creator_id)
+        stop = _graceful_stop_event(stop_event)
         try:
-            if stop_event is None:
-                while True:
-                    time.sleep(3600)
-            else:
-                stop_event.wait()
+            stop.wait()
         finally:
             try:
                 scheduler.stop()

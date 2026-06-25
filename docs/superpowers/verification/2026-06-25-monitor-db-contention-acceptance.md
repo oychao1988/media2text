@@ -26,16 +26,17 @@ python scripts/epic_verify.py monitor-db-contention-2026-06-25
 | MP1-1 | 同 session 重复 finalize enqueue | 仅一条 active post_process job | PASS（单测 dedupe + partial unique index） |
 | MP1-2 | stale job + session 已 completed | job → `failed`（`superseded:session_terminal`），不复活 pending | PASS（单测） |
 | MP1-3 | 默认 stale 阈值 | `post_process_stale_running_sec=600` | PASS（config default） |
-| MP2-1 | serve + 有效 external lock | `supervisor.takeover()`，非 defer | PASS（`test_api_runtime`） |
-| MP2-2 | `POST /api/runtime/restart` | 始终 embedded restart，不 spawn CLI daemon | PASS（单测） |
+| MP2-1 | serve + 有效 external lock | defer，不 takeover；`managed_by=external` | PASS（`test_app_lifespan`） |
+| MP2-2 | `POST /api/runtime/restart` | external → respawn CLI；embedded → restart embedded | PASS（`test_api_runtime`） |
 | MP2-3 | embedded lock + heartbeat | 不被 `clear_invalid_monitor_lock` 误删；`running=true` | PASS（单测） |
 | MP3-1 | 在播无 session / pending prepare | `live_lane_needs_priority=true` | PASS（`test_live_lane_priority`） |
 | MP3-2 | live lane 优先 | 跳过 `post_process` drain，log 含 count | PASS（`test_task_scheduler_defers_post_process_when_live_pending`） |
 
 ## 手动（建议本机 smoke）
 
-- [ ] Desktop `serve` 启动后 `GET /api/runtime` 仅 embedded monitor，`managed_by=embedded`
-- [ ] 模拟 external `monitor watch --daemon` 与 serve 并存 → serve takeover 后仅单进程写 DB
+- [ ] 开机 `bin/monitor-watch-daemon.sh` 后不开 Desktop → `pgrep -fl "monitor watch"` 存活，`GET /api/runtime`（若 serve 未启则跳过）
+- [ ] CLI daemon 运行中启动 Desktop → `GET /api/runtime` 显示 `managed_by=external`，health=healthy
+- [ ] Desktop 无 CLI 时启动 → `managed_by=embedded`（需 `desktop.auto_start_monitor=true`）
 - [ ] 博主开播且 post_process 积压时，日志出现 `post_process_deferred_for_live_lane`，随后 `prepare_live_recording` 成功
 
 ## 非本 Epic 范围（follow-up）

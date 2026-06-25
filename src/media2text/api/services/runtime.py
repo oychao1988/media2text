@@ -38,7 +38,8 @@ def stop_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any
 
 def restart_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, Any]:
     status = supervisor.status(cfg)
-    if status.managed_by == "external":
+    was_external = status.managed_by == "external"
+    if was_external:
         stop_result = supervisor.stop_external(cfg)
     else:
         stop_result = supervisor.stop(cfg)
@@ -46,12 +47,19 @@ def restart_runtime(cfg: AppConfig, supervisor: MonitorSupervisor) -> dict[str, 
         return stop_result
     if not stop_result.get("ok") and stop_result.get("error") == "stop_timeout":
         return stop_result
-    start_result = supervisor.start(cfg)
+    if was_external:
+        from media2text.core.runtime.external_spawn import spawn_cli_monitor_daemon
+
+        start_result = spawn_cli_monitor_daemon(cfg)
+        managed_by = "external"
+    else:
+        start_result = supervisor.start(cfg)
+        managed_by = "embedded"
     if start_result.get("ok"):
         recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
     return {
         "ok": start_result.get("ok", False),
-        "managed_by": "embedded",
+        "managed_by": managed_by,
         "stop": stop_result,
         "start": start_result,
     }
