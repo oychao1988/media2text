@@ -401,6 +401,7 @@ class MonitorExecutor:
         limit: int,
         min_priority: int = 1,
         max_priority: int | None = None,
+        exclude_creator_ids: frozenset[str] | None = None,
     ) -> None:
         can_accept = min(limit, self.inflight_available)
         if can_accept <= 0:
@@ -411,6 +412,7 @@ class MonitorExecutor:
             limit=can_accept,
             min_priority=min_priority,
             max_priority=max_priority,
+            exclude_creator_ids=exclude_creator_ids,
         )
         for task in claimed:
             self.submit(

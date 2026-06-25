@@ -389,3 +389,188 @@ def test_task_scheduler_defers_post_process_when_live_pending(
     loop.tick_once(conn)
     post_pool.drain_pending.assert_not_called()
 
+
+def test_scheduler_content_drain_excludes_recording_creator(
+    tmp_path, monkeypatch
+) -> None:
+    from media2text.core.storage.repos import LiveSessionRepo
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    conn = open_db(cfg)
+    cid_a = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAArecA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAArecB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    LiveSessionRepo(conn).create(
+        creator_id=cid_a,
+        room_id="1",
+        temp_path=str(tmp_path / "a.flv"),
+        ffmpeg_pid=1,
+    )
+    watcher = MonitorWatcher(cfg)
+    pool = MagicMock()
+    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
+    pool.drain_pending = MagicMock(return_value=0)
+    content_pool = MagicMock()
+    drain_kwargs: dict = {}
+
+    def capture_content_drain(*args, **kwargs):
+        drain_kwargs.update(kwargs)
+        return 0
+
+    content_pool.drain_pending = MagicMock(side_effect=capture_content_drain)
+    post_pool = MagicMock()
+    stop = threading.Event()
+    loop = TaskSchedulerLoop(
+        cfg,
+        watcher,
+        live_pool=pool,
+        content_pool=content_pool,
+        post_pool=post_pool,
+        stop=stop,
+    )
+    import media2text.core.live.task_scheduler as task_scheduler_mod
+
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_live", lambda *a, **k: 0)
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
+    loop.tick_once(conn)
+    assert drain_kwargs.get("limit") == cfg.monitor.executor_max_parallel
+    assert drain_kwargs.get("limit") != 0
+    assert cid_a in drain_kwargs.get("exclude_creator_ids", frozenset())
+
+
+def test_scheduler_releases_only_recording_creator_running_content(
+    tmp_path, monkeypatch
+) -> None:
+    from media2text.core.storage.repos import LiveSessionRepo
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    cid_a = creators.add(
+        sec_uid="MS4wLjABAAAArelA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    cid_b = creators.add(
+        sec_uid="MS4wLjABAAAArelB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    task_a = repo.enqueue(
+        creator_id=cid_a,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_a}",
+        priority=10,
+    )
+    task_b = repo.enqueue(
+        creator_id=cid_b,
+        task_type="download",
+        dedupe_key=f"download:{cid_b}",
+        priority=10,
+    )
+    assert task_a is not None
+    assert task_b is not None
+    repo.claim_pending(limit=2, min_priority=10)
+    LiveSessionRepo(conn).create(
+        creator_id=cid_a,
+        room_id="1",
+        temp_path=str(tmp_path / "a.flv"),
+        ffmpeg_pid=1,
+    )
+    watcher = MonitorWatcher(cfg)
+    pool = MagicMock()
+    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
+    pool.drain_pending = MagicMock(return_value=0)
+    content_pool = MagicMock()
+    content_pool.drain_pending = MagicMock(return_value=0)
+    post_pool = MagicMock()
+    stop = threading.Event()
+    loop = TaskSchedulerLoop(
+        cfg,
+        watcher,
+        live_pool=pool,
+        content_pool=content_pool,
+        post_pool=post_pool,
+        stop=stop,
+    )
+    import media2text.core.live.task_scheduler as task_scheduler_mod
+
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_live", lambda *a, **k: 0)
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
+    loop.tick_once(conn)
+    assert repo.get(task_a).status == "pending"
+    assert repo.get(task_b).status == "running"
+
+
+def test_content_drain_claims_other_creator_while_recording(
+    tmp_path, monkeypatch
+) -> None:
+    from media2text.core.storage.repos import LiveSessionRepo
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    cid_a = creators.add(
+        sec_uid="MS4wLjABAAAAclaimA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    cid_b = creators.add(
+        sec_uid="MS4wLjABAAAAclaimB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    sync_a = repo.enqueue(
+        creator_id=cid_a,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_a}",
+        priority=10,
+    )
+    sync_b = repo.enqueue(
+        creator_id=cid_b,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_b}",
+        priority=10,
+    )
+    assert sync_a is not None
+    assert sync_b is not None
+    LiveSessionRepo(conn).create(
+        creator_id=cid_a,
+        room_id="1",
+        temp_path=str(tmp_path / "a.flv"),
+        ffmpeg_pid=1,
+    )
+    pool = MonitorExecutor(max_workers=1)
+    watcher = MonitorWatcher(cfg)
+    pool.submit = MagicMock()  # type: ignore[method-assign]
+    pool.drain_pending(
+        cfg,
+        conn,
+        notify=watcher._notify,
+        watcher=watcher,
+        limit=1,
+        min_priority=10,
+        exclude_creator_ids=frozenset({cid_a}),
+    )
+    assert repo.get(sync_a).status == "pending"
+    assert repo.get(sync_b).status == "running"
+    pool.shutdown(wait=False)
+

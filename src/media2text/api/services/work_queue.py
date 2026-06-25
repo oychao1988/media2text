@@ -91,8 +91,11 @@ def recover_stale_work(
         mt_repo = MonitorTaskRepo(conn)
         mt_reset = mt_repo.reset_stale_running(older_than_sec=older_than_sec)
         content_released = 0
-        if LiveSessionRepo(conn).list_active():
-            content_released = mt_repo.release_running_content_tasks()
+        recording_ids = LiveSessionRepo(conn).list_recording_creator_ids()
+        if recording_ids:
+            content_released = mt_repo.release_running_content_tasks_for_creators(
+                recording_ids
+            )
         pp_reset = PostProcessJobRepo(conn).reset_stale_running(older_than_sec=older_than_sec)
         orphan = recover_orphan_sessions(cfg, conn)
         return {

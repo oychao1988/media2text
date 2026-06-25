@@ -67,3 +67,56 @@ def test_recover_stale_resets_running_tasks(workspace) -> None:
 
     body = get_work_queue(cfg)
     assert not any(t["status"] == "running" for t in body["monitor_tasks"])
+
+
+def test_recover_stale_only_releases_recording_creator_content(workspace) -> None:
+    cfg = AppConfig.load()
+    conn = open_db(cfg)
+    try:
+        cid_a = CreatorRepo(conn).add(
+            sec_uid="sec_wq_rel_a",
+            profile_url="https://www.douyin.com/user/sec_wq_rel_a",
+            platform="douyin",
+            monitor_enabled=True,
+        )
+        cid_b = CreatorRepo(conn).add(
+            sec_uid="sec_wq_rel_b",
+            profile_url="https://www.douyin.com/user/sec_wq_rel_b",
+            platform="douyin",
+            monitor_enabled=True,
+        )
+        repo = MonitorTaskRepo(conn)
+        task_a = repo.enqueue(
+            creator_id=cid_a,
+            task_type="sync_catalog",
+            dedupe_key=f"test-sync-a:{cid_a}",
+            priority=10,
+        )
+        task_b = repo.enqueue(
+            creator_id=cid_b,
+            task_type="download",
+            dedupe_key=f"test-dl-b:{cid_b}",
+            priority=10,
+        )
+        assert task_a and task_b
+        repo.claim_pending(limit=2, min_priority=10)
+        from media2text.core.storage.repos import LiveSessionRepo
+
+        LiveSessionRepo(conn).create(
+            creator_id=cid_a,
+            room_id="1",
+            temp_path=str(workspace / "live" / "a.flv"),
+            ffmpeg_pid=1,
+        )
+    finally:
+        conn.close()
+
+    recover_stale_work(cfg, older_than_sec=3600)
+
+    conn2 = open_db(cfg)
+    try:
+        repo2 = MonitorTaskRepo(conn2)
+        assert repo2.get(task_a).status == "pending"
+        assert repo2.get(task_b).status == "running"
+    finally:
+        conn2.close()

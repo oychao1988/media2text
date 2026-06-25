@@ -364,8 +364,9 @@ class MonitorSupervisor:
         try:
             mt = MonitorTaskRepo(conn)
             mt.reset_stale_running(older_than_sec=1)
-            if LiveSessionRepo(conn).list_active():
-                mt.release_running_content_tasks()
+            recording_ids = LiveSessionRepo(conn).list_recording_creator_ids()
+            if recording_ids:
+                mt.release_running_content_tasks_for_creators(recording_ids)
             PostProcessJobRepo(conn).reset_stale_running(older_than_sec=1)
         finally:
             conn.close()
