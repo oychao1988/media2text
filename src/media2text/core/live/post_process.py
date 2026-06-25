@@ -13,6 +13,7 @@ from media2text.core.cloud.live_upload import (
 )
 from media2text.core.config import AppConfig
 from media2text.core.live.pipeline_events import stage_event
+from media2text.core.live.transcript_writer import find_transcript_sidecar
 from media2text.core.manifest import refresh_manifest
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
 from media2text.core.notify.labels import creator_label
@@ -30,8 +31,8 @@ log = structlog.get_logger()
 _LIVE_PIPELINE_DEPRECATED_HINT = "use streaming+hls; see config.example.yaml"
 
 
-def _transcript_exists(media: Path) -> bool:
-    return media.with_suffix(".transcript.json").is_file()
+def _transcript_exists(media: Path, *, workspace: Path | None = None) -> bool:
+    return find_transcript_sidecar(media, workspace=workspace) is not None
 
 
 def _streaming_rest_fallback_reason(conn, session_id: str) -> str | None:
@@ -75,7 +76,7 @@ def run_post_process_job(
     result: dict = {"job_id": job_id, "transcribed": False}
 
     try:
-        if _transcript_exists(media):
+        if _transcript_exists(media, workspace=ws):
             result["transcribed"] = True
             result["transcribe_engine"] = "streaming"
             sessions.update_status(job.session_id, transcribe_status="completed")
@@ -111,7 +112,7 @@ def run_post_process_job(
                         job.session_id, transcribe_status="failed"
                     )
 
-        has_transcript = result.get("transcribed") or _transcript_exists(media)
+        has_transcript = result.get("transcribed") or _transcript_exists(media, workspace=ws)
         summarize_meta: dict = {}
         upload_meta: dict = {}
 

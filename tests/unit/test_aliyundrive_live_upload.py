@@ -160,7 +160,7 @@ def test_list_cleanup_candidates_filters_transcripts(tmp_path) -> None:
     )
     names = {c.file_name for c in candidates}
     assert "a.mp4" in names
-    assert "a.transcript.json" in names
+    assert "a.transcript.json" not in names  # transcripts/summaries preserved
     assert "b.mp4" not in names
 
 

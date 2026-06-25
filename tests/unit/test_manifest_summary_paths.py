@@ -52,6 +52,8 @@ def test_manifest_includes_summary_path_and_live_groups(tmp_path: Path, monkeypa
     out = refresh_manifest(conn, sec_uid=sec_uid, workspace=ws)
     payload = json.loads(out.read_text(encoding="utf-8"))
     live_item = payload["live"][0]
-    assert live_item["summary_path"] == str(per_file_summary)
+    assert live_item["summary_path"] == str(
+        per_file_summary.relative_to(ws)
+    )
     assert payload["live_groups"][0]["summary_path"] == str(merged)
     assert payload["live_groups"][0]["session_ids"] == ["sid-a", "sid-b"]

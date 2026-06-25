@@ -14,6 +14,7 @@ from media2text.core.live.transcript_writer import (
     load_merged_live_transcript,
     transcript_sidecar_media_paths,
 )
+from media2text.core.live.transcript_writer import find_summary_sidecar
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.models import LiveSessionRow
 
@@ -183,20 +184,17 @@ def transcript_mtime(row: LiveSessionRow) -> float | None:
     return max(mtimes) if mtimes else None
 
 
-def read_summary_text(media_path: Path) -> str:
-    summary_path = _summary_sidecar_path(str(media_path))
-    if not summary_path:
-        raise HTTPException(status_code=404, detail="summary not found")
-    path = Path(summary_path)
-    if not path.is_file():
+def read_summary_text(media_path: Path, *, workspace: Path | None = None) -> str:
+    summary_path = find_summary_sidecar(media_path, workspace=workspace)
+    if summary_path is None:
         raise HTTPException(status_code=404, detail="summary not found")
     try:
-        return path.read_text(encoding="utf-8")
+        return summary_path.read_text(encoding="utf-8")
     except OSError as exc:
         raise HTTPException(status_code=500, detail="summary read failed") from exc
 
 
-def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
+def session_sidecar_paths(row: LiveSessionRow, *, workspace: Path | None = None) -> dict[str, str | None]:
     media = _media_path_for_session(row)
     transcript_media = resolve_transcript_media(row)
     if media is None and transcript_media is None:
@@ -215,8 +213,8 @@ def session_sidecar_paths(row: LiveSessionRow) -> dict[str, str | None]:
             partial_path = candidate_partial
     return {
         "media_path": media_s,
-        "transcript_path": _transcript_sidecar_path(transcript_s),
-        "summary_path": _summary_sidecar_path(transcript_s),
+        "transcript_path": _transcript_sidecar_path(transcript_s, workspace=workspace),
+        "summary_path": _summary_sidecar_path(transcript_s, workspace=workspace),
         "partial_transcript_path": str(partial_path) if partial_path else None,
     }
 

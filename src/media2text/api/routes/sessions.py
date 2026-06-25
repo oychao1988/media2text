@@ -36,7 +36,7 @@ def _session_payload(
     row,
 ) -> dict[str, Any]:
     ws = cfg.ensure_workspace()
-    sidecars = session_sidecar_paths(row)
+    sidecars = session_sidecar_paths(row, workspace=ws)
     paths = {
         key: workspace_rel(ws, val) for key, val in sidecars.items()
     }
@@ -96,13 +96,13 @@ def get_summary(
     row = LiveSessionRepo(conn).get(session_id)
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
+    ws = cfg.ensure_workspace()
     media = _media_path_for_session(row)
     if media is None:
         raise HTTPException(status_code=404, detail="no media path for session")
-    ws = cfg.ensure_workspace()
-    summary_path = workspace_rel(ws, _summary_sidecar_path(str(media)))
+    summary_path = workspace_rel(ws, _summary_sidecar_path(str(media), workspace=ws))
     try:
-        text = read_summary_text(media)
+        text = read_summary_text(media, workspace=ws)
     except HTTPException as exc:
         if exc.status_code == 404:
             return {

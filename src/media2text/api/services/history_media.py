@@ -21,6 +21,7 @@ from media2text.core.storage.repos import (
     LiveSessionRepo,
     MonitorTaskRepo,
 )
+from media2text.core.live.transcript_writer import resolve_summarize_paths
 from media2text.core.summarize.errors import SummarizeConfigError, SummarizeError
 from media2text.core.summarize.factory import create_summarize_backend, summarize_engine_available
 from media2text.core.summarize.reader import transcript_path_for_media
@@ -410,6 +411,9 @@ def _resolve_history_summarize_target(
     if Path(base_raw).is_absolute():
         candidates.append(Path(base_raw))
     for candidate in candidates:
+        resolved = resolve_summarize_paths(candidate, workspace=ws)
+        if resolved is not None:
+            return resolved[0]
         transcript = transcript_path_for_media(candidate)
         if transcript.is_file():
             return transcript
