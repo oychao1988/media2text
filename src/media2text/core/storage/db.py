@@ -3,6 +3,34 @@ import threading
 from pathlib import Path
 
 _connect_lock = threading.Lock()
+_migrated_db_paths: set[str] = set()
+
+
+def _run_migrations(conn: sqlite3.Connection) -> None:
+    conn.executescript(SCHEMA)
+    _migrate_creators(conn)
+    _migrate_creators_v6(conn)
+    _migrate_creators_v7(conn)
+    _migrate_creators_v8(conn)
+    _migrate_live_sessions(conn)
+    _migrate_live_sessions_v2(conn)
+    _migrate_live_sessions_v3(conn)
+    _migrate_live_sessions_v4(conn)
+    _migrate_live_sessions_v5(conn)
+    _migrate_desktop_v1(conn)
+    _migrate_desktop_v2(conn)
+    _migrate_monitor_v1(conn)
+    _migrate_awemes_v1(conn)
+    _migrate_hermes_v1(conn)
+    _migrate_hermes_v2(conn)
+    _migrate_hermes_v3(conn)
+    _migrate_hermes_v4(conn)
+    _migrate_notify_v1(conn)
+    _migrate_live_segment_v1(conn)
+    _migrate_post_process_v1(conn)
+    from media2text.core.archive.schema import migrate_archive
+
+    migrate_archive(conn)
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
@@ -784,33 +812,14 @@ def _migrate_notify_v1(conn: sqlite3.Connection) -> None:
 
 
 def connect(db_path: Path) -> sqlite3.Connection:
-    db_path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(db_path, check_same_thread=False)
+    resolved = db_path.resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(resolved, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA busy_timeout=5000")
+    path_key = str(resolved)
     with _connect_lock:
-        conn.executescript(SCHEMA)
-        _migrate_creators(conn)
-        _migrate_creators_v6(conn)
-        _migrate_creators_v7(conn)
-        _migrate_creators_v8(conn)
-        _migrate_live_sessions(conn)
-        _migrate_live_sessions_v2(conn)
-        _migrate_live_sessions_v3(conn)
-        _migrate_live_sessions_v4(conn)
-        _migrate_live_sessions_v5(conn)
-        _migrate_desktop_v1(conn)
-        _migrate_desktop_v2(conn)
-        _migrate_monitor_v1(conn)
-        _migrate_awemes_v1(conn)
-        _migrate_hermes_v1(conn)
-        _migrate_hermes_v2(conn)
-        _migrate_hermes_v3(conn)
-        _migrate_hermes_v4(conn)
-        _migrate_notify_v1(conn)
-        _migrate_live_segment_v1(conn)
-        _migrate_post_process_v1(conn)
-        from media2text.core.archive.schema import migrate_archive
-
-        migrate_archive(conn)
+        if path_key not in _migrated_db_paths:
+            _run_migrations(conn)
+            _migrated_db_paths.add(path_key)
     return conn
