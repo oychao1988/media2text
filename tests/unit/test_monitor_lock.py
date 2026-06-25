@@ -146,3 +146,45 @@ def test_write_lock_record_json(tmp_path: Path) -> None:
     data = json.loads(lock.read_text(encoding="utf-8"))
     assert data["pid"] == 42
     assert "monitor" in data["argv"]
+
+
+def test_clear_invalid_preserves_embedded_lock(tmp_path: Path, monkeypatch) -> None:
+    lock = tmp_path / ".monitor-watch.lock"
+    write_lock_record(lock, pid=4242, mode="embedded")
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock._pid_alive",
+        lambda pid: pid == 4242,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_embedded_monitor_pid",
+        lambda pid: pid == 4242,
+    )
+    assert clear_invalid_monitor_lock(lock) is False
+    assert lock.exists()
+
+
+def test_monitor_effectively_running_embedded_without_supervisor(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from datetime import datetime, timezone
+
+    from media2text.core.config import AppConfig, LiveConfig
+    from media2text.core.runtime.heartbeat import write_heartbeat
+
+    cfg = AppConfig(workspace=tmp_path, live=LiveConfig(live_poll_interval_sec=10))
+    ws = cfg.ensure_workspace()
+    lock = ws / ".monitor-watch.lock"
+    write_lock_record(lock, pid=5151, mode="embedded")
+    write_heartbeat(ws, last_tick_at=datetime.now(timezone.utc).isoformat())
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_embedded_monitor_pid",
+        lambda pid: pid == 5151,
+    )
+    running, reason = monitor_effectively_running(
+        ws,
+        cfg,
+        supervisor_status={"managed_by": "none", "thread_alive": False},
+        live_poll_sec=10,
+    )
+    assert running is True
+    assert reason is None
