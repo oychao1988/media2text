@@ -272,12 +272,12 @@ Epic manifest：`python scripts/epic_verify.py live-recording-stability-2026-06-
 
 ### Monitor DB Contention（2026-06-25 直播检测未开录事故）
 
-Epic manifest：（待补 `docs/issues/epic-manifests/monitor-db-contention-2026-06-25.json`）
+Epic manifest：[monitor-db-contention-2026-06-25.yaml](./epic-manifests/monitor-db-contention-2026-06-25.yaml)
 
-| 顺序 | GitHub | 文件 | 分支 |
-|------|--------|------|------|
-| MP-1 | [#334](https://github.com/oychao1988/media2text/issues/334) | [mp1-post-process-dedupe](./monitor-db-contention-mp1-post-process-dedupe.md) | `issue-334-monitor-db-mp1-post-process-dedupe` |
-| MP-2 | [#335](https://github.com/oychao1988/media2text/issues/335) | [mp2-single-owner](./monitor-db-contention-mp2-single-owner.md) | `issue-335-monitor-db-mp2-single-owner` |
-| MP-3 | [#336](https://github.com/oychao1988/media2text/issues/336) | [mp3-live-lane-priority](./monitor-db-contention-mp3-live-lane-priority.md) | `issue-336-monitor-db-mp3-live-lane-priority` |
+| 顺序 | GitHub | 文件 | 分支 | PR |
+|------|--------|------|------|-----|
+| MP-1 | [#334](https://github.com/oychao1988/media2text/issues/334) | [mp1-post-process-dedupe](./monitor-db-contention-mp1-post-process-dedupe.md) | `issue-334-monitor-db-mp1-post-process-dedupe` | [#337](https://github.com/oychao1988/media2text/pull/337)（已合并） |
+| MP-2 | [#335](https://github.com/oychao1988/media2text/issues/335) | [mp2-single-owner](./monitor-db-contention-mp2-single-owner.md) | `issue-335-monitor-db-mp2-single-owner` | [#340](https://github.com/oychao1988/media2text/pull/340)（已合并） |
+| MP-3 | [#336](https://github.com/oychao1988/media2text/issues/336) | [mp3-live-lane-priority](./monitor-db-contention-mp3-live-lane-priority.md) | `issue-336-monitor-db-mp3-live-lane-priority` | [#341](https://github.com/oychao1988/media2text/pull/341) |
 
-**合并顺序**：#334 → #335 / #336（#335 与 #336 可并行，均建议基于 #334）。
+**合并顺序**：#334 → #335 / #336（#335 与 #336 可并行，均建议基于 #334）。验收：[2026-06-25-monitor-db-contention-acceptance.md](../superpowers/verification/2026-06-25-monitor-db-contention-acceptance.md)

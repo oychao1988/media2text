@@ -92,12 +92,18 @@ class TaskSchedulerLoop:
                 notify=self._watcher._notify,
                 limit=self._cfg.live.segment_pipeline.max_parallel,
             )
-        self._post_pool.drain_pending(
-            self._cfg,
-            conn,
-            notify=self._watcher._notify,
-            limit=self._cfg.live.post_process_max_parallel,
-        )
+        from media2text.core.live.live_lane import live_lane_priority_count
+
+        live_lane_count = live_lane_priority_count(conn, self._cfg)
+        if live_lane_count == 0:
+            self._post_pool.drain_pending(
+                self._cfg,
+                conn,
+                notify=self._watcher._notify,
+                limit=self._cfg.live.post_process_max_parallel,
+            )
+        else:
+            log.info("post_process_deferred_for_live_lane", count=live_lane_count)
         active_sessions = LiveSessionRepo(conn).list_active()
         content_parallel = self._cfg.monitor.executor_max_parallel
         if active_sessions:
