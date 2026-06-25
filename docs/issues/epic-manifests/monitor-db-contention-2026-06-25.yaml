@@ -1,0 +1,19 @@
+# Epic verification — Monitor DB contention (2026-06-25 live-not-recording incident)
+# Run: python scripts/epic_verify.py monitor-db-contention-2026-06-25
+name: monitor-db-contention-2026-06-25
+acceptance_doc: docs/superpowers/verification/2026-06-25-monitor-db-contention-acceptance.md
+readme_section: Monitor DB Contention（2026-06-25）
+issues: [334, 335, 336]
+
+steps:
+  - name: issue-334
+    run: python scripts/issue_verify.py --issue 334
+
+  - name: issue-335
+    run: python scripts/issue_verify.py --issue 335
+
+  - name: issue-336
+    run: python scripts/issue_verify.py --issue 336
+
+  - name: monitor-regression
+    run: pytest tests/unit/test_post_process_repo.py tests/unit/test_monitor_lock.py tests/unit/test_task_scheduler.py tests/unit/test_live_lane_priority.py -v --tb=short -q
