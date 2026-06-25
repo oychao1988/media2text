@@ -313,13 +313,13 @@ def _migrate_live_sessions_v4(conn: sqlite3.Connection) -> None:
     for name, col_type in _LIVE_SESSION_V4_COLUMNS:
         if name not in existing:
             conn.execute(f"ALTER TABLE live_sessions ADD COLUMN {name} {col_type}")
-    conn.execute(
-        """
-        UPDATE live_sessions
-        SET pipeline_mode = 'legacy'
-        WHERE pipeline_mode IS NULL
-        """
-    )
+            conn.execute(
+                """
+                UPDATE live_sessions
+                SET pipeline_mode = 'legacy'
+                WHERE pipeline_mode IS NULL
+                """
+            )
     conn.commit()
 
 
@@ -446,6 +446,25 @@ def _migrate_monitor_v2(conn: sqlite3.Connection) -> None:
     if "attempt_count" not in cols:
         conn.execute(
             "ALTER TABLE monitor_tasks ADD COLUMN attempt_count INTEGER NOT NULL DEFAULT 0"
+        )
+        conn.commit()
+
+
+def _migrate_post_process_v1(conn: sqlite3.Connection) -> None:
+    """One active post_process job per live session (MP-1 dedupe)."""
+    row = conn.execute(
+        """
+        SELECT 1 FROM sqlite_master
+        WHERE type = 'index' AND name = 'idx_post_process_jobs_active_session'
+        """
+    ).fetchone()
+    if row is None:
+        conn.execute(
+            """
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_post_process_jobs_active_session
+            ON post_process_jobs(session_id)
+            WHERE status IN ('pending', 'running')
+            """
         )
         conn.commit()
 
@@ -768,6 +787,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
     db_path.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(db_path, check_same_thread=False)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=5000")
     with _connect_lock:
         conn.executescript(SCHEMA)
         _migrate_creators(conn)
@@ -789,6 +809,7 @@ def connect(db_path: Path) -> sqlite3.Connection:
         _migrate_hermes_v4(conn)
         _migrate_notify_v1(conn)
         _migrate_live_segment_v1(conn)
+        _migrate_post_process_v1(conn)
         from media2text.core.archive.schema import migrate_archive
 
         migrate_archive(conn)

@@ -60,6 +60,7 @@ live:
   min_recording_sec_before_offline_end: 45
   post_process_poll_interval_sec: 10
   post_process_max_parallel: 0         # 0 = auto: min(2, max(1, cpu_count // 2))
+  post_process_stale_running_sec: 600  # running 超过此秒数视为 stale；已完结 session 标 failed 而非复活 pending
   scan_concurrency: 4                   # parallel get_live_room for creators without active session
   offline_trust_recording_signals: true # profile offline 时仍信任 ffmpeg/reflow，直到 FLV stall 或 confirm
   offline_flv_stall_polls: 3           # 与上项配合：profile 已 offline 且 FLV 连续 N 次 obs poll 不增长 → 不再信任 reflow/ffmpeg

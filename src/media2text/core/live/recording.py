@@ -434,6 +434,11 @@ class LiveRecordingCore:
         return hls_anchor if hls_anchor is not None else media_path
 
     def _transcript_partial_age_sec(self, row) -> float | None:
+        """Age of the newest transcript output (partial + checkpoints).
+
+        After ``checkpoint_segment()`` deletes ``partial.json``, stall detection
+        falls back to segment checkpoint mtimes so it is not permanently blocked.
+        """
         if not row.temp_path:
             return None
         anchor = self._streaming_transcript_anchor.get(row.id)
@@ -442,13 +447,19 @@ class LiveRecordingCore:
             candidates.append(anchor)
         candidates.extend(transcript_sidecar_media_paths(Path(row.temp_path)))
         freshest: float | None = None
-        for base in candidates:
-            partial = base.with_suffix(".transcript.partial.json")
-            if not partial.is_file():
-                continue
-            age = time.time() - partial.stat().st_mtime
+
+        def _consider(path: Path) -> None:
+            nonlocal freshest
+            if not path.is_file():
+                return
+            age = time.time() - path.stat().st_mtime
             if freshest is None or age < freshest:
                 freshest = age
+
+        for base in candidates:
+            _consider(base.with_suffix(".transcript.partial.json"))
+            for seg in list_segment_checkpoints(base):
+                _consider(seg)
         return freshest
 
     def _partial_timeline_offset_sec(self, row) -> float:
@@ -1015,6 +1026,9 @@ class LiveRecordingCore:
         part_index: int,
         discontinuity_seq: int = 0,
     ) -> Popen:
+        existing = self._processes.pop(session_id, None)
+        if existing is not None:
+            stop_hls_recorder(existing, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
         proc = spawn_hls_recorder(
             ffmpeg=self._cfg.live.ffmpeg_path,
             stream_url=stream_url,
@@ -1906,7 +1920,7 @@ class LiveRecordingCore:
         if not creator:
             return {"session_id": session_id, "path": str(media_path)}
 
-        job_id = self._jobs.enqueue(
+        job_id = self._jobs.ensure_enqueue(
             session_id=session_id,
             creator_id=creator.id,
             mp4_path=str(media_path),
@@ -2057,7 +2071,7 @@ class LiveRecordingCore:
 
         job_id = None
         if self._cfg.summarize.enabled and self._cfg.summarize.on_transcribe_complete:
-            job_id = self._jobs.enqueue(
+            job_id = self._jobs.ensure_enqueue(
                 session_id=session_id,
                 creator_id=creator.id,
                 mp4_path=str(media_path),
@@ -2192,7 +2206,7 @@ class LiveRecordingCore:
         if not creator:
             return {"session_id": session_id, "path": str(mp4)}
 
-        job_id = self._jobs.enqueue(
+        job_id = self._jobs.ensure_enqueue(
             session_id=session_id,
             creator_id=creator.id,
             mp4_path=str(mp4),

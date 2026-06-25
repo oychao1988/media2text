@@ -129,7 +129,7 @@ class LiveConfig(BaseModel):
     min_recording_sec_before_offline_end: int = 45
     post_process_poll_interval_sec: int = 10
     post_process_max_parallel: int = 0
-    post_process_stale_running_sec: int = 3600
+    post_process_stale_running_sec: int = 600
     scan_concurrency: int = 4
     # During active recording, treat profile API offline as inconclusive when ffmpeg
     # is still writing or the room reflow API reports live (Douyin profile often flakes).
