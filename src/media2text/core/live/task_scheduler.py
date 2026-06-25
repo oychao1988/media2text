@@ -12,7 +12,7 @@ from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
 from media2text.core.live.segment_process_pool import SegmentProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
-from media2text.core.storage.repos import LiveSessionRepo
+from media2text.core.storage.repos import LiveSessionRepo, MonitorTaskRepo
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -104,23 +104,25 @@ class TaskSchedulerLoop:
             )
         else:
             log.info("post_process_deferred_for_live_lane", count=live_lane_count)
-        active_sessions = LiveSessionRepo(conn).list_active()
-        content_parallel = self._cfg.monitor.executor_max_parallel
-        if active_sessions:
-            content_parallel = 0
-            # Release running content tasks so Playwright slots free up for live lane
-            from media2text.core.storage.repos import MonitorTaskRepo
-
-            released = MonitorTaskRepo(conn).release_running_content_tasks()
+        recording_creator_ids = frozenset(LiveSessionRepo(conn).list_recording_creator_ids())
+        if recording_creator_ids:
+            released = MonitorTaskRepo(conn).release_running_content_tasks_for_creators(
+                sorted(recording_creator_ids)
+            )
             if released:
-                log.info("content_tasks_released_for_live", count=released)
+                log.info(
+                    "content_tasks_released_for_live",
+                    count=released,
+                    creator_ids=sorted(recording_creator_ids),
+                )
         self._content_pool.drain_pending(
             self._cfg,
             conn,
             notify=self._watcher._notify,
             watcher=self._watcher,
-            limit=content_parallel,
+            limit=self._cfg.monitor.executor_max_parallel,
             min_priority=10,
+            exclude_creator_ids=recording_creator_ids or None,
         )
         try:
             drain_once(self._cfg, limit=20)

@@ -422,3 +422,87 @@ def test_has_active_dedupe_pending_and_running(tmp_path, monkeypatch) -> None:
     assert repo.has_active_dedupe(dedupe) is True
     repo.mark_done(tid)
     assert repo.has_active_dedupe(dedupe) is False
+
+
+def test_claim_pending_excludes_recording_creator(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    cid_a = creators.add(
+        sec_uid="MS4wLjABAAAAexcludeA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    cid_b = creators.add(
+        sec_uid="MS4wLjABAAAAexcludeB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    sync_a = repo.enqueue(
+        creator_id=cid_a,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_a}",
+        priority=10,
+    )
+    sync_b = repo.enqueue(
+        creator_id=cid_b,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_b}",
+        priority=10,
+    )
+    assert sync_a is not None
+    assert sync_b is not None
+
+    claimed = repo.claim_pending(
+        limit=1,
+        min_priority=10,
+        exclude_creator_ids=frozenset({cid_a}),
+    )
+    assert len(claimed) == 1
+    assert claimed[0].id == sync_b
+
+
+def test_release_running_content_tasks_for_creators_scoped(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    cid_a = creators.add(
+        sec_uid="MS4wLjABAAAAreleaseA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    cid_b = creators.add(
+        sec_uid="MS4wLjABAAAAreleaseB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    task_a = repo.enqueue(
+        creator_id=cid_a,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_a}",
+        priority=10,
+    )
+    task_b = repo.enqueue(
+        creator_id=cid_b,
+        task_type="download",
+        dedupe_key=f"download:{cid_b}",
+        priority=10,
+    )
+    assert task_a is not None
+    assert task_b is not None
+    repo.claim_pending(limit=2, min_priority=10)
+
+    released = repo.release_running_content_tasks_for_creators([cid_a])
+    assert released == 1
+    assert repo.get(task_a).status == "pending"
+    assert repo.get(task_b).status == "running"

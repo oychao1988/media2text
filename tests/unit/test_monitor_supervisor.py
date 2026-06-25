@@ -186,3 +186,57 @@ def test_supervisor_repair_embedded_lock_and_takeover(tmp_path, monkeypatch) -> 
     lock = json.loads((ws / ".monitor-watch.lock").read_text(encoding="utf-8"))
     assert lock["pid"] == os.getpid()
     assert lock["mode"] == "embedded"
+
+
+def test_supervisor_reset_stale_only_releases_recording_creator_content(
+    tmp_path, monkeypatch
+) -> None:
+    from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
+    from media2text.core.workspace import open_db
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    cid_a = creators.add(
+        sec_uid="MS4wLjABAAAAsupA",
+        profile_url="https://example.com/a",
+        monitor_enabled=True,
+    )
+    cid_b = creators.add(
+        sec_uid="MS4wLjABAAAAsupB",
+        profile_url="https://example.com/b",
+        monitor_enabled=True,
+    )
+    repo = MonitorTaskRepo(conn)
+    task_a = repo.enqueue(
+        creator_id=cid_a,
+        task_type="sync_catalog",
+        dedupe_key=f"sync_catalog:{cid_a}",
+        priority=10,
+    )
+    task_b = repo.enqueue(
+        creator_id=cid_b,
+        task_type="download",
+        dedupe_key=f"download:{cid_b}",
+        priority=10,
+    )
+    assert task_a is not None
+    assert task_b is not None
+    repo.claim_pending(limit=2, min_priority=10)
+    LiveSessionRepo(conn).create(
+        creator_id=cid_a,
+        room_id="1",
+        temp_path=str(tmp_path / "a.flv"),
+        ffmpeg_pid=1,
+    )
+    conn.close()
+
+    sup = MonitorSupervisor()
+    sup._reset_stale_queue_work(cfg)
+
+    conn2 = open_db(cfg)
+    repo2 = MonitorTaskRepo(conn2)
+    assert repo2.get(task_a).status == "pending"
+    assert repo2.get(task_b).status == "running"
+    conn2.close()

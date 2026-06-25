@@ -740,6 +740,15 @@ class LiveSessionRepo:
         ).fetchall()
         return [LiveSessionRow(**dict(r)) for r in rows]
 
+    def list_recording_creator_ids(self) -> list[str]:
+        rows = self._conn.execute(
+            """
+            SELECT DISTINCT creator_id FROM live_sessions
+            WHERE status IN ('recording', 'remuxing')
+            """
+        ).fetchall()
+        return [str(r["creator_id"]) for r in rows]
+
     def get(self, session_id: str) -> LiveSessionRow | None:
         row = self._conn.execute(
             "SELECT * FROM live_sessions WHERE id = ?",
@@ -1587,45 +1596,54 @@ class MonitorTaskRepo:
         *,
         min_priority: int,
         max_priority: int | None,
+        exclude_creator_ids: frozenset[str] | None = None,
     ) -> str | None:
         """Pick oldest pending task per creator, then lowest priority globally."""
+        exclude_inner = ""
+        exclude_outer = ""
+        exclude_params: tuple = ()
+        if exclude_creator_ids:
+            placeholders = ",".join("?" * len(exclude_creator_ids))
+            exclude_inner = f" AND creator_id NOT IN ({placeholders})"
+            exclude_outer = f" AND t.creator_id NOT IN ({placeholders})"
+            exclude_params = tuple(exclude_creator_ids)
         if max_priority is not None:
             row = self._conn.execute(
-                """
+                f"""
                 SELECT t.id FROM monitor_tasks t
                 INNER JOIN (
                   SELECT creator_id, MIN(created_at) AS min_created
                   FROM monitor_tasks
                   WHERE status = 'pending'
-                    AND priority >= ? AND priority <= ?
+                    AND priority >= ? AND priority <= ?{exclude_inner}
                   GROUP BY creator_id
                 ) heads
                   ON t.creator_id = heads.creator_id
                  AND t.created_at = heads.min_created
                 WHERE t.status = 'pending'
-                  AND t.priority >= ? AND t.priority <= ?
+                  AND t.priority >= ? AND t.priority <= ?{exclude_outer}
                 ORDER BY t.priority ASC, t.created_at ASC
                 LIMIT 1
                 """,
-                (min_priority, max_priority, min_priority, max_priority),
+                (min_priority, max_priority, *exclude_params, min_priority, max_priority, *exclude_params),
             ).fetchone()
         else:
             row = self._conn.execute(
-                """
+                f"""
                 SELECT t.id FROM monitor_tasks t
                 INNER JOIN (
                   SELECT creator_id, MIN(created_at) AS min_created
                   FROM monitor_tasks
-                  WHERE status = 'pending' AND priority >= ?
+                  WHERE status = 'pending' AND priority >= ?{exclude_inner}
                   GROUP BY creator_id
                 ) heads
                   ON t.creator_id = heads.creator_id
                  AND t.created_at = heads.min_created
-                WHERE t.status = 'pending' AND t.priority >= ?
+                WHERE t.status = 'pending' AND t.priority >= ?{exclude_outer}
                 ORDER BY t.priority ASC, t.created_at ASC
                 LIMIT 1
                 """,
-                (min_priority, min_priority),
+                (min_priority, *exclude_params, min_priority, *exclude_params),
             ).fetchone()
         return str(row["id"]) if row else None
 
@@ -1635,6 +1653,7 @@ class MonitorTaskRepo:
         limit: int = 1,
         max_priority: int | None = None,
         min_priority: int = 0,
+        exclude_creator_ids: frozenset[str] | None = None,
     ) -> list[MonitorTaskRow]:
         claimed: list[MonitorTaskRow] = []
         now = datetime.now(timezone.utc).isoformat()
@@ -1642,6 +1661,7 @@ class MonitorTaskRepo:
             task_id = self._select_fair_pending_id(
                 min_priority=min_priority,
                 max_priority=max_priority,
+                exclude_creator_ids=exclude_creator_ids,
             )
             if not task_id:
                 break
@@ -1778,8 +1798,26 @@ class MonitorTaskRepo:
         self._conn.commit()
         return count
 
+    def release_running_content_tasks_for_creators(self, creator_ids: list[str]) -> int:
+        """Yield Playwright for live lane: reset running content tasks for given creators."""
+        if not creator_ids:
+            return 0
+        placeholders = ",".join("?" * len(creator_ids))
+        cur = self._conn.execute(
+            f"""
+            UPDATE monitor_tasks
+            SET status = 'pending', started_at = NULL, error = NULL
+            WHERE status = 'running'
+              AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
+              AND creator_id IN ({placeholders})
+            """,
+            tuple(creator_ids),
+        )
+        self._conn.commit()
+        return cur.rowcount
+
     def release_running_content_tasks(self) -> int:
-        """Yield Playwright to live lane while sessions are actively recording."""
+        """Release all running content tasks (legacy; prefer per-creator)."""
         cur = self._conn.execute(
             """
             UPDATE monitor_tasks
