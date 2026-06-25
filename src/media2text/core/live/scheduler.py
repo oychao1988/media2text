@@ -22,6 +22,7 @@ from media2text.core.live.segment_process_pool import (
 from media2text.core.live.segment_watcher import SegmentWatcher, set_segment_watcher
 from media2text.core.live.probe import run_live_probe_tick
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
+from media2text.core.monitor.errors import ReconcilerDisabledError
 from media2text.core.monitor.intervals import (
     DISTILL_DRAIN_INTERVAL_SEC,
     bilibili_archive_poll_sec,
@@ -207,10 +208,7 @@ class MonitorScheduler:
 
     def start(self, *, creator_id: str | None = None) -> None:
         if not self._cfg.monitor.reconciler_enabled:
-            log.warning(
-                "reconciler_disabled_legacy_path",
-                hint="set monitor.reconciler_enabled=true; legacy probe enqueue removed",
-            )
+            raise ReconcilerDisabledError()
         live_poll = live_poll_interval(self._cfg)
         log.info(
             "monitor_watch_daemon_started",

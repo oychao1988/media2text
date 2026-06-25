@@ -91,7 +91,7 @@ class MonitorWatcher:
             conn=self._conn,
             creator_id=creator_id,
         )
-        self._drain_monitor_tasks_sync()
+        self._drain_priority_zero_tasks_sync()
         errors = (
             list(live_result.get("errors") or [])
             + list(vod_result.get("errors") or [])
@@ -203,30 +203,31 @@ class MonitorWatcher:
             "interval_sec": self._cfg.platforms.bilibili.dynamic_poll_interval_sec,
         }
 
-    def _drain_monitor_tasks_sync(self, *, max_rounds: int = 100) -> None:
-        """Single-shot monitor watch: drain enqueued tasks inline."""
+    def _drain_priority_zero_tasks_sync(self, *, max_rounds: int = 10) -> None:
+        """Single-shot debug: reconcile + inline drain priority=0 (finalize) only."""
+        if self._cfg.monitor.reconciler_enabled:
+            from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
+
+            reconcile_live(self._cfg, self._conn, watcher=self)
+            reconcile_content(self._cfg, self._conn, watcher=self)
         repo = MonitorTaskRepo(self._conn)
         for _ in range(max_rounds):
             repo.reset_stale_running(older_than_sec=self._cfg.monitor.stale_running_sec)
-            claimed = repo.claim_pending(limit=self._cfg.monitor.executor_max_parallel)
+            claimed = repo.claim_pending(
+                limit=self._cfg.monitor.executor_max_parallel,
+                max_priority=0,
+                min_priority=0,
+            )
             if not claimed:
                 break
             for task in claimed:
-                if task.priority <= 0:
-                    conn = self._conn
-                else:
-                    conn = open_db(self._cfg)
-                try:
-                    run_monitor_task(
-                        self._cfg,
-                        conn,
-                        task_id=task.id,
-                        watcher=self,
-                        notify=self._notify,
-                    )
-                finally:
-                    if conn is not self._conn:
-                        conn.close()
+                run_monitor_task(
+                    self._cfg,
+                    self._conn,
+                    task_id=task.id,
+                    watcher=self,
+                    notify=self._notify,
+                )
 
     def _run_pipeline_tick(
         self,
