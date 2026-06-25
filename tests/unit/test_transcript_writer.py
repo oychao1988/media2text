@@ -109,3 +109,28 @@ def test_load_merged_live_transcript_checkpoint_and_partial(tmp_path: Path) -> N
     assert payload["text"] == "段一\n段二"
     assert payload["segments"][0]["text"] == "段一"
     assert payload["segments"][1]["text"] == "段二"
+
+
+def test_load_merged_live_transcript_skips_corrupt_binary_partial(tmp_path: Path) -> None:
+    media = tmp_path / "20260603T120000Z.flv"
+    media.write_bytes(b"x")
+    partial = media.with_suffix(".transcript.partial.json")
+    # Mimics mid-write or misnamed binary sidecar (0x90 is common in fMP4/binary).
+    partial.write_bytes(b'{"segments": [{"text": "ok"}' + bytes([0x90]) + b"}]}")
+    final = media.with_suffix(".transcript.json")
+    final.write_text(
+        json.dumps({"segments": [{"start": 0.0, "end": 1.0, "text": "final"}]}),
+        encoding="utf-8",
+    )
+
+    assert load_merged_live_transcript(media) is None
+
+
+def test_seal_partial_transcript_ignores_corrupt_binary(tmp_path: Path) -> None:
+    media = tmp_path / "20260603T120000Z.flv"
+    media.write_bytes(b"x")
+    partial = media.with_suffix(".transcript.partial.json")
+    partial.write_bytes(b"\x90" * 64)
+
+    assert seal_partial_transcript(media) is None
+

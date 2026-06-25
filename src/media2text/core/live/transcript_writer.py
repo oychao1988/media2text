@@ -14,6 +14,7 @@ from media2text.core.transcribe.base import TranscriptResult, TranscriptSegment
 from media2text.core.transcribe.whisper import write_transcript_outputs
 
 _SEG_CHECKPOINT_RE = re.compile(r"\.transcript\.seg(\d+)\.json$")
+_SIDECAR_READ_ERRORS = (OSError, json.JSONDecodeError, UnicodeDecodeError)
 
 
 def hls_transcript_anchor_path(media_path: Path) -> Path | None:
@@ -134,7 +135,7 @@ def partial_segment_end_from_media(media_path: Path) -> float | None:
             continue
         try:
             payload = json.loads(partial.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except _SIDECAR_READ_ERRORS:
             continue
         if not isinstance(payload, dict):
             continue
@@ -191,7 +192,7 @@ def _read_sidecar_payload(path: Path) -> dict[str, Any] | None:
         return None
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except _SIDECAR_READ_ERRORS:
         return None
     return data if isinstance(data, dict) else None
 
@@ -258,7 +259,7 @@ def merge_transcript_checkpoints(
     for path in checkpoint_paths:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except _SIDECAR_READ_ERRORS:
             continue
         merged.extend(_segments_from_payload(payload))
         resolved_engine = str(payload.get("engine") or resolved_engine)
@@ -294,7 +295,7 @@ def count_transcript_segments(media_path: str | Path | None) -> int | None:
                 continue
             try:
                 payload = json.loads(sidecar.read_text(encoding="utf-8"))
-            except (OSError, json.JSONDecodeError):
+            except _SIDECAR_READ_ERRORS:
                 continue
             segments = payload.get("segments")
             if isinstance(segments, list):
@@ -428,7 +429,7 @@ def seal_partial_transcript(media_path: Path) -> tuple[Path, Path] | None:
 
     try:
         payload = json.loads(partial_path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except _SIDECAR_READ_ERRORS:
         return None
 
     segments: list[TranscriptSegment] = []
