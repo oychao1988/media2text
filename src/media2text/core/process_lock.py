@@ -43,10 +43,14 @@ def acquire_workspace_lock(lock_path: Path) -> int:
     except FileExistsError as exc:
         raise LockError(f"lock already held: {lock_path}") from exc
     if lock_path.name == ".monitor-watch.lock":
-        from media2text.core.runtime.monitor_lock import write_lock_record
+        from media2text.core.runtime.monitor_lock import (
+            is_embedded_monitor_pid,
+            write_lock_record,
+        )
 
         os.close(fd)
-        write_lock_record(lock_path, pid=os.getpid(), mode="embedded")
+        mode = "embedded" if is_embedded_monitor_pid(os.getpid()) else "external"
+        write_lock_record(lock_path, pid=os.getpid(), mode=mode)
         return -1
     os.write(fd, str(os.getpid()).encode())
     return fd
