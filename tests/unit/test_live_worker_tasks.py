@@ -244,3 +244,66 @@ def test_live_worker_core_uses_watcher_conn_not_worker_conn(tmp_path, monkeypatc
 
     mock_core.assert_called_once()
     assert mock_core.call_args.args[0] is watcher._conn
+
+
+def test_prepare_not_blocked_by_executor_playwright_lock(tmp_path, monkeypatch) -> None:
+    """MH-3: prepare must not acquire executor-level playwright_exclusive."""
+    import threading
+
+    from media2text.core.playwright_env import playwright_exclusive
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAprep2",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    live_info = {
+        "room_id": "room2",
+        "is_live": True,
+        "stream_flv_url": "https://example.com/live2.flv",
+    }
+    task_id = _enqueue_and_claim(
+        conn,
+        creator_id=cid,
+        task_type="prepare_live_recording",
+        payload={"live_info": live_info},
+    )
+
+    mock_proc = MagicMock()
+    mock_proc.pid = 5252
+    mock_proc.poll.return_value = None
+    mock_proc.stderr = None
+
+    held = threading.Event()
+    release = threading.Event()
+
+    def hold_playwright():
+        with playwright_exclusive():
+            held.set()
+            release.wait(timeout=5.0)
+
+    holder = threading.Thread(target=hold_playwright, daemon=True)
+    holder.start()
+    assert held.wait(timeout=2.0), "playwright lock should be held by content task"
+
+    watcher = MonitorWatcher(cfg)
+    try:
+        with patch(
+            "media2text.core.live.recording.record_stream_copy",
+            return_value=mock_proc,
+        ):
+            result = run_monitor_task(cfg, conn, task_id=task_id, watcher=watcher)
+    finally:
+        release.set()
+        holder.join(timeout=2.0)
+
+    assert result["ok"] is True
+    assert "started" in result
+    active = LiveSessionRepo(conn).get_active_for_creator(cid)
+    assert active is not None
+    assert active.ffmpeg_pid == 5252
