@@ -338,3 +338,54 @@ def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch)
     monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
     loop.tick_once(conn)
     assert order.index("post") < order.index("content")
+
+
+def test_task_scheduler_defers_post_process_when_live_pending(
+    tmp_path, monkeypatch
+) -> None:
+    from unittest.mock import MagicMock
+    import threading
+
+    from media2text.core.config import MonitorConfig
+    from media2text.core.live.task_scheduler import TaskSchedulerLoop
+    from media2text.core.monitor.watcher import MonitorWatcher
+    from media2text.core.workspace import open_db
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    conn = open_db(cfg)
+    cid = CreatorRepo(conn).add(
+        sec_uid="MS4wLjABAAAAdeferpp",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+    )
+    MonitorTaskRepo(conn).enqueue(
+        creator_id=cid,
+        task_type="prepare_live_recording",
+        dedupe_key=f"prepare:{cid}",
+        priority=1,
+    )
+    watcher = MonitorWatcher(cfg)
+    pool = MagicMock()
+    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
+    pool.drain_pending = MagicMock(return_value=0)
+    post_pool = MagicMock()
+    stop = threading.Event()
+    loop = TaskSchedulerLoop(
+        cfg,
+        watcher,
+        live_pool=pool,
+        content_pool=pool,
+        post_pool=post_pool,
+        stop=stop,
+    )
+    import media2text.core.live.task_scheduler as task_scheduler_mod
+
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_live", lambda *a, **k: 0)
+    monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
+    loop.tick_once(conn)
+    post_pool.drain_pending.assert_not_called()
+
