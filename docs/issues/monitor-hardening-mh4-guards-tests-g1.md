@@ -74,3 +74,5 @@ ruff check src/media2text/cli/monitor.py src/media2text/core/monitor/watcher.py 
 
 - **依赖**：MH-1、MH-2、MH-3 合并后开 PR
 - Epic 验收：`python scripts/epic_verify.py monitor-hardening-2026-06-26`
+
+<!-- CI: integration tests ~60s in issue_verify -->
