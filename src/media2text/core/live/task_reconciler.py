@@ -6,6 +6,11 @@ from datetime import datetime, timezone
 
 from media2text.core.config import AppConfig
 from media2text.core.desktop.auto_record import effective_auto_record
+from media2text.core.monitor.intervals import (
+    bilibili_archive_poll_sec,
+    bilibili_dynamic_poll_sec,
+    vod_poll_interval_sec,
+)
 from media2text.core.storage.models import CreatorLiveSnapshotRow, LiveSessionRow
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, MonitorTaskRepo
 
@@ -15,10 +20,6 @@ def _parse_iso(value: str) -> datetime | None:
         return datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
         return None
-
-
-def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
-    return cfg.platforms.bilibili.archive_poll_interval_sec
 
 
 def _offline_confirmed(cfg: AppConfig, row: LiveSessionRow) -> bool:
@@ -263,7 +264,7 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                 ensured += 1
                 if not log_only:
                     creators_repo.schedule_vod_poll(
-                        creator.id, cfg.monitor.vod_poll_interval_sec
+                        creator.id, vod_poll_interval_sec(cfg)
                     )
 
         if creator.sync_needs_download:
@@ -304,7 +305,7 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                 ensured += 1
                 if not log_only:
                     creators_repo.schedule_archive_poll(
-                        creator.id, _bilibili_archive_poll_sec(cfg)
+                        creator.id, bilibili_archive_poll_sec(cfg)
                     )
 
         if (
@@ -324,7 +325,7 @@ def reconcile_content(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
                 if not log_only:
                     creators_repo.schedule_dynamic_poll(
                         creator.id,
-                        cfg.platforms.bilibili.dynamic_poll_interval_sec,
+                        bilibili_dynamic_poll_sec(cfg),
                     )
 
     return ensured

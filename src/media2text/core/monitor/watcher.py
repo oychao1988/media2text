@@ -18,6 +18,7 @@ from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatche
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo
 from media2text.core.live.scheduler import MonitorScheduler
+from media2text.core.monitor.intervals import bilibili_archive_poll_sec
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -59,10 +60,6 @@ def _merge_live_results(douyin: dict, bilibili: dict) -> dict:
     if finalized:
         payload["finalized"] = finalized
     return payload
-
-
-def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
-    return cfg.platforms.bilibili.archive_poll_interval_sec
 
 
 class MonitorWatcher:
@@ -281,5 +278,5 @@ class MonitorWatcher:
             "auth_required": False,
         }
         if platform == "bilibili":
-            payload["interval_sec"] = _bilibili_archive_poll_sec(self._cfg)
+            payload["interval_sec"] = bilibili_archive_poll_sec(self._cfg)
         return payload

@@ -87,6 +87,52 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
     assert len(run_counts) >= 2
 
 
+def test_slow_tick_waits_until_next_due(tmp_path, monkeypatch) -> None:
+    """SlowTick sleeps until vod_due_at, not a fixed 1s loop."""
+    from datetime import datetime, timedelta, timezone
+
+    from media2text.core.storage.repos import CreatorRepo
+    from media2text.core.workspace import open_db
+
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    cid = repo.add(
+        sec_uid="MS4wLjABAAAAslowdue",
+        profile_url="https://example.com/u",
+        monitor_enabled=True,
+        platform="douyin",
+    )
+    repo.set_content_sync_enabled(cid, enabled=True)
+    future = (datetime.now(timezone.utc) + timedelta(seconds=55)).isoformat()
+    repo.set_vod_due(cid, future)
+    conn.close()
+
+    watcher = MonitorWatcher(cfg)
+    stop = threading.Event()
+    waits: list[float] = []
+
+    def record_wait(timeout=None):
+        if timeout is not None:
+            waits.append(float(timeout))
+        stop.set()
+        return True
+
+    stop.wait = record_wait  # type: ignore[method-assign]
+
+    slow = SlowTickLoop(watcher, cfg, MagicMock(), creator_id=None, stop=stop)
+    with (
+        patch.object(watcher, "_run_vod_tick", return_value={}),
+        patch.object(watcher, "_run_archive_tick", return_value={}),
+        patch.object(watcher, "_run_dynamic_tick", return_value={}),
+    ):
+        slow._run()
+
+    assert len(waits) == 1
+    assert 50.0 <= waits[0] <= 56.0
+
+
 def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(

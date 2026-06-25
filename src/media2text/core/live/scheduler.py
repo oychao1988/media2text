@@ -22,20 +22,20 @@ from media2text.core.live.segment_process_pool import (
 from media2text.core.live.segment_watcher import SegmentWatcher, set_segment_watcher
 from media2text.core.live.probe import run_live_probe_tick
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
+from media2text.core.monitor.intervals import (
+    DISTILL_DRAIN_INTERVAL_SEC,
+    bilibili_archive_poll_sec,
+    bilibili_dynamic_poll_sec,
+    compute_slow_tick_sleep_sec,
+    live_poll_interval,
+    vod_poll_interval_sec,
+)
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
     from media2text.core.monitor.watcher import MonitorWatcher
 
 log = structlog.get_logger()
-
-
-def _bilibili_archive_poll_sec(cfg: AppConfig) -> int:
-    return cfg.platforms.bilibili.archive_poll_interval_sec
-
-
-def _live_poll_interval(cfg: AppConfig) -> int:
-    return cfg.live.live_poll_interval_sec or cfg.monitor.live_poll_interval_sec
 
 
 class LiveTickLoop:
@@ -71,7 +71,7 @@ class LiveTickLoop:
 
     def _run(self) -> None:
         NotifyDaemonGuard.enter()
-        live_poll = _live_poll_interval(self._cfg)
+        live_poll = live_poll_interval(self._cfg)
         while not self._stop.is_set():
             if self._on_tick is not None:
                 self._on_tick()
@@ -146,7 +146,7 @@ class SlowTickLoop:
             finally:
                 conn.close()
             now_distill = time.time()
-            if now_distill - self._last_distill >= 300:
+            if now_distill - self._last_distill >= DISTILL_DRAIN_INTERVAL_SEC:
                 from media2text.agent.creator_distill.pool import resolve_distill_workers
 
                 conn = open_db(self._cfg)
@@ -159,7 +159,16 @@ class SlowTickLoop:
                 finally:
                     conn.close()
                 self._last_distill = now_distill
-            self._stop.wait(timeout=1.0)
+            sleep_conn = open_db(self._cfg)
+            try:
+                sleep_sec = compute_slow_tick_sleep_sec(
+                    self._cfg,
+                    sleep_conn,
+                    creator_id=self._creator_id,
+                )
+            finally:
+                sleep_conn.close()
+            self._stop.wait(timeout=sleep_sec)
 
 
 class MonitorScheduler:
@@ -202,14 +211,13 @@ class MonitorScheduler:
                 "reconciler_disabled_legacy_path",
                 hint="set monitor.reconciler_enabled=true; legacy probe enqueue removed",
             )
-        live_poll = _live_poll_interval(self._cfg)
-        bcfg = self._cfg.platforms.bilibili
+        live_poll = live_poll_interval(self._cfg)
         log.info(
             "monitor_watch_daemon_started",
             live_poll=live_poll,
-            vod_poll=self._cfg.monitor.vod_poll_interval_sec,
-            archive_poll=_bilibili_archive_poll_sec(self._cfg),
-            dynamic_poll=bcfg.dynamic_poll_interval_sec,
+            vod_poll=vod_poll_interval_sec(self._cfg),
+            archive_poll=bilibili_archive_poll_sec(self._cfg),
+            dynamic_poll=bilibili_dynamic_poll_sec(self._cfg),
             post_process_poll=self._cfg.live.post_process_poll_interval_sec,
             monitor_executor_parallel=self._cfg.monitor.live_worker_max_parallel,
             content_executor_parallel=self._cfg.monitor.executor_max_parallel,
