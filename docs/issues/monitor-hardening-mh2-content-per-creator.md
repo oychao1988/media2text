@@ -46,10 +46,8 @@ Epic：**Monitor Hardening**（2026-06-26）
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/test_task_scheduler.py tests/unit/test_monitor_supervisor.py \
-  tests/unit/test_task_reconciler.py -v
-ruff check src/media2text/core/live/task_scheduler.py \
-  src/media2text/core/runtime/supervisor.py src/media2text/core/storage/repos.py
+pytest tests/unit/test_task_scheduler.py tests/unit/test_monitor_supervisor.py tests/unit/test_task_reconciler.py -v
+ruff check src/media2text/core/live/task_scheduler.py src/media2text/core/runtime/supervisor.py src/media2text/core/storage/repos.py
 ```
 
 ## 非目标范围
