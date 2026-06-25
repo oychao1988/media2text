@@ -7,6 +7,7 @@ from media2text.core.manifest import refresh_manifest
 from media2text.core.storage.models import LiveSessionRow
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.summarize.chunker import chunk_plain_text, chunk_segments, format_chunk
+from media2text.core.live.transcript_writer import resolve_summarize_paths
 from media2text.core.summarize.errors import SummarizeError
 from media2text.core.summarize.grouper import (
     build_suggested_groups,
@@ -40,16 +41,29 @@ def detect_media_kind(path: Path) -> str:
     return "vod"
 
 
-def _resolve_media_and_transcript(path: Path) -> tuple[Path, Path]:
+def _resolve_media_and_transcript(
+    path: Path,
+    *,
+    workspace: Path | None = None,
+) -> tuple[Path, Path]:
+    path = Path(path)
+    if not path.is_absolute():
+        path = path.resolve()
     if path.name.endswith(".transcript.json"):
         base = path.with_name(path.name.removesuffix(".transcript.json"))
         for ext in (".mp4", ".mkv", ".webm", ".flv"):
-            candidate = base.with_suffix(ext)
+            candidate = base.with_suffix(ext) if base.suffix == "" else base
             if candidate.is_file():
                 return candidate, path
         return base, path
     if path.name == "content.md":
         return path, path
+
+    if workspace is not None:
+        resolved = resolve_summarize_paths(path, workspace=workspace)
+        if resolved is not None:
+            return resolved
+
     tpath = transcript_path_for_media(path)
     return path, tpath
 
@@ -62,7 +76,10 @@ def summarize_one(
     profile: str | None = None,
     force: bool = False,
 ) -> dict:
-    media_path, transcript_path = _resolve_media_and_transcript(media)
+    media_path, transcript_path = _resolve_media_and_transcript(
+        media,
+        workspace=cfg.ensure_workspace(),
+    )
     md_out, _ = summary_paths_for_media(
         media_path if media_path.name != "content.md" else media_path
     )

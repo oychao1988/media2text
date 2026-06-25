@@ -58,6 +58,53 @@ def find_transcript_sidecar(
     return None
 
 
+def find_summary_sidecar(
+    media_path: str | Path,
+    *,
+    workspace: Path | None = None,
+) -> Path | None:
+    """Return filesystem path to an existing summary sidecar (HLS anchor-aware)."""
+    lookup = _sidecar_lookup_media_path(media_path, workspace=workspace)
+    for candidate in transcript_sidecar_media_paths(lookup):
+        sidecar = candidate.with_suffix(".summary.md")
+        paths_to_try: list[Path] = [sidecar]
+        if workspace is not None and not sidecar.is_absolute():
+            paths_to_try.insert(0, workspace / sidecar)
+        for path in paths_to_try:
+            if path.is_file():
+                return path
+    return None
+
+
+def write_media_for_transcript(transcript_path: Path) -> Path:
+    """Media anchor used when writing `.summary.md` for *transcript_path*."""
+    stem_path = transcript_path.with_name(
+        transcript_path.name.removesuffix(".transcript.json")
+    )
+    for candidate in (
+        stem_path,
+        stem_path.with_suffix(".flv"),
+        stem_path.with_suffix(".mp4"),
+        stem_path.with_suffix(".mkv"),
+        stem_path.with_suffix(".webm"),
+    ):
+        if candidate.is_file():
+            return candidate
+    return stem_path
+
+
+def resolve_summarize_paths(
+    media_path: str | Path,
+    *,
+    workspace: Path | None = None,
+) -> tuple[Path, Path] | None:
+    """Return (write_media, transcript_path) for summarize when sidecar exists."""
+    transcript = find_transcript_sidecar(media_path, workspace=workspace)
+    if transcript is None:
+        return None
+    return write_media_for_transcript(transcript), transcript
+
+
 def _sidecar_lookup_media_path(
     media_path: str | Path,
     *,

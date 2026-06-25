@@ -73,6 +73,37 @@ def test_hls_session_skips_whole_file_upload(tmp_path, monkeypatch) -> None:
     assert "upload_completed" not in result
 
 
+def test_hls_post_process_detects_anchor_transcript(tmp_path, monkeypatch) -> None:
+    cfg, conn, job_id = _seed_hls_job(tmp_path, monkeypatch)
+    session_dir = tmp_path / "data/creators/MS4wLjABAAAAhls/live/20260609T120000Z"
+    master = session_dir / "master.m3u8"
+    master.with_suffix(".transcript.json").unlink(missing_ok=True)
+    anchor_transcript = session_dir / "20260609T120000Z.transcript.json"
+    anchor_transcript.write_text(
+        '{"engine":"deepgram","text":"hi","segments":[]}',
+        encoding="utf-8",
+    )
+    notify = MagicMock()
+    with (
+        patch(
+            "media2text.core.summarize.hook.maybe_summarize_after_transcribe",
+            return_value={"summarized": True},
+        ) as mock_summarize,
+        patch(
+            "media2text.core.live.post_process.maybe_upload_live_to_aliyundrive",
+        ),
+        patch(
+            "media2text.core.live.post_process.upload_summary_sidecars_if_needed",
+            return_value={},
+        ),
+    ):
+        result = run_post_process_job(cfg, conn, job_id=job_id, notify=notify)
+
+    assert result.get("ok") is True
+    assert result.get("transcribed") is True
+    mock_summarize.assert_called_once()
+
+
 def test_hls_post_process_logs_whole_file_upload_deprecation(
     tmp_path, monkeypatch
 ) -> None:

@@ -458,7 +458,7 @@ def _resolve_summary_path(
     if manifest_entry and manifest_entry.get("summary_path"):
         raw = str(manifest_entry["summary_path"])
     else:
-        raw = _summary_sidecar_path(media_path)
+        raw = _summary_sidecar_path(media_path, workspace=workspace)
     return _resolve_sidecar_rel(workspace, raw)
 
 

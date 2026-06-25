@@ -3,8 +3,12 @@ import json
 import pytest
 
 from media2text.core.config import AppConfig
-from media2text.core.live.transcript_writer import find_transcript_sidecar
-from media2text.core.manifest import _transcript_sidecar_path
+from media2text.core.live.transcript_writer import (
+    find_summary_sidecar,
+    find_transcript_sidecar,
+    resolve_summarize_paths,
+)
+from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
@@ -29,6 +33,43 @@ def test_hls_transcript_sidecar_uses_session_anchor(tmp_path) -> None:
     assert _transcript_sidecar_path(rel_master, workspace=ws) == str(
         transcript.relative_to(ws)
     )
+
+
+def test_hls_summary_sidecar_uses_session_anchor(tmp_path) -> None:
+    ws = tmp_path / "data"
+    ws.mkdir()
+    sec_uid = "MS4wLjABAAAAhls_sum"
+    live_dir = ws / "creators" / sec_uid / "live" / "20260611T110019Z"
+    live_dir.mkdir(parents=True)
+    master = live_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    transcript = live_dir / "20260611T110019Z.transcript.json"
+    transcript.write_text(json.dumps({"text": "hi", "segments": []}), encoding="utf-8")
+    summary = live_dir / "20260611T110019Z.summary.md"
+    summary.write_text("## Summary\n\nok", encoding="utf-8")
+
+    rel_master = f"creators/{sec_uid}/live/20260611T110019Z/master.m3u8"
+    assert find_summary_sidecar(rel_master, workspace=ws) == summary
+    assert _summary_sidecar_path(rel_master, workspace=ws) == str(
+        summary.relative_to(ws)
+    )
+
+
+def test_resolve_summarize_paths_for_hls_master(tmp_path) -> None:
+    ws = tmp_path / "data"
+    ws.mkdir()
+    live_dir = ws / "creators/sec/live/20260622T065310Z"
+    live_dir.mkdir(parents=True)
+    master = live_dir / "master.m3u8"
+    master.write_text("#EXTM3U\n", encoding="utf-8")
+    transcript = live_dir / "20260622T065310Z.transcript.json"
+    transcript.write_text(json.dumps({"text": "hello", "segments": []}), encoding="utf-8")
+
+    resolved = resolve_summarize_paths(master, workspace=ws)
+    assert resolved is not None
+    write_media, transcript_path = resolved
+    assert transcript_path == transcript
+    assert write_media.name == "20260622T065310Z"
 
 
 def test_sessions_list_marks_hls_transcript(api_client, workspace) -> None:

@@ -11,10 +11,10 @@ from media2text.api.security import workspace_rel
 from media2text.api.services.history_media import _resolve_media_path
 from media2text.api.services.sessions_list import _load_manifest, _manifest_live_by_id, _manifest_vod_by_id
 from media2text.api.services.transcript import (
-    read_summary_text,
     read_transcript_for_session,
     read_transcript_payload,
 )
+from media2text.core.live.transcript_writer import find_summary_sidecar
 from media2text.core.storage.repos import AwemeRepo, CreatorRepo, LiveSessionRepo
 
 HistoryKind = Literal["live", "vod"]
@@ -98,9 +98,12 @@ def read_history_summary(
     )
     if media is None:
         raise HTTPException(status_code=404, detail="history item not found")
+    summary_path = find_summary_sidecar(media, workspace=workspace)
+    if summary_path is None:
+        raise HTTPException(status_code=404, detail="summary not found")
     try:
-        text = read_summary_text(media)
-    except HTTPException:
-        raise HTTPException(status_code=404, detail="summary not found") from None
-    rel = workspace_rel(workspace, str(media.with_suffix(".summary.md")))
+        text = summary_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise HTTPException(status_code=500, detail="summary read failed") from exc
+    rel = workspace_rel(workspace, str(summary_path))
     return {"ok": True, "text": text, "summary_path": rel}

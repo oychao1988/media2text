@@ -6,7 +6,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from media2text.core.live.segment_manifest import SegmentManifestRepo
-from media2text.core.live.transcript_writer import find_transcript_sidecar, _sidecar_lookup_media_path
+from media2text.core.live.transcript_writer import (
+    find_summary_sidecar,
+    find_transcript_sidecar,
+    _sidecar_lookup_media_path,
+)
 from media2text.core.storage.repos import AwemeRepo, CloudUploadRepo, CreatorRepo, DynamicRepo
 
 
@@ -41,15 +45,26 @@ def _transcript_sidecar_path(
     return str(found)
 
 
-def _summary_sidecar_path(media_path: str | None) -> str | None:
+def _summary_sidecar_path(
+    media_path: str | None,
+    *,
+    workspace: Path | None = None,
+) -> str | None:
     if not media_path:
         return None
     p = Path(media_path)
     if p.name == "content.md":
         summary = p.with_name("content.summary.md")
-    else:
-        summary = p.with_suffix(".summary.md")
-    return str(summary) if summary.is_file() else None
+        return str(summary) if summary.is_file() else None
+    found = find_summary_sidecar(media_path, workspace=workspace)
+    if found is None:
+        return None
+    if workspace is not None:
+        try:
+            return str(found.relative_to(workspace.resolve()))
+        except ValueError:
+            return str(found)
+    return str(found)
 
 
 def _playback_mode_from_path(local_path: str | None) -> str:
@@ -159,7 +174,7 @@ def refresh_manifest(
             "title": row.title,
             "media_path": row.local_path,
             "transcript_path": row.transcript_path,
-            "summary_path": _summary_sidecar_path(row.local_path),
+            "summary_path": _summary_sidecar_path(row.local_path, workspace=workspace),
             "status": row.sync_status if row.transcribe_status != "done" else "transcribed",
         }
         upload = cloud_uploads.find_done_by_local_path(workspace, row.local_path)
@@ -190,7 +205,10 @@ def refresh_manifest(
                 sidecar_media,
                 workspace=workspace,
             ),
-            "summary_path": _summary_sidecar_path(sidecar_media or local_path),
+            "summary_path": (
+                _summary_sidecar_path(sidecar_media, workspace=workspace)
+                or _summary_sidecar_path(local_path, workspace=workspace)
+            ),
             "status": data.get("status"),
         }
         if data.get("pipeline_mode"):
