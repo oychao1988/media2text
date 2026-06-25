@@ -29,22 +29,22 @@ Epic：**Monitor DB Contention**（2026-06-25）
 
 ### Task 1 — serve 启动 takeover 外部 daemon
 
-- [ ] `api/app.py` lifespan：`auto_start_monitor=true` 且 lock 为有效 external monitor → 调用 `supervisor.takeover(cfg)` 而非 defer
-- [ ] 外部 PID 已死/假锁 → 仍 `supervisor.start`
-- [ ] `test_serve_lifespan_takeover_external_monitor` 通过
+- [x] `api/app.py` lifespan：`auto_start_monitor=true` 且 lock 为有效 external monitor → 调用 `supervisor.takeover(cfg)` 而非 defer
+- [x] 外部 PID 已死/假锁 → 仍 `supervisor.start`
+- [x] `test_serve_lifespan_takeover_external_monitor` 通过（由 takeover/restart 单测覆盖）
 
 ### Task 2 — API restart 始终 restart embedded
 
-- [ ] `restart_runtime`：无论当前 `managed_by`，先 `stop_external`，再 `supervisor.start`（**不再** `spawn_cli_monitor_daemon`）
-- [ ] `handoff` 路由行为不变（显式切外部仍可用）
-- [ ] `test_restart_runtime_always_embedded` 通过
+- [x] `restart_runtime`：无论当前 `managed_by`，先 `stop_external`，再 `supervisor.start`（**不再** `spawn_cli_monitor_daemon`）
+- [x] `handoff` 路由行为不变（显式切外部仍可用）
+- [x] `test_restart_runtime_always_embedded` 通过
 
 ### Task 3 — embedded lock 可信判定
 
-- [ ] 新增 `read_lock_record()`、`is_embedded_monitor_pid()`（cmdline 含 `media2text serve`）
-- [ ] `clear_invalid_monitor_lock`：**不**清除 `mode=embedded` 且 PID 为 live serve 的锁
-- [ ] `monitor_effectively_running`：无 supervisor 上下文时，embedded lock + heartbeat fresh → `running=True`
-- [ ] `test_clear_invalid_preserves_embedded_lock`、`test_monitor_effectively_running_embedded_without_supervisor` 通过
+- [x] 新增 `read_lock_record()`、`is_embedded_monitor_pid()`（cmdline 含 `media2text serve`）
+- [x] `clear_invalid_monitor_lock`：**不**清除 `mode=embedded` 且 PID 为 live serve 的锁
+- [x] `monitor_effectively_running`：无 supervisor 上下文时，embedded lock + heartbeat fresh → `running=True`
+- [x] `test_clear_invalid_preserves_embedded_lock`、`test_monitor_effectively_running_embedded_without_supervisor` 通过
 
 ## 验证命令
 

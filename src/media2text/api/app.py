@@ -66,7 +66,9 @@ async def lifespan(app: FastAPI):
             clear_invalid_monitor_lock(lock_path)
             supervisor.start(cfg)
         elif pid and is_monitor_watch_pid(pid):
-            log.info("monitor_auto_start_deferred_external", pid=pid)
+            result = supervisor.takeover(cfg)
+            if not result.get("ok"):
+                log.warning("monitor_auto_start_takeover_failed", detail=result)
         else:
             supervisor.start(cfg)
     stop = asyncio.Event()

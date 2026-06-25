@@ -56,7 +56,28 @@ def is_monitor_watch_pid(pid: int | None) -> bool:
     return "monitor" in lowered and "watch" in lowered
 
 
+def is_embedded_monitor_pid(pid: int | None) -> bool:
+    if pid is None or pid <= 0:
+        return False
+    if not _pid_alive(pid):
+        return False
+    cmd = _process_commandline(pid) or ""
+    lowered = cmd.lower()
+    if "media2text" not in lowered:
+        return False
+    return "serve" in lowered
+
+
+def is_trusted_monitor_lock_pid(pid: int | None) -> bool:
+    return is_monitor_watch_pid(pid) or is_embedded_monitor_pid(pid)
+
+
 def read_lock_pid(lock_path: Path) -> int | None:
+    record = read_lock_record(lock_path)
+    return record.pid if record is not None else None
+
+
+def read_lock_record(lock_path: Path) -> LockRecord | None:
     if not lock_path.is_file():
         return None
     try:
@@ -69,11 +90,13 @@ def read_lock_pid(lock_path: Path) -> int | None:
         try:
             data = json.loads(raw)
             pid = int(data["pid"])
-            return pid
+            mode = str(data.get("mode") or "external")
+            argv = str(data.get("argv") or LockRecord(pid=pid, mode=mode).argv)
+            return LockRecord(pid=pid, mode=mode, argv=argv)
         except (json.JSONDecodeError, KeyError, TypeError, ValueError):
             return None
     try:
-        return int(raw)
+        return LockRecord(pid=int(raw), mode="external")
     except ValueError:
         return None
 
@@ -94,16 +117,18 @@ def write_lock_record(lock_path: Path, *, pid: int, mode: str = "external") -> N
 
 
 def clear_invalid_monitor_lock(lock_path: Path) -> bool:
-    pid = read_lock_pid(lock_path)
-    if pid is None:
+    record = read_lock_record(lock_path)
+    if record is None:
         if lock_path.is_file():
             lock_path.unlink(missing_ok=True)
             return True
         return False
-    if not _pid_alive(pid):
+    if not _pid_alive(record.pid):
         lock_path.unlink(missing_ok=True)
         return True
-    if not is_monitor_watch_pid(pid):
+    if record.mode == "embedded" and is_embedded_monitor_pid(record.pid):
+        return False
+    if not is_trusted_monitor_lock_pid(record.pid):
         lock_path.unlink(missing_ok=True)
         return True
     return False
@@ -135,7 +160,11 @@ def monitor_effectively_running(
     if lock_pid is None:
         return False, "lock_missing"
 
-    if not is_monitor_watch_pid(lock_pid):
+    record = read_lock_record(lock_path)
+    if record is not None and record.mode == "embedded":
+        if not is_embedded_monitor_pid(lock_pid):
+            return False, "lock_pid_mismatch"
+    elif not is_monitor_watch_pid(lock_pid):
         return False, "lock_pid_mismatch"
 
     heartbeat = read_heartbeat(workspace)
