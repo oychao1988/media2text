@@ -90,6 +90,8 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 无 `--daemon` | 跑一轮后退出 |
 | `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 10s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
 
+**DB**：daemon 热路径频繁 `open_db()`；schema migration 对同一 `media2text.db` 路径在进程内只跑一次（MH-5），后续 connect 不再重复 migrate。
+
 停止：`pkill -f "media2text monitor watch"` 或 `kill $(cat data/.monitor-watch.lock)`（JSON 锁时读 `pid` 字段）。
 
 **假锁排错**：若 `daemon_lock_pid` 存在但 `daemon_lock_valid=false` / `lock_reason=lock_pid_mismatch`（典型：锁内 PID 被系统复用给非 monitor 进程），删除 `data/.monitor-watch.lock` 或开启 `desktop.auto_start_monitor` + `desktop.monitor_self_heal` 后重启 `media2text serve`；亦可 `POST /api/runtime/takeover`。`bin/monitor-watch-daemon.sh` 启动前会调用 Python 清假锁。
