@@ -987,6 +987,18 @@ class PostProcessJobRepo:
     def __init__(self, conn) -> None:
         self._conn = conn
 
+    def get_active_for_session(self, session_id: str) -> PostProcessJobRow | None:
+        row = self._conn.execute(
+            """
+            SELECT * FROM post_process_jobs
+            WHERE session_id = ? AND status IN ('pending', 'running')
+            ORDER BY created_at ASC
+            LIMIT 1
+            """,
+            (session_id,),
+        ).fetchone()
+        return PostProcessJobRow(**dict(row)) if row else None
+
     def enqueue(
         self,
         *,
@@ -1006,6 +1018,23 @@ class PostProcessJobRepo:
         )
         self._conn.commit()
         return job_id
+
+    def ensure_enqueue(
+        self,
+        *,
+        session_id: str,
+        creator_id: str,
+        mp4_path: str,
+    ) -> str:
+        """Return existing pending/running job id for session, or enqueue a new one."""
+        existing = self.get_active_for_session(session_id)
+        if existing is not None:
+            return existing.id
+        return self.enqueue(
+            session_id=session_id,
+            creator_id=creator_id,
+            mp4_path=mp4_path,
+        )
 
     def get(self, job_id: str) -> PostProcessJobRow | None:
         row = self._conn.execute(
@@ -1121,7 +1150,12 @@ class PostProcessJobRepo:
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
         cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
         rows = self._conn.execute(
-            "SELECT id, updated_at FROM post_process_jobs WHERE status = 'running'"
+            """
+            SELECT j.id, j.updated_at, j.session_id, s.status AS session_status
+            FROM post_process_jobs j
+            LEFT JOIN live_sessions s ON s.id = j.session_id
+            WHERE j.status = 'running'
+            """
         ).fetchall()
         count = 0
         now = datetime.now(timezone.utc).isoformat()
@@ -1134,14 +1168,26 @@ class PostProcessJobRepo:
                 updated = datetime.now(timezone.utc)
             if updated.timestamp() > cutoff:
                 continue
-            self._conn.execute(
-                """
-                UPDATE post_process_jobs
-                SET status = 'pending', stage = NULL, updated_at = ?
-                WHERE id = ?
-                """,
-                (now, row["id"]),
-            )
+            session_status = (row["session_status"] or "").strip().lower()
+            if session_status in ("completed", "failed"):
+                self._conn.execute(
+                    """
+                    UPDATE post_process_jobs
+                    SET status = 'failed', stage = NULL,
+                        error = 'superseded:session_terminal', updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, row["id"]),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    UPDATE post_process_jobs
+                    SET status = 'pending', stage = NULL, updated_at = ?
+                    WHERE id = ?
+                    """,
+                    (now, row["id"]),
+                )
             count += 1
         self._conn.commit()
         return count
@@ -2168,7 +2214,9 @@ class CloudUploadRepo:
                 continue
             if ts == "done" and "transcript_json" not in kinds:
                 continue
-            eligible.extend(uploads)
+            for u in uploads:
+                if u.file_kind in ("mp4", "flv"):
+                    eligible.append(u)
         eligible.sort(key=lambda r: r.uploaded_at or "")
         return eligible
 

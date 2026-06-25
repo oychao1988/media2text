@@ -269,3 +269,15 @@ Epic manifest：`python scripts/epic_verify.py live-recording-stability-2026-06-
 | LR-3 | [#327](https://github.com/oychao1988/media2text/issues/327) | [lr3-hls-stall-reconnect](./live-recording-stability-lr3-hls-stall-reconnect.md) | `issue-327-lr3-hls-stall-reconnect` | [#332](https://github.com/oychao1988/media2text/pull/332) |
 
 **合并顺序**：#325 → #326 → #327。
+
+### Monitor DB Contention（2026-06-25 直播检测未开录事故）
+
+Epic manifest：（待补 `docs/issues/epic-manifests/monitor-db-contention-2026-06-25.json`）
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| MP-1 | [#334](https://github.com/oychao1988/media2text/issues/334) | [mp1-post-process-dedupe](./monitor-db-contention-mp1-post-process-dedupe.md) | `issue-334-monitor-db-mp1-post-process-dedupe` |
+| MP-2 | [#335](https://github.com/oychao1988/media2text/issues/335) | [mp2-single-owner](./monitor-db-contention-mp2-single-owner.md) | `issue-335-monitor-db-mp2-single-owner` |
+| MP-3 | [#336](https://github.com/oychao1988/media2text/issues/336) | [mp3-live-lane-priority](./monitor-db-contention-mp3-live-lane-priority.md) | `issue-336-monitor-db-mp3-live-lane-priority` |
+
+**合并顺序**：#334 → #335 / #336（#335 与 #336 可并行，均建议基于 #334）。
