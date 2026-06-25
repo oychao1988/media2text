@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Iterator
 if TYPE_CHECKING:
     from playwright.sync_api import Browser, Playwright
 
-# monitor watch runs sync_catalog + prepare_live_recording concurrently; serialize
-# Chromium launches so stream resolve does not fail with launch_failed.
-# Increased from 1→2 in 2026-06-10 to prevent executor deadlock when one task hangs.
+# Content sync tasks use playwright_exclusive at the executor layer.
+# prepare_live_recording is live-critical and acquires Playwright only inside
+# stream resolve fallbacks (live_enter.py), not at executor dispatch (MH-3).
 _PLAYWRIGHT_EXCLUSIVE = threading.Semaphore(2)
 # Timeout for acquiring the Playwright slot — tasks that wait longer fail fast
 # so the pool stays available for live-critical tasks.

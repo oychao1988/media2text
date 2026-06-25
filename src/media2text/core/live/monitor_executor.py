@@ -41,7 +41,6 @@ _PLAYWRIGHT_TASK_TYPES = frozenset(
         "sync_catalog",
         "download",
         "sync_dynamic",
-        "prepare_live_recording",
     }
 )
 
@@ -131,9 +130,9 @@ def _core_for_task(
     creator = CreatorRepo(conn).get(task.creator_id)
     if not creator:
         raise ValueError(f"creator_not_found:{task.creator_id}")
-    # Worker `conn` is closed when run_monitor_task returns. STT/ffmpeg side
-    # effects started from live worker tasks outlive the task, so bind
-    # LiveRecordingCore to the watcher's long-lived connection.
+    # Hybrid DB conn (MH-3): repo claim/mark/fail use worker `conn` (closed when
+    # run_monitor_task returns). LiveRecordingCore binds to watcher._conn because
+    # STT/ffmpeg side effects outlive the worker task.
     return watcher.core_for_platform(watcher._conn, creator.platform)
 
 
@@ -144,6 +143,14 @@ def _run_prepare_live_recording(
     *,
     watcher: MonitorWatcher | None,
 ) -> dict[str, Any]:
+    """Dispatch prepare without executor-level playwright_exclusive (MH-3).
+
+    Nested Playwright (only when stream URL must be resolved):
+    run_prepare_live_recording → _start_recording_after_session →
+    DouyinAdapter._resolve_stream_url tries signed HTTP enter, reflow HTTP, then
+    resolve_stream_via_web_enter (playwright_exclusive inside live_enter.py).
+    Payload live_info.stream_flv_url skips resolve entirely.
+    """
     payload = json.loads(task.payload_json or "{}")
     live_info = LiveRecordingCore.live_info_from_payload(payload)
     core = _core_for_task(conn, task, watcher=watcher)

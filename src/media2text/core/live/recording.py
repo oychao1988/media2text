@@ -268,7 +268,11 @@ class LiveRecordingCore:
         *,
         live_info: LiveRoomInfo | None = None,
     ) -> dict:
-        """LW-01: resolve stream if needed, create session, spawn ffmpeg."""
+        """LW-01: resolve stream if needed, create session, spawn ffmpeg.
+
+        Not wrapped by MonitorExecutor playwright_exclusive; see MH-3 notes on
+        _run_prepare_live_recording for nested Playwright in stream resolve.
+        """
         if self._sessions.get_active_for_creator(creator_id):
             return {"skipped": "already_recording", "creator_id": creator_id}
         creator = self._creators.get(creator_id)
