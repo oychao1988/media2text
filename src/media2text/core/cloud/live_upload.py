@@ -15,6 +15,7 @@ from media2text.core.cloud.aliyundrive import (
 from media2text.core.cloud.cleanup import (
     RollingCleanupResult,
     format_rolling_cleanup_notify_body,
+    is_recycle_bin_delete_error,
     is_video_cleanup_filename,
 )
 from media2text.core.cloud.paths import sanitize_path_segment
@@ -549,11 +550,21 @@ def rolling_cleanup(
             freed += size
             free += size
         except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "aliyundrive_cleanup_failed",
-                file_name=row.file_name,
-                error=str(exc),
-            )
+            if is_recycle_bin_delete_error(exc):
+                # File already trashed; drop stale DB row and rely on recycle-bin purge.
+                repo.delete_record(row.id)
+                db_deleted.append(row.file_name)
+                deleted_count += 1
+                log.info(
+                    "aliyundrive_cleanup_stale_recycle",
+                    file_name=row.file_name,
+                )
+            else:
+                log.warning(
+                    "aliyundrive_cleanup_failed",
+                    file_name=row.file_name,
+                    error=str(exc),
+                )
 
     if (
         ad.rolling_cleanup.purge_recycle_bin

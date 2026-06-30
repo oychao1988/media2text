@@ -468,6 +468,8 @@ def delete_history_item(
         code = 404 if result.get("error") == "not_found" else 400
         if result.get("error") == "session_active":
             code = 409
+        if result.get("error") == "database_locked":
+            code = 503
         raise HTTPException(status_code=code, detail=result)
     return result
 

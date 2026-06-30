@@ -254,6 +254,44 @@ def test_rolling_cleanup_deletes_oldest_permanently(tmp_path: Path) -> None:
     client.trash.assert_not_called()
 
 
+def test_rolling_cleanup_drops_stale_recycle_bin_db_record(tmp_path: Path) -> None:
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        aliyundrive=AliyunDriveConfig(
+            enabled=True,
+            root_folder="media2text",
+            on_insufficient_space="rolling_cleanup",
+        ),
+    )
+    conn = open_db(cfg)
+    creator_id = CreatorRepo(conn).add(sec_uid="s", profile_url="https://x", platform="douyin")
+    session_id = _session(conn, creator_id, transcribe_status="done")
+    upload_id = CloudUploadRepo(conn).create(
+        session_id=session_id,
+        creator_id=creator_id,
+        platform="douyin",
+        file_name="trashed.mp4",
+        file_kind="mp4",
+        size=500,
+        pre_hash="x",
+    )
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="cloud-trashed",
+        cloud_relative_path="media2text/douyin/u/live/trashed.mp4",
+    )
+
+    client = MagicMock()
+    client.get_account_capacity.return_value = MagicMock(free=0)
+    client.delete_file_permanently.side_effect = RuntimeError(
+        '/v3/file/delete failed 400: {"code":"OperationNotSupport",'
+        '"message":"This operation is not supported. file in system recycle bin is not supported"}'
+    )
+    deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
+    assert deleted == RollingCleanupResult(db=("trashed.mp4",))
+    assert CloudUploadRepo(conn).list_for_session(session_id) == []
+
+
 def test_list_cleanup_candidates_video_only_when_no_transcript_gate(tmp_path) -> None:
     cfg = AppConfig(workspace=tmp_path / "data")
     conn = open_db(cfg)

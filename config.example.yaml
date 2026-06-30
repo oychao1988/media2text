@@ -100,7 +100,7 @@ live:
 desktop:
   api_port: 8765
   theme: light                    # light | dark; synced with localStorage m2t-desktop-theme
-  auto_start_monitor: true        # serve 启动时尝试内嵌监控；若已有 CLI daemon 则沿用终端进程
+  auto_start_monitor: true        # serve 启动时内嵌监控；若已有终端 CLI daemon 则自动停掉并接管
   monitor_self_heal: true          # serve / health loop 假锁或心跳过期时自愈 takeover
   monitor_self_heal_cooldown_sec: 120
   monitor_self_heal_max_per_hour: 3

@@ -26,7 +26,7 @@ def _enter_lifespan_patches(stack: ExitStack, *, supervisor: MagicMock):
 
 
 @pytest.mark.asyncio
-async def test_lifespan_defers_external_monitor(tmp_path, monkeypatch) -> None:
+async def test_lifespan_takeover_external_monitor(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = _cfg(tmp_path)
     ws = cfg.ensure_workspace()
@@ -44,13 +44,29 @@ async def test_lifespan_defers_external_monitor(tmp_path, monkeypatch) -> None:
         "media2text.core.runtime.monitor_lock.is_embedded_monitor_pid",
         lambda pid: False,
     )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock._pid_alive",
+        lambda pid: pid == external_pid,
+    )
     app = FastAPI()
     sup = MagicMock()
-    sup.stop.return_value = {"ok": True, "stopped": False}
+    sup.takeover.return_value = {
+        "ok": True,
+        "stop_external": {"ok": True, "stopped": True, "pid": external_pid},
+        "start": {"ok": True, "managed_by": "embedded"},
+    }
+    sup.stop.return_value = {"ok": True, "stopped": True}
     with ExitStack() as stack:
         _enter_lifespan_patches(stack, supervisor=sup)
+        stack.enter_context(
+            patch(
+                "media2text.api.services.work_queue.recover_stale_work",
+                return_value={"ok": True},
+            )
+        )
         async with lifespan(app):
             pass
+    sup.takeover.assert_called_once_with(cfg)
     sup.start.assert_not_called()
 
 
@@ -71,6 +87,10 @@ async def test_lifespan_defers_embedded_monitor(tmp_path, monkeypatch) -> None:
     )
     monkeypatch.setattr(
         "media2text.core.runtime.monitor_lock.is_embedded_monitor_pid",
+        lambda pid: pid == embedded_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock._pid_alive",
         lambda pid: pid == embedded_pid,
     )
     app = FastAPI()
@@ -95,6 +115,12 @@ async def test_lifespan_starts_embedded_when_no_monitor(tmp_path, monkeypatch) -
     sup.stop.return_value = {"ok": True, "stopped": True}
     with ExitStack() as stack:
         _enter_lifespan_patches(stack, supervisor=sup)
+        stack.enter_context(
+            patch(
+                "media2text.api.services.work_queue.recover_stale_work",
+                return_value={"ok": True},
+            )
+        )
         async with lifespan(app):
             pass
     sup.start.assert_called_once_with(cfg)
@@ -121,6 +147,12 @@ async def test_lifespan_clears_fake_lock_and_starts(tmp_path, monkeypatch) -> No
     sup.stop.return_value = {"ok": True, "stopped": True}
     with ExitStack() as stack:
         _enter_lifespan_patches(stack, supervisor=sup)
+        stack.enter_context(
+            patch(
+                "media2text.api.services.work_queue.recover_stale_work",
+                return_value={"ok": True},
+            )
+        )
         async with lifespan(app):
             pass
     sup.start.assert_called_once_with(cfg)

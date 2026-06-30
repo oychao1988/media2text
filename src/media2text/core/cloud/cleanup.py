@@ -44,3 +44,11 @@ def is_video_cleanup_filename(name: str) -> bool:
     if lower.endswith((".mp4", ".flv", ".m4s")):
         return True
     return lower.startswith("seg-") and lower.endswith(".m4s")
+
+
+def is_recycle_bin_delete_error(exc: BaseException) -> bool:
+    """True when /v3/file/delete rejects a file already in Aliyun recycle bin."""
+    msg = str(exc).lower()
+    return "recycle bin" in msg and (
+        "operationnotsupport" in msg or "not supported" in msg
+    )

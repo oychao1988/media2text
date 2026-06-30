@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import sqlite3
 import threading
 from typing import TYPE_CHECKING
 
@@ -135,6 +136,11 @@ class TaskSchedulerLoop:
             conn = open_db(self._cfg)
             try:
                 self.tick_once(conn)
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower():
+                    log.warning("task_scheduler_db_locked", error=str(exc))
+                else:
+                    raise
             finally:
                 conn.close()
             self._stop.wait(timeout=self._cfg.monitor.scheduler_interval_sec)

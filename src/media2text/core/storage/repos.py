@@ -811,7 +811,7 @@ class LiveSessionRepo:
             (session_id,),
         )
         self._conn.execute(
-            "DELETE FROM pipeline_events WHERE session_id = ?",
+            "DELETE FROM live_pipeline_events WHERE session_id = ?",
             (session_id,),
         )
         cur = self._conn.execute(

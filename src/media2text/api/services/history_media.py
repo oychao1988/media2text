@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from pathlib import Path
 from typing import Any, Literal
 
@@ -14,6 +15,7 @@ from media2text.api.services.cloud_byte_proxy import stream_cloud_file
 from media2text.core.cloud.aliyundrive import AliyunDriveClient
 from media2text.core.config import AppConfig
 from media2text.core.manifest import refresh_manifest
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import (
     AwemeRepo,
     CloudUploadRepo,
@@ -358,7 +360,6 @@ def delete_history_record(
                 if path and path.is_file():
                     _delete_sidecars(path)
                     path.unlink(missing_ok=True)
-        LiveSessionRepo(conn).delete(item_id)
     else:
         aweme = AwemeRepo(conn).get(item_id)
         if not aweme or aweme.creator_id != creator_id:
@@ -368,9 +369,21 @@ def delete_history_record(
             if path and path.is_file():
                 _delete_sidecars(path)
                 path.unlink(missing_ok=True)
-        AwemeRepo(conn).delete(item_id)
 
-    refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
+    def _persist_delete() -> None:
+        if kind == "live":
+            LiveSessionRepo(conn).delete(item_id)
+        else:
+            AwemeRepo(conn).delete(item_id)
+        refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
+
+    try:
+        with_db_lock_retry(_persist_delete)
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower():
+            return {"ok": False, "error": "database_locked"}
+        raise
+
     return {"ok": True, "kind": kind, "item_id": item_id}
 
 
