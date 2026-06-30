@@ -29,7 +29,7 @@ monitor:
   live_worker_max_parallel: 1
   live_lane_min_claim_per_tick: 1
   probe_tick_budget_sec: 0  # 0 => 2 * live_poll_interval_sec
-  probe_parallelism: 4  # parallel live probes; overrides live.scan_concurrency when set
+  probe_parallelism: 4  # parallel live probes (I/O only); snapshot writes serialized (DL-1)
   probe_http_timeout_sec: 5
   probe_guard_strict: false  # dev: true raises on probe-tick side effects
 

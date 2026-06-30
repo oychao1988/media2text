@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -12,6 +12,7 @@ pytestmark = pytest.mark.desktop
 
 
 def test_probe_live_parallel_uses_per_thread_connections(tmp_path, monkeypatch) -> None:
+    """DL-1: parallel probe persists via serial short connections (not one conn per worker)."""
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     cfg.ensure_workspace()
     conn = open_db(cfg)
@@ -39,33 +40,11 @@ def test_probe_live_parallel_uses_per_thread_connections(tmp_path, monkeypatch) 
         notify=MagicMock(),
     )
 
-    conn_ids: list[int] = []
-
-    def _observe(creator):
-        from media2text.core.workspace import open_db as _open
-
-        c = _open(cfg)
-        conn_ids.append(id(c))
-        try:
-            inner = LiveRecordingCore(
-                cfg,
-                conn=c,
-                adapter=adapter,
-                platform="douyin",
-                notify=MagicMock(),
-            )
-            return inner.observe_live_state(creator)
-        finally:
-            c.close()
-
-    with patch.object(core, "_observe_for_probe", side_effect=_observe):
-        errors, auth_required, platform_changed = core.probe_live()
+    errors, auth_required, platform_changed = core.probe_live()
 
     assert errors == []
     assert auth_required is False
     assert platform_changed is False
-    assert len(conn_ids) == 4
-    assert len(set(conn_ids)) == 4
 
     verify = open_db(cfg)
     try:

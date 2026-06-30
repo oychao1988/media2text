@@ -1,0 +1,19 @@
+# Epic verification — Monitor DB lock write path (2026-06-30 snapshot stale incident)
+# Run: python scripts/epic_verify.py monitor-db-lock-write-path-2026-06-30
+name: monitor-db-lock-write-path-2026-06-30
+acceptance_doc: docs/superpowers/verification/2026-06-30-monitor-db-lock-write-path-acceptance.md
+readme_section: Monitor DB Lock Write Path（2026-06-30）
+issues: [356, 357, 358]
+
+steps:
+  - name: issue-356
+    run: python scripts/issue_verify.py --issue 356
+
+  - name: issue-357
+    run: python scripts/issue_verify.py --issue 357
+
+  - name: issue-358
+    run: python scripts/issue_verify.py --issue 358
+
+  - name: monitor-regression
+    run: pytest tests/unit/test_probe_live_parallel.py tests/unit/test_live_db_lock_probe_snapshot.py tests/unit/test_monitor_self_heal.py tests/unit/test_task_scheduler.py -v --tb=short -q

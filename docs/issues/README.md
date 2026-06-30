@@ -293,3 +293,15 @@ Epic manifest：[monitor-hardening-2026-06-26.yaml](./epic-manifests/monitor-har
 | MH-5 | [#349](https://github.com/oychao1988/media2text/issues/349) | [mh5-open-db-migration](./monitor-hardening-mh5-open-db-migration.md) | `issue-349-monitor-hardening-mh5` | [#354](https://github.com/oychao1988/media2text/pull/354)（已合并） |
 
 **合并顺序**：#345 / #346 / #347 / #349 可并行 → **#348**（Epic 验收闸门）。验收：`python scripts/epic_verify.py monitor-hardening-2026-06-26`
+
+### Monitor DB Lock Write Path（2026-06-30 快照 stale / database is locked）
+
+Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/monitor-db-lock-write-path-2026-06-30.yaml) · 验收：[2026-06-30-monitor-db-lock-write-path-acceptance.md](../superpowers/verification/2026-06-30-monitor-db-lock-write-path-acceptance.md)
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| DL-1 | [#356](https://github.com/oychao1988/media2text/issues/356) | [dl1-probe-snapshot-writer](./monitor-db-lock-dl1-probe-snapshot-writer.md) | `issue-356-monitor-db-lock-dl1` |
+| DL-2 | [#357](https://github.com/oychao1988/media2text/issues/357) | [dl2-summarize-db-release](./monitor-db-lock-dl2-summarize-db-release.md) | `issue-357-monitor-db-lock-dl2` |
+| DL-3 | [#358](https://github.com/oychao1988/media2text/issues/358) | [dl3-external-coexist](./monitor-db-lock-dl3-external-coexist.md) | `issue-358-monitor-db-lock-dl3` |
+
+**合并顺序**：#356 → #357 → #358。
