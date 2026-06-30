@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timezone
 from pathlib import Path
 
 import structlog
@@ -123,16 +125,55 @@ def run_post_process_job(
                 return {}
             from media2text.core.summarize.hook import maybe_summarize_after_transcribe
 
+            def _now_iso() -> str:
+                return datetime.now(timezone.utc).isoformat()
+
             wconn = open_db(cfg)
+            event_id: str | None = None
             try:
                 PostProcessJobRepo(wconn).update_stage(job_id, stage="summarize")
-                with stage_event(
-                    wconn, session_id=job.session_id, stage="summarize", job_id=job_id
-                ):
-                    meta = maybe_summarize_after_transcribe(
-                        cfg,
-                        media,
-                        transcribe_meta=result,
+                event_id = PipelineEventRepo(wconn).insert(
+                    session_id=job.session_id,
+                    stage="summarize",
+                    status="started",
+                    job_id=job_id,
+                    started_at=_now_iso(),
+                )
+            finally:
+                wconn.close()
+
+            t0 = time.monotonic()
+            try:
+                meta = maybe_summarize_after_transcribe(
+                    cfg,
+                    media,
+                    transcribe_meta=result,
+                )
+            except Exception as exc:
+                duration_ms = int((time.monotonic() - t0) * 1000)
+                wconn = open_db(cfg)
+                try:
+                    if event_id:
+                        PipelineEventRepo(wconn).complete(
+                            event_id,
+                            status="failed",
+                            ended_at=_now_iso(),
+                            duration_ms=duration_ms,
+                            detail={"error": str(exc)},
+                        )
+                finally:
+                    wconn.close()
+                raise
+
+            duration_ms = int((time.monotonic() - t0) * 1000)
+            wconn = open_db(cfg)
+            try:
+                if event_id:
+                    PipelineEventRepo(wconn).complete(
+                        event_id,
+                        status="completed",
+                        ended_at=_now_iso(),
+                        duration_ms=duration_ms,
                     )
                 if meta.get("summarized") or meta.get("summary_path"):
                     refresh_manifest(wconn, sec_uid=creator.sec_uid, workspace=ws)
