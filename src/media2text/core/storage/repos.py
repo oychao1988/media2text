@@ -7,6 +7,8 @@ from pathlib import Path
 from media2text.core.platform.douyin.models import AwemeItem
 import json
 
+_VIDEO_CLEANUP_FILE_KINDS = frozenset({"mp4", "flv", "m4s", "init_mp4"})  # sync cloud.cleanup
+
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.models import (
@@ -2234,16 +2236,14 @@ class CloudUploadRepo:
             (f"{root_prefix}%",),
         ).fetchall()
         candidates = [CloudUploadRow(**dict(r)) for r in rows]
+        video_only = [c for c in candidates if c.file_kind in _VIDEO_CLEANUP_FILE_KINDS]
         if not require_transcripts:
-            return candidates
+            return video_only
         by_session: dict[str, list[CloudUploadRow]] = {}
-        for row in candidates:
+        for row in video_only:
             by_session.setdefault(row.session_id, []).append(row)
         eligible: list[CloudUploadRow] = []
         for session_id, uploads in by_session.items():
-            kinds = {u.file_kind for u in uploads}
-            if not kinds.intersection({"mp4", "flv"}):
-                continue
             session = self._conn.execute(
                 "SELECT transcribe_status FROM live_sessions WHERE id = ?",
                 (session_id,),
@@ -2251,11 +2251,15 @@ class CloudUploadRepo:
             ts = session[0] if session else None
             if ts == "failed" or ts == "pending":
                 continue
-            if ts == "done" and "transcript_json" not in kinds:
-                continue
-            for u in uploads:
-                if u.file_kind in ("mp4", "flv"):
-                    eligible.append(u)
+            if ts == "done":
+                session_kinds = {
+                    u.file_kind
+                    for u in self.list_for_session(session_id)
+                    if u.upload_status == "done"
+                }
+                if "transcript_json" not in session_kinds:
+                    continue
+            eligible.extend(uploads)
         eligible.sort(key=lambda r: r.uploaded_at or "")
         return eligible
 
