@@ -325,7 +325,12 @@ def get_history_transcript(
     if kind not in ("live", "vod"):
         raise HTTPException(status_code=422, detail="kind must be live or vod")
     payload = history_content_svc.read_history_transcript(
-        conn, workspace=cfg.ensure_workspace(), creator_id=creator_id, kind=kind, item_id=item_id
+        conn,
+        workspace=cfg.ensure_workspace(),
+        creator_id=creator_id,
+        kind=kind,
+        item_id=item_id,
+        cfg=cfg,
     )
     return {"ok": True, **payload}
 
@@ -341,7 +346,12 @@ def get_history_summary(
     if kind not in ("live", "vod"):
         raise HTTPException(status_code=422, detail="kind must be live or vod")
     return history_content_svc.read_history_summary(
-        conn, workspace=cfg.ensure_workspace(), creator_id=creator_id, kind=kind, item_id=item_id
+        conn,
+        workspace=cfg.ensure_workspace(),
+        creator_id=creator_id,
+        kind=kind,
+        item_id=item_id,
+        cfg=cfg,
     )
 
 

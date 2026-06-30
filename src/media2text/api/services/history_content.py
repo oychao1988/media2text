@@ -11,6 +11,7 @@ from media2text.api.security import workspace_rel
 from media2text.api.services.history_media import _resolve_media_path
 from media2text.api.services.sessions_list import _load_manifest, _manifest_live_by_id, _manifest_vod_by_id
 from media2text.api.services.transcript import (
+    read_summary_for_session,
     read_transcript_for_session,
     read_transcript_payload,
 )
@@ -61,6 +62,7 @@ def read_history_transcript(
     creator_id: str,
     kind: HistoryKind,
     item_id: str,
+    cfg=None,
 ) -> dict[str, Any]:
     if kind == "live":
         creator = CreatorRepo(conn).get(creator_id)
@@ -70,7 +72,7 @@ def read_history_transcript(
         if not session or session.creator_id != creator_id:
             raise HTTPException(status_code=404, detail="history item not found")
         try:
-            return read_transcript_for_session(session)
+            return read_transcript_for_session(session, cfg=cfg, conn=conn)
         except HTTPException:
             raise HTTPException(status_code=404, detail="transcript not found") from None
 
@@ -92,7 +94,20 @@ def read_history_summary(
     creator_id: str,
     kind: HistoryKind,
     item_id: str,
+    cfg=None,
 ) -> dict[str, Any]:
+    if kind == "live":
+        session = LiveSessionRepo(conn).get(item_id)
+        if not session or session.creator_id != creator_id:
+            raise HTTPException(status_code=404, detail="history item not found")
+        try:
+            text = read_summary_for_session(
+                session, cfg=cfg, conn=conn, workspace=workspace
+            )
+        except HTTPException:
+            raise HTTPException(status_code=404, detail="summary not found") from None
+        return {"ok": True, "text": text, "summary_path": None}
+
     media = resolve_history_media_path(
         conn, workspace=workspace, creator_id=creator_id, kind=kind, item_id=item_id
     )

@@ -4,19 +4,22 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from fastapi import HTTPException
 
 from media2text.core.live.transcript_writer import (
+    find_summary_sidecar,
     list_segment_checkpoints,
     live_transcript_sidecar_mtime,
     load_merged_live_transcript,
     transcript_sidecar_media_paths,
 )
-from media2text.core.live.transcript_writer import find_summary_sidecar
 from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_path
 from media2text.core.storage.models import LiveSessionRow
+
+if TYPE_CHECKING:
+    from media2text.core.config import AppConfig
 
 
 def _media_path_for_session(row: LiveSessionRow) -> Path | None:
@@ -162,12 +165,119 @@ def read_transcript_payload(media_path: Path) -> dict[str, Any]:
     raise HTTPException(status_code=404, detail="transcript not found")
 
 
-def read_transcript_for_session(row: LiveSessionRow) -> dict[str, Any]:
+def _find_cloud_sidecar_upload(
+    conn,
+    session_id: str,
+    *,
+    file_kinds: tuple[str, ...],
+    prefer_kind: str | None = None,
+) -> str | None:
+    rows = conn.execute(
+        """
+        SELECT cloud_file_id, file_kind FROM cloud_uploads
+        WHERE session_id = ? AND upload_status = 'done'
+          AND file_kind IN ({})
+        ORDER BY uploaded_at DESC
+        """.format(",".join("?" * len(file_kinds))),
+        (session_id, *file_kinds),
+    ).fetchall()
+    if not rows:
+        return None
+    if prefer_kind:
+        for file_id, kind in rows:
+            if kind == prefer_kind:
+                return str(file_id)
+    return str(rows[0][0])
+
+
+def _read_transcript_from_cloud(
+    cfg: AppConfig,
+    conn,
+    session_id: str,
+) -> dict[str, Any]:
+    from media2text.core.cloud.aliyundrive import AliyunDriveClient
+
+    if not cfg.aliyundrive.enabled:
+        raise HTTPException(status_code=404, detail="transcript not found")
+    cloud_file_id = _find_cloud_sidecar_upload(
+        conn,
+        session_id,
+        file_kinds=("transcript_json", "transcript_md"),
+        prefer_kind="transcript_json",
+    )
+    if not cloud_file_id:
+        raise HTTPException(status_code=404, detail="transcript not found")
+    token_path = cfg.aliyundrive_token_path()
+    if not token_path.is_file():
+        raise HTTPException(status_code=404, detail="transcript not found")
+    try:
+        with AliyunDriveClient.open(token_path) as client:
+            raw = client.download_bytes(cloud_file_id)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=404, detail="transcript not found") from exc
+    if raw.lstrip().startswith(b"#") or raw.lstrip().startswith(b"---"):
+        text = raw.decode("utf-8", errors="replace")
+        return {"partial": False, "segments": [], "text": text}
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=404, detail="transcript not found") from exc
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=404, detail="transcript not found")
+    segments = payload.get("segments") or []
+    return {
+        "partial": False,
+        "segments": segments if isinstance(segments, list) else [],
+        "text": str(payload.get("text") or ""),
+        "engine": payload.get("engine"),
+        "model": payload.get("model"),
+    }
+
+
+def read_transcript_for_session(
+    row: LiveSessionRow,
+    *,
+    cfg: AppConfig | None = None,
+    conn=None,
+) -> dict[str, Any]:
     """Load transcript for a session; picks the freshest sidecar across anchors."""
     media = resolve_transcript_media(row)
-    if media is None:
-        raise HTTPException(status_code=404, detail="transcript not found")
-    return read_transcript_payload(media)
+    if media is not None:
+        return read_transcript_payload(media)
+    if cfg is not None and conn is not None:
+        return _read_transcript_from_cloud(cfg, conn, row.id)
+    raise HTTPException(status_code=404, detail="transcript not found")
+
+
+def read_summary_for_session(
+    row: LiveSessionRow,
+    *,
+    cfg: AppConfig | None = None,
+    conn=None,
+    workspace: Path | None = None,
+) -> str:
+    media = _media_path_for_session(row)
+    if media is not None:
+        return read_summary_text(media, workspace=workspace)
+    if cfg is not None and conn is not None and cfg.aliyundrive.enabled:
+        from media2text.core.cloud.aliyundrive import AliyunDriveClient
+
+        cloud_file_id = _find_cloud_sidecar_upload(
+            conn,
+            row.id,
+            file_kinds=("summary_md", "summary_json"),
+            prefer_kind="summary_md",
+        )
+        if cloud_file_id:
+            token_path = cfg.aliyundrive_token_path()
+            if token_path.is_file():
+                try:
+                    with AliyunDriveClient.open(token_path) as client:
+                        raw = client.download_bytes(cloud_file_id)
+                    return raw.decode("utf-8")
+                except Exception:  # noqa: BLE001
+                    pass
+    raise HTTPException(status_code=404, detail="summary not found")
 
 
 def transcript_mtime(row: LiveSessionRow) -> float | None:

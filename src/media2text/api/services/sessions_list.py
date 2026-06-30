@@ -15,6 +15,35 @@ from media2text.core.manifest import _summary_sidecar_path, _transcript_sidecar_
 from media2text.core.storage.repos import AwemeRepo, CloudUploadRepo, CreatorRepo
 
 
+_TRANSCRIPT_CLOUD_KINDS = ("transcript_json", "transcript_md")
+_SUMMARY_CLOUD_KINDS = ("summary_md", "summary_json")
+
+
+def _cloud_sidecar_flags(conn, session_ids: set[str]) -> dict[str, dict[str, bool]]:
+    if not session_ids:
+        return {}
+    placeholders = ",".join("?" * len(session_ids))
+    rows = conn.execute(
+        f"""
+        SELECT session_id, file_kind FROM cloud_uploads
+        WHERE session_id IN ({placeholders})
+          AND upload_status = 'done'
+          AND file_kind IN (
+            'transcript_json', 'transcript_md', 'summary_md', 'summary_json'
+          )
+        """,
+        tuple(session_ids),
+    ).fetchall()
+    out: dict[str, dict[str, bool]] = {}
+    for sid, kind in rows:
+        flags = out.setdefault(str(sid), {"transcript": False, "summary": False})
+        if kind in _TRANSCRIPT_CLOUD_KINDS:
+            flags["transcript"] = True
+        if kind in _SUMMARY_CLOUD_KINDS:
+            flags["summary"] = True
+    return out
+
+
 @dataclass(frozen=True)
 class _CloudUploadIndex:
     by_session: dict[str, Any]
@@ -180,20 +209,34 @@ def _format_live_display_label(started_at: str | None) -> str:
 def _lite_has_transcript(
     m_entry: dict | None,
     *,
+    ws: Path,
+    media_path: str | None = None,
     row_transcript_path: str | None = None,
-    transcribe_status: str | None = None,
+    has_cloud_transcript: bool = False,
 ) -> bool:
     if m_entry and m_entry.get("transcript_path"):
+        if _resolve_sidecar_rel(ws, str(m_entry["transcript_path"])):
+            return True
+    if row_transcript_path and _resolve_sidecar_rel(ws, row_transcript_path):
         return True
-    if row_transcript_path:
+    if media_path and _transcript_sidecar_path(media_path, workspace=ws):
         return True
-    if transcribe_status in ("done", "completed"):
-        return True
-    return False
+    return has_cloud_transcript
 
 
-def _lite_has_summary(m_entry: dict | None) -> bool:
-    return bool(m_entry and m_entry.get("summary_path"))
+def _lite_has_summary(
+    m_entry: dict | None,
+    *,
+    ws: Path,
+    media_path: str | None = None,
+    has_cloud_summary: bool = False,
+) -> bool:
+    if m_entry and m_entry.get("summary_path"):
+        if _resolve_sidecar_rel(ws, str(m_entry["summary_path"])):
+            return True
+    if media_path and _summary_sidecar_path(media_path, workspace=ws):
+        return True
+    return has_cloud_summary
 
 
 def _lite_sidecar_rel(workspace: Path, raw: str | None) -> str | None:
@@ -210,21 +253,36 @@ def _build_live_item(
     cloud_index: _CloudUploadIndex | None = None,
     lite: bool = False,
     include_cloud: bool = True,
+    cloud_sidecars: dict[str, bool] | None = None,
 ) -> dict[str, Any]:
     sid = data["id"]
     media_path = data.get("local_path") or data.get("temp_path")
     if m_entry and m_entry.get("media_path"):
         media_path = m_entry.get("media_path") or media_path
 
+    sidecar_flags = cloud_sidecars or {}
+    has_cloud_tx = sidecar_flags.get("transcript", False)
+    has_cloud_sum = sidecar_flags.get("summary", False)
     ht = (
         _lite_has_transcript(
             m_entry,
-            transcribe_status=data.get("transcribe_status"),
+            ws=ws,
+            media_path=media_path,
+            has_cloud_transcript=has_cloud_tx,
         )
         if lite
-        else _has_transcript(ws, media_path, m_entry)
+        else (_has_transcript(ws, media_path, m_entry) or has_cloud_tx)
     )
-    hs = _lite_has_summary(m_entry) if lite else _has_summary(ws, media_path, m_entry)
+    hs = (
+        _lite_has_summary(
+            m_entry,
+            ws=ws,
+            media_path=media_path,
+            has_cloud_summary=has_cloud_sum,
+        )
+        if lite
+        else (_has_summary(ws, media_path, m_entry) or has_cloud_sum)
+    )
     cloud = (
         _merge_cloud_fields(conn, sid, data, m_entry, cloud_index=cloud_index)
         if include_cloud
@@ -328,13 +386,18 @@ def _build_vod_item(
     ht = (
         _lite_has_transcript(
             m_entry,
+            ws=ws,
+            media_path=media_path,
             row_transcript_path=row.transcript_path,
-            transcribe_status=row.transcribe_status,
         )
         if lite
         else _has_transcript(ws, media_path, m_entry)
     )
-    hs = _lite_has_summary(m_entry) if lite else _has_summary(ws, media_path, m_entry)
+    hs = (
+        _lite_has_summary(m_entry, ws=ws, media_path=media_path)
+        if lite
+        else _has_summary(ws, media_path, m_entry)
+    )
     started_at = _vod_started_at(row.create_time)
     if include_cloud:
         manifest_cloud = {
@@ -701,6 +764,9 @@ def list_creator_sessions(
         """,
         (creator_id,),
     ).fetchall()
+    live_cloud_flags = _cloud_sidecar_flags(
+        conn, {str(dict(row)["id"]) for row in rows}
+    )
 
     sessions: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for row in rows:
@@ -716,6 +782,7 @@ def list_creator_sessions(
             cloud_index=cloud_index,
             lite=use_lite,
             include_cloud=include_cloud,
+            cloud_sidecars=live_cloud_flags.get(sid),
         )
         ht = item["has_transcript"]
         hs = item["has_summary"]
@@ -870,6 +937,7 @@ def _list_creator_sessions_fast(
     vod_ids = {item_id for kind, item_id in page_refs if kind == "vod"}
     live_by_id = _fetch_live_rows_by_ids(conn, live_ids)
     vod_by_id = _fetch_aweme_rows_by_ids(conn, vod_ids)
+    live_cloud_flags = _cloud_sidecar_flags(conn, live_ids)
 
     page: list[dict[str, Any]] = []
     for kind, item_id in page_refs:
@@ -887,6 +955,7 @@ def _list_creator_sessions_fast(
                     cloud_index=None,
                     lite=True,
                     include_cloud=False,
+                    cloud_sidecars=live_cloud_flags.get(item_id),
                 )
             )
         else:

@@ -78,7 +78,7 @@ def get_transcript(
     row = LiveSessionRepo(conn).get(session_id)
     if not row:
         raise HTTPException(status_code=404, detail="session not found")
-    payload = read_transcript_for_session(row)
+    payload = read_transcript_for_session(row, cfg=cfg, conn=conn)
     return {
         "ok": True,
         "session_id": session_id,
