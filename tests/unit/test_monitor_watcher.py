@@ -2,8 +2,33 @@ import signal
 import threading
 from unittest.mock import MagicMock, patch
 
-from media2text.core.config import AppConfig, LiveConfig
+from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
 from media2text.core.monitor.watcher import MonitorWatcher, _graceful_stop_event
+
+
+def test_run_once_calls_reconcile_without_watcher_kwarg(tmp_path, monkeypatch) -> None:
+    """MH-4 run_once must not pass watcher= to reconcile_* (signature mismatch)."""
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        monitor=MonitorConfig(reconciler_enabled=True),
+    )
+    watcher = MonitorWatcher(cfg)
+    empty = {"errors": [], "auth_required": False, "platform_changed": False}
+    with (
+        patch.object(watcher._douyin_live, "run_once", return_value={"active": 0, **empty}),
+        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0, **empty}),
+        patch.object(watcher, "_run_vod_tick", return_value=empty),
+        patch.object(watcher, "_run_archive_tick", return_value=empty),
+        patch.object(watcher, "_run_dynamic_tick", return_value=empty),
+        patch("media2text.core.live.task_reconciler.reconcile_live") as reconcile_live,
+        patch("media2text.core.live.task_reconciler.reconcile_content") as reconcile_content,
+    ):
+        result = watcher.run_once()
+
+    reconcile_live.assert_called_once_with(cfg, watcher._conn)
+    reconcile_content.assert_called_once_with(cfg, watcher._conn)
+    assert result["errors"] == []
 
 
 def test_run_daemon_delegates_to_scheduler(tmp_path, monkeypatch) -> None:

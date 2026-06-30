@@ -208,8 +208,8 @@ class MonitorWatcher:
         if self._cfg.monitor.reconciler_enabled:
             from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 
-            reconcile_live(self._cfg, self._conn, watcher=self)
-            reconcile_content(self._cfg, self._conn, watcher=self)
+            reconcile_live(self._cfg, self._conn)
+            reconcile_content(self._cfg, self._conn)
         repo = MonitorTaskRepo(self._conn)
         for _ in range(max_rounds):
             repo.reset_stale_running(older_than_sec=self._cfg.monitor.stale_running_sec)

@@ -1,0 +1,25 @@
+# Epic verification — Monitor hardening (/plan-eng-review 2026-06-26)
+# Run: python scripts/epic_verify.py monitor-hardening-2026-06-26
+name: monitor-hardening-2026-06-26
+acceptance_doc: docs/superpowers/verification/2026-06-26-monitor-hardening-acceptance.md
+readme_section: Monitor Hardening（2026-06-26）
+issues: [345, 346, 347, 348, 349]
+
+steps:
+  - name: issue-mh1
+    run: python scripts/issue_verify.py --issue 345
+
+  - name: issue-mh2
+    run: python scripts/issue_verify.py --issue 346
+
+  - name: issue-mh3
+    run: python scripts/issue_verify.py --issue 347
+
+  - name: issue-mh4
+    run: python scripts/issue_verify.py --issue 348
+
+  - name: issue-mh5
+    run: python scripts/issue_verify.py --issue 349
+
+  - name: monitor-regression
+    run: pytest tests/unit/test_live_scheduler.py tests/unit/test_task_scheduler.py tests/unit/test_live_lane_priority.py tests/unit/test_task_reconciler.py tests/unit/test_live_worker_tasks.py -v --tb=short -q

@@ -143,21 +143,21 @@ class LiveRecordingCore:
         return live_info, None
 
     def _observe_for_probe(self, creator) -> tuple[LiveRoomInfo | None, dict | None]:
-        """Thread-safe live probe: each worker gets its own SQLite connection."""
-        from media2text.core.workspace import open_db
+        """Thread-safe live probe: fetch without DB; persist via serial short conn."""
+        from media2text.core.live.snapshot import persist_live_probe_result
 
-        conn = open_db(self._cfg)
-        try:
-            core = LiveRecordingCore(
+        live_info, err = self._fetch_live_info(creator)
+        if err is not None:
+            _kind, payload = err
+            persist_live_probe_result(
                 self._cfg,
-                conn=conn,
-                adapter=self._adapter,
-                platform=self._platform,
-                notify=self._notify,
+                creator.id,
+                None,
+                error=str(payload.get("error", _kind)),
             )
-            return core.observe_live_state(creator)
-        finally:
-            conn.close()
+            return None, payload
+        persist_live_probe_result(self._cfg, creator.id, live_info)
+        return live_info, None
 
     def probe_live(
         self,

@@ -58,9 +58,7 @@ Epic：**Monitor Hardening**（2026-06-26）
 
 ```bash
 source .venv/bin/activate
-pip install -e ".[dev]"
 pytest tests/unit/test_monitor_daemon_integration.py tests/unit/test_g1_recording_latency.py tests/unit/test_monitor_cli_reconciler.py tests/unit/test_live_scheduler.py tests/unit/test_task_scheduler.py tests/unit/test_monitor_watcher.py -v
-python scripts/issue_verify.py --issue 348
 ruff check src/media2text/cli/monitor.py src/media2text/core/monitor/watcher.py src/media2text/core/live/scheduler.py
 ```
 

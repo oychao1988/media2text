@@ -280,4 +280,28 @@ Epic manifest：[monitor-db-contention-2026-06-25.yaml](./epic-manifests/monitor
 | MP-2 | [#335](https://github.com/oychao1988/media2text/issues/335) | [mp2-single-owner](./monitor-db-contention-mp2-single-owner.md) | `issue-335-monitor-db-mp2-single-owner` | [#340](https://github.com/oychao1988/media2text/pull/340)（已合并） |
 | MP-3 | [#336](https://github.com/oychao1988/media2text/issues/336) | [mp3-live-lane-priority](./monitor-db-contention-mp3-live-lane-priority.md) | `issue-336-monitor-db-mp3-live-lane-priority` | [#341](https://github.com/oychao1988/media2text/pull/341) |
 
-**合并顺序**：#334 → #335 / #336（#335 与 #336 可并行，均建议基于 #334）。验收：[2026-06-25-monitor-db-contention-acceptance.md](../superpowers/verification/2026-06-25-monitor-db-contention-acceptance.md)
+### Monitor Hardening（2026-06-26，`/plan-eng-review`）
+
+Epic manifest：[monitor-hardening-2026-06-26.yaml](./epic-manifests/monitor-hardening-2026-06-26.yaml) · 验收：[2026-06-26-monitor-hardening-acceptance.md](../superpowers/verification/2026-06-26-monitor-hardening-acceptance.md)
+
+| 顺序 | GitHub | 文件 | 分支 | PR |
+|------|--------|------|------|-----|
+| MH-1 | [#345](https://github.com/oychao1988/media2text/issues/345) | [mh1-slowtick-intervals](./monitor-hardening-mh1-slowtick-intervals.md) | `issue-345-monitor-hardening-mh1` | [#350](https://github.com/oychao1988/media2text/pull/350)（已合并） |
+| MH-2 | [#346](https://github.com/oychao1988/media2text/issues/346) | [mh2-content-per-creator](./monitor-hardening-mh2-content-per-creator.md) | `issue-346-monitor-hardening-mh2` | [#351](https://github.com/oychao1988/media2text/pull/351)（已合并） |
+| MH-3 | [#347](https://github.com/oychao1988/media2text/issues/347) | [mh3-prepare-playwright-conn](./monitor-hardening-mh3-prepare-playwright-conn.md) | `issue-347-monitor-hardening-mh3` | [#352](https://github.com/oychao1988/media2text/pull/352)（已合并） |
+| MH-4 | [#348](https://github.com/oychao1988/media2text/issues/348) | [mh4-guards-tests-g1](./monitor-hardening-mh4-guards-tests-g1.md) | `issue-348-monitor-hardening-mh4` | [#353](https://github.com/oychao1988/media2text/pull/353)（已合并） |
+| MH-5 | [#349](https://github.com/oychao1988/media2text/issues/349) | [mh5-open-db-migration](./monitor-hardening-mh5-open-db-migration.md) | `issue-349-monitor-hardening-mh5` | [#354](https://github.com/oychao1988/media2text/pull/354)（已合并） |
+
+**合并顺序**：#345 / #346 / #347 / #349 可并行 → **#348**（Epic 验收闸门）。验收：`python scripts/epic_verify.py monitor-hardening-2026-06-26`
+
+### Monitor DB Lock Write Path（2026-06-30 快照 stale / database is locked）
+
+Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/monitor-db-lock-write-path-2026-06-30.yaml) · 验收：[2026-06-30-monitor-db-lock-write-path-acceptance.md](../superpowers/verification/2026-06-30-monitor-db-lock-write-path-acceptance.md)
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| DL-1 | [#356](https://github.com/oychao1988/media2text/issues/356) | [dl1-probe-snapshot-writer](./monitor-db-lock-dl1-probe-snapshot-writer.md) | `issue-356-monitor-db-lock-dl1` |
+| DL-2 | [#357](https://github.com/oychao1988/media2text/issues/357) | [dl2-summarize-db-release](./monitor-db-lock-dl2-summarize-db-release.md) | `issue-357-monitor-db-lock-dl2` |
+| DL-3 | [#358](https://github.com/oychao1988/media2text/issues/358) | [dl3-external-coexist](./monitor-db-lock-dl3-external-coexist.md) | `issue-358-monitor-db-lock-dl3` |
+
+**合并顺序**：#356 → #357 → #358。
