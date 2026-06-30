@@ -54,9 +54,8 @@ MP-2 已实现 serve 启动 defer external lock，但 2026-06-30 现场仍出现
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/unit/test_monitor_self_heal.py tests/unit/test_state_event_drain.py tests/unit/test_live_db_lock_probe_snapshot.py tests/unit/test_monitor_lock.py -v
+pytest tests/unit/test_monitor_self_heal.py tests/unit/test_state_event_drain.py tests/unit/test_live_db_lock_probe_snapshot.py tests/unit/test_monitor_lock.py tests/unit/test_db_lock_retry.py tests/unit/test_api_state_event_drain.py -v
 ruff check src/media2text/api/services/monitor_self_heal.py src/media2text/api/services/state_event_drain.py src/media2text/core/storage/db.py
-python scripts/verify_monitor_mp_smoke.py
 ```
 
 ## 非目标范围
