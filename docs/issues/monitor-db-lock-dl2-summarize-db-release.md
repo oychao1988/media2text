@@ -26,15 +26,15 @@ Epic：**Monitor DB Lock Write Path**（2026-06-30）
 
 ### Task 1 — 重构 `_run_summarize`
 
-- [ ] `update_stage(summarize)` 后 **close** worker conn
-- [ ] `maybe_summarize_after_transcribe` 在无 DB 连接下执行
-- [ ] LLM 完成后新开 conn：`stage_event` 仅包裹快速 DB 操作，或等价地 insert started → LLM → insert completed（duration 含 LLM）
-- [ ] 失败路径仍 `mark_failed` / pipeline event failed
+- [x] `update_stage(summarize)` 后 **close** worker conn
+- [x] `maybe_summarize_after_transcribe` 在无 DB 连接下执行
+- [x] LLM 完成后新开 conn：`stage_event` 仅包裹快速 DB 操作，或等价地 insert started → LLM → insert completed（duration 含 LLM）
+- [x] 失败路径仍 `mark_failed` / pipeline event failed
 
 ### Task 2 — 测试
 
-- [ ] 单测：mock LLM 延迟期间，无 `open_db` 连接保持（spy connect 计数或 mock）
-- [ ] 现有 `tests/unit/test_post_process*.py` 相关 summarize 用例 PASS
+- [x] 单测：mock LLM 延迟期间，无 `open_db` 连接保持（spy connect 计数或 mock）
+- [x] 现有 `tests/unit/test_post_process*.py` 相关 summarize 用例 PASS
 
 ## 验证命令
 
