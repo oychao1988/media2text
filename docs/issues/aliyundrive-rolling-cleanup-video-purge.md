@@ -10,7 +10,7 @@ depends_on: [67]
 GitHub: [#364](https://github.com/oychao1988/media2text/issues/364)  
 依赖: [#67](https://github.com/oychao1988/media2text/issues/67) 直播云备份（已交付）  
 分支: `issue-364-aliyundrive-rolling-cleanup-video-purge`  
-PR: [#365](https://github.com/oychao1988/media2text/pull/365)
+PR: [#365](https://github.com/oychao1988/media2text/pull/365)（已合并）
 
 ## 背景
 
@@ -28,7 +28,7 @@ PR: [#365](https://github.com/oychao1988/media2text/pull/365)
 | D3 | `require_transcripts` 门禁保留：legacy 路径须 session 转写已备份后才可删该 session 的视频 |
 | D4 | 对候选视频执行**永久删除**（`/v3/file/delete`，aligo 扩展 API），而非仅 `trash` |
 | D5 | DB 候选删完后若仍 `free < needed_bytes`，且 `purge_recycle_bin: true`（默认开），从回收站按时间删最旧**视频扩展名**文件，直至达标或 `max_delete_per_round` |
-| D6 | 回收站清理**同样仅视频扩展名**；飞书 `upload_cleanup` 通知区分 `db` / `recycle_bin` 来源 |
+| D6 | 回收站清理**同样仅视频扩展名**；飞书 `upload_cleanup` 通知区分 `db` / `recycle_bin` 来源（#365 合并后补全） |
 
 ## 验收标准
 

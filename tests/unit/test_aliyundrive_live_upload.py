@@ -4,6 +4,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from media2text.core.cloud.aliyundrive import decide_duplicate_action
+from media2text.core.cloud.cleanup import RollingCleanupResult, format_rolling_cleanup_notify_body
 from media2text.core.cloud.live_upload import (
     _resolve_creator_key,
     _transcribe_gate_open,
@@ -248,7 +249,7 @@ def test_rolling_cleanup_deletes_oldest_permanently(tmp_path: Path) -> None:
     client = MagicMock()
     client.get_account_capacity.return_value = MagicMock(free=0)
     deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
-    assert deleted == ["old.mp4"]
+    assert deleted == RollingCleanupResult(db=("old.mp4",))
     client.delete_file_permanently.assert_called_once_with("cloud-old")
     client.trash.assert_not_called()
 
@@ -333,8 +334,18 @@ def test_rolling_cleanup_purges_recycle_bin_videos(tmp_path: Path) -> None:
     ]
 
     deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=100_000)
-    assert deleted == ["old-live.mp4"]
+    assert deleted == RollingCleanupResult(recycle_bin=("old-live.mp4",))
     client.delete_file_permanently.assert_called_once_with("rb-mp4")
+
+
+def test_format_rolling_cleanup_notify_body_sections() -> None:
+    body = format_rolling_cleanup_notify_body(
+        RollingCleanupResult(db=("a.mp4",), recycle_bin=("b.mp4",))
+    )
+    assert "[DB 记录]" in body
+    assert "[回收站]" in body
+    assert "- a.mp4" in body
+    assert "- b.mp4" in body
 
 
 def test_resolve_creator_key_sanitizes_nickname(tmp_path: Path) -> None:
