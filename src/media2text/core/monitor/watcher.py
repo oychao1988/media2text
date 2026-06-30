@@ -138,9 +138,14 @@ class MonitorWatcher:
                 log.info("recover_orphan_sessions_on_daemon_start", recovered=orphan_recovered)
         except Exception as exc:  # noqa: BLE001
             log.warning("recover_orphan_sessions_failed", error=str(exc))
-        scheduler = MonitorScheduler(self, self._cfg, on_live_tick=on_live_tick)
-        scheduler.start(creator_id=creator_id)
         stop = _graceful_stop_event(stop_event)
+        scheduler = MonitorScheduler(
+            self,
+            self._cfg,
+            on_live_tick=on_live_tick,
+            stop=stop,
+        )
+        scheduler.start(creator_id=creator_id)
         try:
             stop.wait()
         finally:

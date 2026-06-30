@@ -47,7 +47,7 @@ def test_run_daemon_delegates_to_scheduler(tmp_path, monkeypatch) -> None:
         patch(
             "media2text.core.monitor.watcher.MonitorScheduler",
             return_value=mock_scheduler,
-        ),
+        ) as scheduler_cls,
         patch(
             "media2text.core.monitor.watcher._graceful_stop_event",
             return_value=stop,
@@ -55,6 +55,8 @@ def test_run_daemon_delegates_to_scheduler(tmp_path, monkeypatch) -> None:
     ):
         watcher.run_daemon(creator_id="c1")
 
+    scheduler_cls.assert_called_once()
+    assert scheduler_cls.call_args.kwargs["stop"] is stop
     mock_scheduler.start.assert_called_once_with(creator_id="c1")
     mock_scheduler.stop.assert_called_once()
 

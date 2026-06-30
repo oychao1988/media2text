@@ -179,11 +179,12 @@ class MonitorScheduler:
         cfg: AppConfig,
         *,
         on_live_tick: Callable[[], None] | None = None,
+        stop: threading.Event | None = None,
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
         self._on_live_tick = on_live_tick
-        self._stop = threading.Event()
+        self._stop = stop if stop is not None else threading.Event()
         max_workers = resolve_post_process_workers(cfg)
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
         seg_workers = resolve_segment_process_workers(cfg)
@@ -251,18 +252,19 @@ class MonitorScheduler:
 
     def stop(self) -> None:
         self._stop.set()
-        self._live_monitor_pool.shutdown(wait=False, cancel_futures=True)
-        self._content_monitor_pool.shutdown(wait=False, cancel_futures=True)
-        self._post_pool.shutdown(wait=False, cancel_futures=True)
-        self._segment_pool.shutdown(wait=False, cancel_futures=True)
-        set_segment_watcher(None)
-        self._distill_pool.shutdown(wait=False, cancel_futures=True)
         if self._live_loop is not None:
             self._live_loop.join(timeout=5.0)
         if self._scheduler_loop is not None:
             self._scheduler_loop.join(timeout=5.0)
         if self._slow_loop is not None:
             self._slow_loop.join(timeout=5.0)
+        self._segment_watcher.join(timeout=5.0)
+        self._live_monitor_pool.shutdown(wait=False, cancel_futures=True)
+        self._content_monitor_pool.shutdown(wait=False, cancel_futures=True)
+        self._post_pool.shutdown(wait=False, cancel_futures=True)
+        self._segment_pool.shutdown(wait=False, cancel_futures=True)
+        set_segment_watcher(None)
+        self._distill_pool.shutdown(wait=False, cancel_futures=True)
 
     def join(self, timeout: float | None = None) -> None:
         if self._live_loop is not None:

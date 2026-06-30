@@ -358,6 +358,7 @@ class MonitorExecutor:
         self._max_inflight = max_inflight if max_inflight is not None else max_workers * 2
         self._inflight_count = 0
         self._inflight_lock = threading.Lock()
+        self._closed = False
 
     @property
     def inflight_available(self) -> int:
@@ -373,7 +374,9 @@ class MonitorExecutor:
         watcher: MonitorWatcher | None = None,
     ) -> bool:
         with self._inflight_lock:
-            if self._inflight_count >= self._max_inflight:
+            if self._closed or self._inflight_count >= self._max_inflight:
+                if self._closed:
+                    return False
                 log.warning(
                     "monitor_executor_at_capacity",
                     task_id=task_id,
@@ -395,7 +398,12 @@ class MonitorExecutor:
                 with self._inflight_lock:
                     self._inflight_count -= 1
 
-        self._executor.submit(_run)
+        try:
+            self._executor.submit(_run)
+        except RuntimeError:
+            with self._inflight_lock:
+                self._inflight_count -= 1
+            return False
         return True
 
     def drain_pending(
@@ -448,4 +456,5 @@ class MonitorExecutor:
         return len(claimed)
 
     def shutdown(self, *, wait: bool = True, cancel_futures: bool = False) -> None:
+        self._closed = True
         self._executor.shutdown(wait=wait, cancel_futures=cancel_futures)

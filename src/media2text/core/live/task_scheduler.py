@@ -141,6 +141,11 @@ class TaskSchedulerLoop:
                     log.warning("task_scheduler_db_locked", error=str(exc))
                 else:
                     raise
+            except RuntimeError as exc:
+                if self._stop.is_set() and "shutdown" in str(exc).lower():
+                    log.debug("task_scheduler_stopped_during_shutdown", error=str(exc))
+                    break
+                raise
             finally:
                 conn.close()
             self._stop.wait(timeout=self._cfg.monitor.scheduler_interval_sec)

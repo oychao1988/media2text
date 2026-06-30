@@ -3,7 +3,9 @@ import time
 from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
+from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.scheduler import LiveTickLoop, MonitorScheduler, SlowTickLoop
+from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.watcher import MonitorWatcher
 
 
@@ -212,3 +214,53 @@ def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
     ).fetchone()
     assert row is not None
     assert row["task_type"] == "finalize"
+
+
+def test_monitor_scheduler_stop_joins_before_executor_shutdown(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(live_poll_interval_sec=1),
+        monitor=MonitorConfig(scheduler_interval_sec=1),
+    )
+    watcher = MonitorWatcher(cfg)
+    scheduler = MonitorScheduler(watcher, cfg)
+    order: list[str] = []
+    orig_join = TaskSchedulerLoop.join
+
+    def track_scheduler_join(self, timeout=None):
+        order.append("scheduler_join")
+        return orig_join(self, timeout=timeout)
+
+    orig_shutdown = MonitorExecutor.shutdown
+
+    def track_shutdown(self, **kwargs):
+        order.append("shutdown")
+        return orig_shutdown(self, **kwargs)
+
+    monkeypatch.setattr(TaskSchedulerLoop, "join", track_scheduler_join)
+    monkeypatch.setattr(MonitorExecutor, "shutdown", track_shutdown)
+
+    with (
+        patch("media2text.core.live.probe.run_live_probe_tick", return_value={}),
+        patch.object(watcher, "_run_vod_tick", return_value={}),
+        patch.object(watcher, "_run_archive_tick", return_value={}),
+        patch.object(watcher, "_run_dynamic_tick", return_value={}),
+    ):
+        scheduler.start()
+        time.sleep(0.15)
+        scheduler.stop()
+
+    assert "scheduler_join" in order
+    assert "shutdown" in order
+    assert order.index("scheduler_join") < order.index("shutdown")
+
+
+def test_monitor_executor_submit_after_shutdown_returns_false() -> None:
+    pool = MonitorExecutor(max_workers=1)
+    pool.shutdown(wait=False, cancel_futures=True)
+    assert pool.submit(
+        AppConfig(workspace="/tmp/unused"),
+        task_id="task-1",
+        notify=MagicMock(),
+    ) is False
