@@ -1,9 +1,16 @@
+---
+issue: 364
+github: 364
+branch: issue-364-aliyundrive-rolling-cleanup-video-purge
+depends_on: [67]
+---
+
 # 阿里云盘滚动清理：仅删视频 + 回收站永久释放
 
 GitHub: [#364](https://github.com/oychao1988/media2text/issues/364)  
 依赖: [#67](https://github.com/oychao1988/media2text/issues/67) 直播云备份（已交付）  
 分支: `issue-364-aliyundrive-rolling-cleanup-video-purge`  
-PR: （待开）
+PR: [#365](https://github.com/oychao1988/media2text/pull/365)
 
 ## 背景
 

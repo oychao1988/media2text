@@ -7,8 +7,6 @@ from pathlib import Path
 from media2text.core.platform.douyin.models import AwemeItem
 import json
 
-_VIDEO_CLEANUP_FILE_KINDS = frozenset({"mp4", "flv", "m4s", "init_mp4"})  # sync cloud.cleanup
-
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.models import (
@@ -26,6 +24,8 @@ from media2text.core.storage.models import (
     PipelineEventRow,
     PostProcessJobRow,
 )
+
+_VIDEO_CLEANUP_FILE_KINDS = frozenset({"mp4", "flv", "m4s", "init_mp4"})  # sync cloud.cleanup
 
 
 class CreatorRepo:
