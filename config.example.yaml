@@ -105,6 +105,7 @@ desktop:
   monitor_self_heal_cooldown_sec: 120
   monitor_self_heal_max_per_hour: 3
   monitor_self_heal_check_every_sec: 30
+  external_drain_interval_sec: 5   # managed_by=external 时 serve outbox drain 间隔（秒）；embedded 仍 ~1.5s
   runtime_ws_interval_sec: 30     # WS runtime.health heartbeat (PR2)
   runtime_http_fallback_sec: 60   # HTTP poll when WS down (PR2)
   runtime_failed_recent_threshold: 10

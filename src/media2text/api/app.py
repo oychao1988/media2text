@@ -74,8 +74,10 @@ async def lifespan(app: FastAPI):
             if not result.get("ok"):
                 log.warning("monitor_auto_start_failed", detail=result)
     stop = asyncio.Event()
-    drain_task = asyncio.create_task(run_drain_loop(cfg, stop))
-    notify_drain_task = asyncio.create_task(run_notify_drain_loop(cfg, stop))
+    drain_task = asyncio.create_task(run_drain_loop(cfg, stop, supervisor=supervisor))
+    notify_drain_task = asyncio.create_task(
+        run_notify_drain_loop(cfg, stop, supervisor=supervisor)
+    )
     health_task = asyncio.create_task(run_runtime_health_loop(app, cfg, stop))
     yield
     stop.set()

@@ -8,6 +8,7 @@ from media2text.core.platform.douyin.models import AwemeItem
 import json
 
 from media2text.core.live.probe_guard import ProbeExecutionGuard
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.models import (
     AwemeRow,
     CloudUploadRow,
@@ -2276,62 +2277,68 @@ class LiveSnapshotRepo:
         title: str | None = None,
         checked_at: str | None = None,
     ) -> bool:
-        now = checked_at or datetime.now(timezone.utc).isoformat()
-        live_int = 1 if is_live else 0
-        existing = self.get(creator_id)
-        if existing is not None:
-            unchanged = (
-                existing.is_live == live_int
-                and existing.room_id == room_id
-                and existing.title == title
-            )
-            self._conn.execute(
-                """
-                UPDATE creator_live_snapshots
-                SET is_live = ?, room_id = ?, title = ?, checked_at = ?, probe_error = NULL
-                WHERE creator_id = ?
-                """,
-                (live_int, room_id, title, now, creator_id),
-            )
-            self._conn.commit()
-            return not unchanged
-        self._conn.execute(
-            """
-            INSERT INTO creator_live_snapshots (
-              creator_id, is_live, room_id, title, checked_at, probe_error
-            )
-            VALUES (?, ?, ?, ?, ?, NULL)
-            """,
-            (creator_id, live_int, room_id, title, now),
-        )
-        self._conn.commit()
-        return True
-
-    def touch_probe(self, creator_id: str, *, probe_error: str) -> bool:
-        now = datetime.now(timezone.utc).isoformat()
-        existing = self.get(creator_id)
-        if existing is None:
+        def _write() -> bool:
+            now = checked_at or datetime.now(timezone.utc).isoformat()
+            live_int = 1 if is_live else 0
+            existing = self.get(creator_id)
+            if existing is not None:
+                unchanged = (
+                    existing.is_live == live_int
+                    and existing.room_id == room_id
+                    and existing.title == title
+                )
+                self._conn.execute(
+                    """
+                    UPDATE creator_live_snapshots
+                    SET is_live = ?, room_id = ?, title = ?, checked_at = ?, probe_error = NULL
+                    WHERE creator_id = ?
+                    """,
+                    (live_int, room_id, title, now, creator_id),
+                )
+                self._conn.commit()
+                return not unchanged
             self._conn.execute(
                 """
                 INSERT INTO creator_live_snapshots (
                   creator_id, is_live, room_id, title, checked_at, probe_error
                 )
-                VALUES (?, 0, NULL, NULL, ?, ?)
+                VALUES (?, ?, ?, ?, ?, NULL)
                 """,
-                (creator_id, now, probe_error),
+                (creator_id, live_int, room_id, title, now),
             )
             self._conn.commit()
             return True
-        self._conn.execute(
-            """
-            UPDATE creator_live_snapshots
-            SET checked_at = ?, probe_error = ?
-            WHERE creator_id = ?
-            """,
-            (now, probe_error, creator_id),
-        )
-        self._conn.commit()
-        return True
+
+        return with_db_lock_retry(_write)
+
+    def touch_probe(self, creator_id: str, *, probe_error: str) -> bool:
+        def _write() -> bool:
+            now = datetime.now(timezone.utc).isoformat()
+            existing = self.get(creator_id)
+            if existing is None:
+                self._conn.execute(
+                    """
+                    INSERT INTO creator_live_snapshots (
+                      creator_id, is_live, room_id, title, checked_at, probe_error
+                    )
+                    VALUES (?, 0, NULL, NULL, ?, ?)
+                    """,
+                    (creator_id, now, probe_error),
+                )
+                self._conn.commit()
+                return True
+            self._conn.execute(
+                """
+                UPDATE creator_live_snapshots
+                SET checked_at = ?, probe_error = ?
+                WHERE creator_id = ?
+                """,
+                (now, probe_error, creator_id),
+            )
+            self._conn.commit()
+            return True
+
+        return with_db_lock_retry(_write)
 
     def get(self, creator_id: str) -> CreatorLiveSnapshotRow | None:
         row = self._conn.execute(
