@@ -40,6 +40,8 @@ V2_FILE_COMPLETE = "/v2/file/complete"
 V2_FILE_GET_UPLOAD_URL = "/v2/file/get_upload_url"
 V2_FILE_GET_DOWNLOAD_URL = "/v2/file/get_download_url"
 V2_RECYCLEBIN_TRASH = "/v2/recyclebin/trash"
+V2_RECYCLEBIN_LIST = "/v2/recyclebin/list"
+V3_FILE_DELETE = "/v3/file/delete"
 ADRIVE_V3_FILE_LIST = "/adrive/v3/file/list"
 ADRIVE_V2_FILE_CREATEWITHFOLDERS = "/adrive/v2/file/createWithFolders"
 ADRIVE_V1_USER_GET_USER_CAPACITY_INFO = "/adrive/v1/user/getUserCapacityInfo"
@@ -340,6 +342,40 @@ class AliyunDriveClient:
 
     def trash(self, file_id: str, *, drive_id: str | None = None) -> dict[str, Any]:
         return self.post(V2_RECYCLEBIN_TRASH, {"drive_id": drive_id or self.drive_id, "file_id": file_id})
+
+    def delete_file_permanently(self, file_id: str, *, drive_id: str | None = None) -> dict[str, Any]:
+        """Permanently delete a file (aligo extension: /v3/file/delete). Frees quota immediately."""
+        return self.post(
+            V3_FILE_DELETE,
+            {"drive_id": drive_id or self.drive_id, "file_id": file_id},
+        )
+
+    def list_recycle_bin(
+        self,
+        *,
+        limit: int = 100,
+        drive_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """List recycle-bin items oldest-first (for rolling cleanup)."""
+        did = drive_id or self.drive_id
+        items: list[dict[str, Any]] = []
+        marker: str | None = None
+        while True:
+            body: dict[str, Any] = {
+                "drive_id": did,
+                "limit": limit,
+                "order_by": "updated_at",
+                "order_direction": "ASC",
+            }
+            if marker:
+                body["marker"] = marker
+            listing = self.post(V2_RECYCLEBIN_LIST, body)
+            batch = listing.get("items") or []
+            items.extend(batch)
+            marker = listing.get("next_marker")
+            if not marker or not batch:
+                break
+        return items
 
     def create_folder(
         self,

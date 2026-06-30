@@ -206,6 +206,7 @@ aliyundrive:
   on_insufficient_space: rolling_cleanup
   rolling_cleanup:
     max_delete_per_round: 20
+    purge_recycle_bin: true   # DB 候选不足时从回收站永久删最旧视频（.mp4/.flv/.m4s/init.mp4）
   upload_retries: 2
 
 # 监控事件提醒：提示音 + 飞书群机器人 webhook（二选一或同时开启）

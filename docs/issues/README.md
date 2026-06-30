@@ -30,6 +30,7 @@
 |------|--------|-----|------|------|
 | 1 | [#65](https://github.com/oychao1988/media2text/issues/65)（已关闭） | [#66](https://github.com/oychao1988/media2text/pull/66) | [aliyundrive-cloud-foundation.md](./aliyundrive-cloud-foundation.md) | `issue-65-aliyundrive-cloud-foundation` |
 | 2 | [#67](https://github.com/oychao1988/media2text/issues/67)（已关闭） | [#68](https://github.com/oychao1988/media2text/pull/68) | [aliyundrive-live-upload.md](./aliyundrive-live-upload.md) | `issue-67-aliyundrive-live-upload` |
+| 3 | [#364](https://github.com/oychao1988/media2text/issues/364) | [#365](https://github.com/oychao1988/media2text/pull/365) | [aliyundrive-rolling-cleanup-video-purge.md](./aliyundrive-rolling-cleanup-video-purge.md) | `issue-364-aliyundrive-rolling-cleanup-video-purge` |
 
 ### LLM 转写摘要（summarize）
 

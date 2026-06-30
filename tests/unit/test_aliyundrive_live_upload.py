@@ -11,7 +11,7 @@ from media2text.core.cloud.live_upload import (
     rolling_cleanup,
 )
 from media2text.core.cloud.paths import file_pre_hash, sanitize_path_segment
-from media2text.core.config import AliyunDriveConfig, AppConfig, LiveConfig
+from media2text.core.config import AliyunDriveConfig, AliyunDriveRollingCleanupConfig, AppConfig, LiveConfig
 from media2text.core.storage.models import CreatorRow
 from media2text.core.storage.repos import CloudUploadRepo, CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
@@ -218,7 +218,7 @@ def test_maybe_upload_skipped_profile_not_synced(tmp_path: Path) -> None:
     assert meta.get("upload_skip_reason") == "profile_not_synced"
 
 
-def test_rolling_cleanup_trashes_oldest(tmp_path: Path) -> None:
+def test_rolling_cleanup_deletes_oldest_permanently(tmp_path: Path) -> None:
     cfg = AppConfig(
         workspace=tmp_path / "data",
         aliyundrive=AliyunDriveConfig(
@@ -249,7 +249,92 @@ def test_rolling_cleanup_trashes_oldest(tmp_path: Path) -> None:
     client.get_account_capacity.return_value = MagicMock(free=0)
     deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
     assert deleted == ["old.mp4"]
-    client.trash.assert_called_once_with("cloud-old")
+    client.delete_file_permanently.assert_called_once_with("cloud-old")
+    client.trash.assert_not_called()
+
+
+def test_list_cleanup_candidates_video_only_when_no_transcript_gate(tmp_path) -> None:
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    creators = CreatorRepo(conn)
+    uploads = CloudUploadRepo(conn)
+
+    creator_id = creators.add(
+        sec_uid="sec1",
+        profile_url="https://example.com/u",
+        platform="douyin",
+    )
+    session_id = _session(conn, creator_id, transcribe_status="done")
+    m4s_id = uploads.create(
+        session_id=session_id,
+        creator_id=creator_id,
+        platform="douyin",
+        file_name="seg-00001.m4s",
+        file_kind="m4s",
+        size=1000,
+        pre_hash="h1",
+    )
+    json_id = uploads.create(
+        session_id=session_id,
+        creator_id=creator_id,
+        platform="douyin",
+        file_name="a.transcript.json",
+        file_kind="transcript_json",
+        size=10,
+        pre_hash="h2",
+    )
+    uploads.mark_done(
+        m4s_id,
+        cloud_file_id="f-m4s",
+        cloud_relative_path="media2text/douyin/u/live/parts/seg-00001.m4s",
+    )
+    uploads.mark_done(
+        json_id,
+        cloud_file_id="f-json",
+        cloud_relative_path="media2text/douyin/u/live/a.transcript.json",
+    )
+
+    candidates = uploads.list_cleanup_candidates(
+        root_prefix="media2text/",
+        require_transcripts=False,
+    )
+    names = {c.file_name for c in candidates}
+    assert names == {"seg-00001.m4s"}
+
+
+def test_rolling_cleanup_purges_recycle_bin_videos(tmp_path: Path) -> None:
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        aliyundrive=AliyunDriveConfig(
+            enabled=True,
+            root_folder="media2text",
+            on_insufficient_space="rolling_cleanup",
+            rolling_cleanup=AliyunDriveRollingCleanupConfig(purge_recycle_bin=True),
+        ),
+    )
+    conn = open_db(cfg)
+    client = MagicMock()
+    client.get_account_capacity.return_value = MagicMock(free=0)
+    client.list_recycle_bin.return_value = [
+        {
+            "type": "file",
+            "file_id": "rb-json",
+            "name": "notes.transcript.json",
+            "size": 100,
+            "updated_at": "2026-01-01T00:00:00Z",
+        },
+        {
+            "type": "file",
+            "file_id": "rb-mp4",
+            "name": "old-live.mp4",
+            "size": 5000,
+            "updated_at": "2026-01-02T00:00:00Z",
+        },
+    ]
+
+    deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=100_000)
+    assert deleted == ["old-live.mp4"]
+    client.delete_file_permanently.assert_called_once_with("rb-mp4")
 
 
 def test_resolve_creator_key_sanitizes_nickname(tmp_path: Path) -> None:

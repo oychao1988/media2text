@@ -306,6 +306,7 @@ class NotifyEventsConfig(BaseModel):
 
 class AliyunDriveRollingCleanupConfig(BaseModel):
     max_delete_per_round: int = 20
+    purge_recycle_bin: bool = True
 
 
 class AliyunDriveConfig(BaseModel):

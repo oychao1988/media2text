@@ -12,6 +12,7 @@ from media2text.core.cloud.aliyundrive import (
     compute_pre_hash,
     decide_duplicate_action,
 )
+from media2text.core.cloud.cleanup import is_video_cleanup_filename
 from media2text.core.cloud.paths import sanitize_path_segment
 from media2text.core.config import AppConfig
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
@@ -452,6 +453,60 @@ def _check_name_mode_for_upload(
     return "auto_rename", None
 
 
+def _purge_recycle_bin_videos(
+    client: AliyunDriveClient,
+    *,
+    needed_bytes: int,
+    free: int,
+    max_delete: int,
+    already_deleted: int,
+) -> tuple[list[str], int, int]:
+    """Permanently delete oldest video files still in recycle bin.
+
+    Returns (deleted_names, updated_free, freed_bytes).
+    """
+    deleted_names: list[str] = []
+    freed = 0
+    try:
+        items = client.list_recycle_bin()
+    except Exception as exc:  # noqa: BLE001
+        log.warning("aliyundrive_recyclebin_list_failed", error=str(exc))
+        return deleted_names, free, freed
+
+    video_items = [
+        item
+        for item in items
+        if item.get("type") == "file"
+        and item.get("file_id")
+        and is_video_cleanup_filename(str(item.get("name") or ""))
+    ]
+    video_items.sort(key=lambda i: str(i.get("updated_at") or i.get("trashed_at") or ""))
+
+    for item in video_items:
+        if free >= needed_bytes or (already_deleted + len(deleted_names)) >= max_delete:
+            break
+        file_id = str(item["file_id"])
+        name = str(item.get("name") or file_id)
+        try:
+            client.delete_file_permanently(file_id)
+            deleted_names.append(name)
+            size = int(item.get("size") or 0)
+            freed += size
+            free += size
+            log.info(
+                "aliyundrive_recyclebin_purged",
+                file_name=name,
+                file_id=file_id,
+            )
+        except Exception as exc:  # noqa: BLE001
+            log.warning(
+                "aliyundrive_recyclebin_purge_failed",
+                file_name=name,
+                error=str(exc),
+            )
+    return deleted_names, free, freed
+
+
 def rolling_cleanup(
     client: AliyunDriveClient,
     *,
@@ -481,7 +536,7 @@ def rolling_cleanup(
         if not row.cloud_file_id:
             continue
         try:
-            client.trash(row.cloud_file_id)
+            client.delete_file_permanently(row.cloud_file_id)
             repo.delete_record(row.id)
             deleted_names.append(row.file_name)
             size = int(row.size or 0)
@@ -493,6 +548,22 @@ def rolling_cleanup(
                 file_name=row.file_name,
                 error=str(exc),
             )
+
+    if (
+        ad.rolling_cleanup.purge_recycle_bin
+        and free < needed_bytes
+        and len(deleted_names) < max_delete
+    ):
+        rb_names, free, rb_freed = _purge_recycle_bin_videos(
+            client,
+            needed_bytes=needed_bytes,
+            free=free,
+            max_delete=max_delete,
+            already_deleted=len(deleted_names),
+        )
+        deleted_names.extend(rb_names)
+        freed += rb_freed
+
     if deleted_names:
         log.info(
             "aliyundrive_rolling_cleanup",
