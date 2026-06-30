@@ -2229,7 +2229,9 @@ class CloudUploadRepo:
               AND cu.cloud_relative_path LIKE ?
               AND (
                 ls.transcribe_status IS NULL
-                OR ls.transcribe_status IN ('done', 'skipped', 'none')
+                OR ls.transcribe_status IN (
+                  'done', 'skipped', 'none', 'completed', 'failed'
+                )
               )
             ORDER BY cu.uploaded_at ASC
             """,
@@ -2249,9 +2251,9 @@ class CloudUploadRepo:
                 (session_id,),
             ).fetchone()
             ts = session[0] if session else None
-            if ts == "failed" or ts == "pending":
+            if ts in ("failed", "pending"):
                 continue
-            if ts == "done":
+            if ts in ("done", "completed"):
                 session_kinds = {
                     u.file_kind
                     for u in self.list_for_session(session_id)
@@ -2266,6 +2268,14 @@ class CloudUploadRepo:
     def delete_record(self, upload_id: str) -> None:
         self._conn.execute("DELETE FROM cloud_uploads WHERE id = ?", (upload_id,))
         self._conn.commit()
+
+    def delete_records_by_cloud_file_id(self, cloud_file_id: str) -> int:
+        cur = self._conn.execute(
+            "DELETE FROM cloud_uploads WHERE cloud_file_id = ?",
+            (cloud_file_id,),
+        )
+        self._conn.commit()
+        return int(cur.rowcount or 0)
 
 
 class LiveSnapshotRepo:

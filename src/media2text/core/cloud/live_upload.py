@@ -15,7 +15,7 @@ from media2text.core.cloud.aliyundrive import (
 from media2text.core.cloud.cleanup import (
     RollingCleanupResult,
     format_rolling_cleanup_notify_body,
-    is_recycle_bin_delete_error,
+    is_stale_cloud_delete_error,
     is_video_cleanup_filename,
 )
 from media2text.core.cloud.paths import sanitize_path_segment
@@ -113,6 +113,19 @@ def _hls_cloud_folder(
     return rel_base, session_dir.name
 
 
+def _dedupe_cleanup_candidates(rows: list) -> list:
+    """One row per cloud_file_id (oldest uploaded_at first from list_cleanup_candidates)."""
+    seen: set[str] = set()
+    unique: list = []
+    for row in rows:
+        fid = row.cloud_file_id
+        if not fid or fid in seen:
+            continue
+        seen.add(fid)
+        unique.append(row)
+    return unique
+
+
 def _upload_file_to_cloud(
     client: AliyunDriveClient,
     *,
@@ -128,6 +141,20 @@ def _upload_file_to_cloud(
 ) -> dict[str, str]:
     ad = cfg.aliyundrive
     uploads = CloudUploadRepo(conn)
+    ws = cfg.ensure_workspace()
+    existing = uploads.find_done_by_local_path(
+        ws,
+        str(local_path),
+        file_kinds=(file_kind,),
+    )
+    rel_path = f"{rel_base}/{local_path.name}"
+    if part_index is not None and local_path.parent.name == "parts":
+        rel_path = f"{rel_base}/parts/{local_path.name}"
+    if existing and existing.cloud_file_id:
+        return {
+            "cloud_file_id": existing.cloud_file_id,
+            "cloud_path": existing.cloud_relative_path or rel_path,
+        }
     size = local_path.stat().st_size
     pre_hash = compute_pre_hash(local_path)
     upload_id = uploads.create(
@@ -141,7 +168,6 @@ def _upload_file_to_cloud(
         pre_hash=pre_hash,
         part_index=part_index,
     )
-    rel_path = f"{rel_base}/{local_path.name}"
     if part_index is not None and local_path.parent.name == "parts":
         rel_path = f"{rel_base}/parts/{local_path.name}"
     check_mode, replace_id = _check_name_mode_for_upload(
@@ -503,11 +529,19 @@ def _purge_recycle_bin_videos(
                 file_id=file_id,
             )
         except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "aliyundrive_recyclebin_purge_failed",
-                file_name=name,
-                error=str(exc),
-            )
+            stale_reason = is_stale_cloud_delete_error(exc)
+            if stale_reason:
+                log.info(
+                    "aliyundrive_recyclebin_stale_record",
+                    file_name=name,
+                    reason=stale_reason,
+                )
+            else:
+                log.warning(
+                    "aliyundrive_recyclebin_purge_failed",
+                    file_name=name,
+                    error=str(exc),
+                )
     return deleted_names, free, freed
 
 
@@ -524,9 +558,11 @@ def rolling_cleanup(
     repo = CloudUploadRepo(conn)
     root = ad.root_folder.strip("/")
     require_transcripts = cfg.live.transcribe_on_complete and ad.upload_transcripts
-    candidates = repo.list_cleanup_candidates(
-        root_prefix=f"{root}/",
-        require_transcripts=require_transcripts,
+    candidates = _dedupe_cleanup_candidates(
+        repo.list_cleanup_candidates(
+            root_prefix=f"{root}/",
+            require_transcripts=require_transcripts,
+        )
     )
     db_deleted: list[str] = []
     recycle_bin_deleted: list[str] = []
@@ -534,30 +570,37 @@ def rolling_cleanup(
     cap = client.get_account_capacity()
     free = cap.free
     max_delete = ad.rolling_cleanup.max_delete_per_round
-    deleted_count = 0
+    cloud_deleted_count = 0
 
     for row in candidates:
-        if free >= needed_bytes or deleted_count >= max_delete:
+        if free >= needed_bytes or cloud_deleted_count >= max_delete:
             break
         if not row.cloud_file_id:
             continue
         try:
             client.delete_file_permanently(row.cloud_file_id)
-            repo.delete_record(row.id)
+            removed = repo.delete_records_by_cloud_file_id(row.cloud_file_id)
             db_deleted.append(row.file_name)
-            deleted_count += 1
+            cloud_deleted_count += 1
             size = int(row.size or 0)
             freed += size
             free += size
+            log.info(
+                "aliyundrive_cleanup_deleted",
+                file_name=row.file_name,
+                rows_removed=removed,
+            )
         except Exception as exc:  # noqa: BLE001
-            if is_recycle_bin_delete_error(exc):
-                # File already trashed; drop stale DB row and rely on recycle-bin purge.
-                repo.delete_record(row.id)
-                db_deleted.append(row.file_name)
-                deleted_count += 1
+            stale_reason = is_stale_cloud_delete_error(exc)
+            if stale_reason:
+                removed = repo.delete_records_by_cloud_file_id(row.cloud_file_id)
+                if removed:
+                    db_deleted.append(row.file_name)
                 log.info(
-                    "aliyundrive_cleanup_stale_recycle",
+                    "aliyundrive_cleanup_stale_record",
                     file_name=row.file_name,
+                    reason=stale_reason,
+                    rows_removed=removed,
                 )
             else:
                 log.warning(
@@ -569,17 +612,17 @@ def rolling_cleanup(
     if (
         ad.rolling_cleanup.purge_recycle_bin
         and free < needed_bytes
-        and deleted_count < max_delete
+        and cloud_deleted_count < max_delete
     ):
         rb_names, free, rb_freed = _purge_recycle_bin_videos(
             client,
             needed_bytes=needed_bytes,
             free=free,
             max_delete=max_delete,
-            already_deleted=deleted_count,
+            already_deleted=cloud_deleted_count,
         )
         recycle_bin_deleted.extend(rb_names)
-        deleted_count += len(rb_names)
+        cloud_deleted_count += len(rb_names)
         freed += rb_freed
 
     result = RollingCleanupResult(

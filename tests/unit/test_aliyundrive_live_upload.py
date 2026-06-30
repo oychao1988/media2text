@@ -165,6 +165,37 @@ def test_list_cleanup_candidates_filters_transcripts(tmp_path) -> None:
     assert "b.mp4" not in names
 
 
+def test_list_cleanup_candidates_includes_completed_streaming_sessions(tmp_path) -> None:
+    cfg = AppConfig(workspace=tmp_path / "data")
+    conn = open_db(cfg)
+    creator_id = CreatorRepo(conn).add(
+        sec_uid="sec1",
+        profile_url="https://example.com/u",
+        platform="douyin",
+    )
+    session_id = _session(conn, creator_id, transcribe_status="completed")
+    upload_id = CloudUploadRepo(conn).create(
+        session_id=session_id,
+        creator_id=creator_id,
+        platform="douyin",
+        file_name="stream.mp4",
+        file_kind="mp4",
+        size=100,
+        pre_hash="h1",
+    )
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="f-stream",
+        cloud_relative_path="media2text/douyin/u/live/stream.mp4",
+    )
+
+    candidates = CloudUploadRepo(conn).list_cleanup_candidates(
+        root_prefix="media2text/",
+        require_transcripts=False,
+    )
+    assert {c.file_name for c in candidates} == {"stream.mp4"}
+
+
 def test_transcribe_gate_blocks_without_sidecar(tmp_path: Path) -> None:
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -290,6 +321,83 @@ def test_rolling_cleanup_drops_stale_recycle_bin_db_record(tmp_path: Path) -> No
     deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
     assert deleted == RollingCleanupResult(db=("trashed.mp4",))
     assert CloudUploadRepo(conn).list_for_session(session_id) == []
+
+
+def test_rolling_cleanup_drops_missing_cloud_file_db_record(tmp_path: Path) -> None:
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        aliyundrive=AliyunDriveConfig(
+            enabled=True,
+            root_folder="media2text",
+            on_insufficient_space="rolling_cleanup",
+        ),
+    )
+    conn = open_db(cfg)
+    creator_id = CreatorRepo(conn).add(sec_uid="s", profile_url="https://x", platform="douyin")
+    session_id = _session(conn, creator_id, transcribe_status="done")
+    upload_id = CloudUploadRepo(conn).create(
+        session_id=session_id,
+        creator_id=creator_id,
+        platform="douyin",
+        file_name="missing.mp4",
+        file_kind="mp4",
+        size=500,
+        pre_hash="x",
+    )
+    CloudUploadRepo(conn).mark_done(
+        upload_id,
+        cloud_file_id="cloud-missing",
+        cloud_relative_path="media2text/douyin/u/live/missing.mp4",
+    )
+
+    client = MagicMock()
+    client.get_account_capacity.return_value = MagicMock(free=0)
+    client.delete_file_permanently.side_effect = RuntimeError(
+        '/v3/file/delete failed 404: {"code":"NotFound.FileId","message":"The resource cannot be found."}'
+    )
+    deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
+    assert deleted == RollingCleanupResult(db=("missing.mp4",))
+    assert CloudUploadRepo(conn).list_for_session(session_id) == []
+
+
+def test_rolling_cleanup_dedupes_and_drops_all_stale_rows(tmp_path: Path) -> None:
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        aliyundrive=AliyunDriveConfig(
+            enabled=True,
+            root_folder="media2text",
+            on_insufficient_space="rolling_cleanup",
+        ),
+    )
+    conn = open_db(cfg)
+    creator_id = CreatorRepo(conn).add(sec_uid="s", profile_url="https://x", platform="douyin")
+    session_id = _session(conn, creator_id, transcribe_status="done")
+    repo = CloudUploadRepo(conn)
+    for _ in range(3):
+        upload_id = repo.create(
+            session_id=session_id,
+            creator_id=creator_id,
+            platform="douyin",
+            file_name="dup.mp4",
+            file_kind="mp4",
+            size=500,
+            pre_hash="x",
+        )
+        repo.mark_done(
+            upload_id,
+            cloud_file_id="cloud-dup",
+            cloud_relative_path="media2text/douyin/u/live/dup.mp4",
+        )
+
+    client = MagicMock()
+    client.get_account_capacity.return_value = MagicMock(free=0)
+    client.delete_file_permanently.side_effect = RuntimeError(
+        '/v3/file/delete failed 404: {"code":"NotFound.FileId","message":"The resource cannot be found."}'
+    )
+    deleted = rolling_cleanup(client, cfg=cfg, conn=conn, needed_bytes=1000)
+    assert deleted == RollingCleanupResult(db=("dup.mp4",))
+    assert CloudUploadRepo(conn).list_for_session(session_id) == []
+    client.delete_file_permanently.assert_called_once_with("cloud-dup")
 
 
 def test_list_cleanup_candidates_video_only_when_no_transcript_gate(tmp_path) -> None:

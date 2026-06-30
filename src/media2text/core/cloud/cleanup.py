@@ -46,9 +46,18 @@ def is_video_cleanup_filename(name: str) -> bool:
     return lower.startswith("seg-") and lower.endswith(".m4s")
 
 
+def is_stale_cloud_delete_error(exc: BaseException) -> str | None:
+    """Return reason when cloud file is gone or not deletable; DB row may be dropped."""
+    msg = str(exc).lower()
+    if "recycle bin" in msg and (
+        "operationnotsupport" in msg or "not supported" in msg
+    ):
+        return "recycle_bin"
+    if "notfound.fileid" in msg or "/v3/file/delete failed 404" in msg:
+        return "not_found"
+    return None
+
+
 def is_recycle_bin_delete_error(exc: BaseException) -> bool:
     """True when /v3/file/delete rejects a file already in Aliyun recycle bin."""
-    msg = str(exc).lower()
-    return "recycle bin" in msg and (
-        "operationnotsupport" in msg or "not supported" in msg
-    )
+    return is_stale_cloud_delete_error(exc) == "recycle_bin"
