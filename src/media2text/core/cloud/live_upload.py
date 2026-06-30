@@ -12,7 +12,11 @@ from media2text.core.cloud.aliyundrive import (
     compute_pre_hash,
     decide_duplicate_action,
 )
-from media2text.core.cloud.cleanup import is_video_cleanup_filename
+from media2text.core.cloud.cleanup import (
+    RollingCleanupResult,
+    format_rolling_cleanup_notify_body,
+    is_video_cleanup_filename,
+)
 from media2text.core.cloud.paths import sanitize_path_segment
 from media2text.core.config import AppConfig
 from media2text.core.notify import EventKind, NotifyEvent, NotifyService
@@ -225,12 +229,11 @@ def upload_live_part(
                     needed_bytes=max(ad.min_free_bytes, total_size),
                 )
                 if deleted and notify.enabled:
-                    lines = "\n".join(f"- {name}" for name in deleted)
                     notify.emit(
                         NotifyEvent(
                             kind=EventKind.UPLOAD_CLEANUP,
                             title=creator_label(creator),
-                            body=f"云盘滚动清理，已删除 {len(deleted)} 个文件：\n{lines}",
+                            body=format_rolling_cleanup_notify_body(deleted),
                         )
                     )
                 cap = client.get_account_capacity()
@@ -513,10 +516,10 @@ def rolling_cleanup(
     cfg: AppConfig,
     conn,
     needed_bytes: int,
-) -> list[str]:
+) -> RollingCleanupResult:
     ad = cfg.aliyundrive
     if ad.on_insufficient_space != "rolling_cleanup":
-        return []
+        return RollingCleanupResult()
     repo = CloudUploadRepo(conn)
     root = ad.root_folder.strip("/")
     require_transcripts = cfg.live.transcribe_on_complete and ad.upload_transcripts
@@ -524,21 +527,24 @@ def rolling_cleanup(
         root_prefix=f"{root}/",
         require_transcripts=require_transcripts,
     )
-    deleted_names: list[str] = []
+    db_deleted: list[str] = []
+    recycle_bin_deleted: list[str] = []
     freed = 0
     cap = client.get_account_capacity()
     free = cap.free
     max_delete = ad.rolling_cleanup.max_delete_per_round
+    deleted_count = 0
 
     for row in candidates:
-        if free >= needed_bytes or len(deleted_names) >= max_delete:
+        if free >= needed_bytes or deleted_count >= max_delete:
             break
         if not row.cloud_file_id:
             continue
         try:
             client.delete_file_permanently(row.cloud_file_id)
             repo.delete_record(row.id)
-            deleted_names.append(row.file_name)
+            db_deleted.append(row.file_name)
+            deleted_count += 1
             size = int(row.size or 0)
             freed += size
             free += size
@@ -552,25 +558,32 @@ def rolling_cleanup(
     if (
         ad.rolling_cleanup.purge_recycle_bin
         and free < needed_bytes
-        and len(deleted_names) < max_delete
+        and deleted_count < max_delete
     ):
         rb_names, free, rb_freed = _purge_recycle_bin_videos(
             client,
             needed_bytes=needed_bytes,
             free=free,
             max_delete=max_delete,
-            already_deleted=len(deleted_names),
+            already_deleted=deleted_count,
         )
-        deleted_names.extend(rb_names)
+        recycle_bin_deleted.extend(rb_names)
+        deleted_count += len(rb_names)
         freed += rb_freed
 
-    if deleted_names:
+    result = RollingCleanupResult(
+        db=tuple(db_deleted),
+        recycle_bin=tuple(recycle_bin_deleted),
+    )
+    if result:
         log.info(
             "aliyundrive_rolling_cleanup",
-            deleted=len(deleted_names),
+            deleted=result.total,
+            db=len(result.db),
+            recycle_bin=len(result.recycle_bin),
             freed_bytes=freed,
         )
-    return deleted_names
+    return result
 
 
 def maybe_upload_live_to_aliyundrive(
@@ -682,12 +695,11 @@ def _upload_with_client(
             needed_bytes=max(ad.min_free_bytes, total_upload_size),
         )
         if deleted and notify.enabled:
-            lines = "\n".join(f"- {name}" for name in deleted)
             notify.emit(
                 NotifyEvent(
                     kind=EventKind.UPLOAD_CLEANUP,
                     title=creator_label(creator),
-                    body=f"云盘滚动清理，已删除 {len(deleted)} 个文件：\n{lines}",
+                    body=format_rolling_cleanup_notify_body(deleted),
                 )
             )
         cap = client.get_account_capacity()
