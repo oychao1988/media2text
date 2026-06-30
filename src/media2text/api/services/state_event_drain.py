@@ -8,13 +8,13 @@ import structlog
 
 from media2text.api.schemas.events import EventType, event_payload
 from media2text.api.services.events_hub import events_hub
+from media2text.api.services.drain_interval import resolve_drain_interval_sec
 from media2text.core.config import AppConfig
+from media2text.core.runtime.supervisor import MonitorSupervisor
 from media2text.core.storage.repos import DesktopEventRepo
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
-
-_DRAIN_INTERVAL_SEC = 1.5
 
 
 def drain_once(cfg: AppConfig) -> int:
@@ -33,13 +33,19 @@ def drain_once(cfg: AppConfig) -> int:
         conn.close()
 
 
-async def run_drain_loop(cfg: AppConfig, stop: asyncio.Event) -> None:
+async def run_drain_loop(
+    cfg: AppConfig,
+    stop: asyncio.Event,
+    *,
+    supervisor: MonitorSupervisor | None = None,
+) -> None:
     while not stop.is_set():
         try:
             drain_once(cfg)
         except Exception:
             log.exception("desktop_event_drain_failed")
+        interval = resolve_drain_interval_sec(cfg, supervisor=supervisor)
         try:
-            await asyncio.wait_for(stop.wait(), timeout=_DRAIN_INTERVAL_SEC)
+            await asyncio.wait_for(stop.wait(), timeout=interval)
         except TimeoutError:
             pass

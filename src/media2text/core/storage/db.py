@@ -1,9 +1,15 @@
 import sqlite3
 import threading
+import time
 from pathlib import Path
+from typing import Callable, TypeVar
 
 _connect_lock = threading.Lock()
 _migrated_db_paths: set[str] = set()
+
+DEFAULT_BUSY_TIMEOUT_MS = 15000
+
+T = TypeVar("T")
 
 
 def _run_migrations(conn: sqlite3.Connection) -> None:
@@ -34,7 +40,7 @@ def _run_migrations(conn: sqlite3.Connection) -> None:
 
 SCHEMA = """
 PRAGMA journal_mode=WAL;
-PRAGMA busy_timeout=5000;
+PRAGMA busy_timeout=15000;
 
 CREATE TABLE IF NOT EXISTS creators (
   id TEXT PRIMARY KEY,
@@ -816,10 +822,29 @@ def connect(db_path: Path) -> sqlite3.Connection:
     resolved.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(resolved, check_same_thread=False)
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA busy_timeout=5000")
+    conn.execute(f"PRAGMA busy_timeout={DEFAULT_BUSY_TIMEOUT_MS}")
     path_key = str(resolved)
     with _connect_lock:
         if path_key not in _migrated_db_paths:
             _run_migrations(conn)
             _migrated_db_paths.add(path_key)
     return conn
+
+
+def with_db_lock_retry(
+    fn: Callable[[], T],
+    *,
+    max_attempts: int = 3,
+    base_delay_sec: float = 0.05,
+) -> T:
+    """Retry write callbacks on SQLite database is locked (DL-3)."""
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            if attempt + 1 >= max_attempts:
+                raise
+            time.sleep(base_delay_sec * (2**attempt))
+    raise RuntimeError("with_db_lock_retry exhausted")

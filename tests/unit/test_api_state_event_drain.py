@@ -23,8 +23,8 @@ def test_drain_publishes_creator_updated_to_ws(api_client, workspace, monkeypatc
         5.0,
     )
     monkeypatch.setattr(
-        "media2text.api.services.state_event_drain._DRAIN_INTERVAL_SEC",
-        0.15,
+        "media2text.api.services.state_event_drain.resolve_drain_interval_sec",
+        lambda *_a, **_k: 0.15,
     )
 
     with api_client.websocket_connect("/api/events") as ws:

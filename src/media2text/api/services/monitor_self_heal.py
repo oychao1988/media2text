@@ -14,6 +14,7 @@ from media2text.core.runtime.monitor_lock import (
     is_monitor_watch_pid,
     monitor_effectively_running,
     read_lock_pid,
+    read_lock_record,
 )
 from media2text.core.runtime.status import _live_poll_interval_sec
 from media2text.core.runtime.supervisor import MonitorSupervisor
@@ -56,6 +57,24 @@ def maybe_self_heal_monitor(
     if _hourly_limit_reached(desktop, now):
         log.warning("monitor_self_heal_gave_up", reason=reason)
         return {"ok": True, "healed": False, "skipped": "hourly_limit", "reason": reason}
+
+    if reason == "heartbeat_stale":
+        record = read_lock_record(lock_path)
+        lock_pid = record.pid if record is not None else read_lock_pid(lock_path)
+        if (
+            record is not None
+            and record.mode == "external"
+            and lock_pid
+            and is_monitor_watch_pid(lock_pid)
+        ):
+            recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
+            return {
+                "ok": True,
+                "healed": False,
+                "skipped": "external_heartbeat_stale",
+                "pid": lock_pid,
+                "reason": reason,
+            }
 
     sup_status = supervisor.status_dict(cfg)
     if sup_status.get("thread_alive") and reason == "embedded_thread_dead":

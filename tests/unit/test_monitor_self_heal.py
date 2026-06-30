@@ -142,3 +142,40 @@ def test_maybe_self_heal_cooldown(tmp_path, monkeypatch) -> None:
         result = maybe_self_heal_monitor(cfg, sup, force=False)
     assert result["healed"] is False
     assert result["skipped"] == "cooldown"
+
+
+def test_self_heal_skips_takeover_when_external_alive_but_stale(
+    tmp_path, monkeypatch
+) -> None:
+    msh._last_heal_at = 0.0
+    msh._heal_timestamps.clear()
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        desktop=DesktopConfig(auto_start_monitor=True, monitor_self_heal=True),
+    )
+    lock = cfg.ensure_workspace() / ".monitor-watch.lock"
+    lock.write_text(
+        '{"pid": 4242, "mode": "external", "argv": "media2text monitor watch --daemon"}',
+        encoding="utf-8",
+    )
+    sup = MagicMock()
+    sup.status_dict.return_value = {"managed_by": "external", "thread_alive": False}
+    with (
+        patch(
+            "media2text.api.services.monitor_self_heal.is_monitor_watch_pid",
+            return_value=True,
+        ),
+        patch(
+            "media2text.api.services.monitor_self_heal.monitor_effectively_running",
+            return_value=(False, "heartbeat_stale"),
+        ),
+        patch(
+            "media2text.api.services.monitor_self_heal.recover_stale_work",
+        ) as recover,
+        patch.object(sup, "takeover") as takeover,
+    ):
+        result = maybe_self_heal_monitor(cfg, sup, force=True)
+    assert result["skipped"] == "external_heartbeat_stale"
+    assert result["pid"] == 4242
+    recover.assert_called_once()
+    takeover.assert_not_called()

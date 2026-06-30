@@ -475,6 +475,7 @@ class DesktopConfig(BaseModel):
     monitor_self_heal_cooldown_sec: int = 120
     monitor_self_heal_max_per_hour: int = 3
     monitor_self_heal_check_every_sec: int = 30
+    external_drain_interval_sec: int = 5
     runtime_ws_interval_sec: int = 30
     runtime_http_fallback_sec: int = 60
     runtime_failed_recent_threshold: int = 10

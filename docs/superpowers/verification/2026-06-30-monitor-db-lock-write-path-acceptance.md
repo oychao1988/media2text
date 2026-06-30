@@ -23,6 +23,8 @@
 | DL3-1 | external + Desktop | `managed_by=external`，self_heal 不 takeover | |
 | DL3-2 | external 模式 | serve drain 降频 | |
 
+**说明：** 终端 `monitor watch --daemon` 与 Desktop UI 同时运行时，`GET /api/runtime` 显示 `managed_by=external` 为预期；serve 仅作 UI/outbox drain，不抢 monitor 锁。
+
 ## 裁决
 
 **Epic:** （待全部 Issue 合并后填写 PASS/FAIL）
