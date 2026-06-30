@@ -188,6 +188,42 @@ def test_supervisor_repair_embedded_lock_and_takeover(tmp_path, monkeypatch) -> 
     assert lock["mode"] == "embedded"
 
 
+def test_supervisor_takeover_restarts_stale_embedded(tmp_path, monkeypatch) -> None:
+    import os
+    from unittest.mock import MagicMock
+
+    from media2text.core.runtime.monitor_lock import write_lock_record
+
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    ws = cfg.ensure_workspace()
+    sup = MonitorSupervisor()
+    fake_thread = MagicMock()
+    fake_thread.is_alive.return_value = True
+    sup._thread = fake_thread
+    sup._lock_path = ws / ".monitor-watch.lock"
+    sup._lock_fd = -1
+    write_lock_record(ws / ".monitor-watch.lock", pid=os.getpid(), mode="embedded")
+
+    stop_calls: list[dict] = []
+
+    def fake_stop(self, cfg, *, timeout_sec=10.0):
+        stop_calls.append({"timeout_sec": timeout_sec})
+        self._thread = None
+        self._lock_fd = None
+        self._lock_path = None
+        return {"ok": True, "stopped": True, "managed_by": "embedded"}
+
+    monkeypatch.setattr(MonitorSupervisor, "stop", fake_stop)
+
+    with patch.object(MonitorSupervisor, "_run_daemon_thread", lambda self: None):
+        takeover = sup.takeover(cfg)
+
+    assert stop_calls
+    assert takeover["ok"] is True
+    assert takeover["start"]["managed_by"] == "embedded"
+
+
 def test_supervisor_reset_stale_only_releases_recording_creator_content(
     tmp_path, monkeypatch
 ) -> None:

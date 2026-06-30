@@ -230,14 +230,13 @@ class MonitorSupervisor:
             if read_lock_pid(lock_path) != os.getpid():
                 repair = self.repair_embedded_lock(cfg)
                 return {"ok": repair.get("ok", False), "repair": repair}
-            return {
-                "ok": False,
-                "start": {
+            stop_result = self.stop(cfg, timeout_sec=15.0)
+            if not stop_result.get("ok"):
+                return {
                     "ok": False,
-                    "already_running": True,
-                    "error": "embedded monitor supervisor already running",
-                },
-            }
+                    "stop_embedded": stop_result,
+                    "start": {"ok": False, "error": "embedded_restart_stop_failed"},
+                }
         stop_result = self.stop_external(cfg)
         if not stop_result.get("ok"):
             return stop_result
