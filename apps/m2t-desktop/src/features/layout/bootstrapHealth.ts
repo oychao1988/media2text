@@ -52,6 +52,16 @@ function formatRepairFailure(checks: DoctorCheck[] | undefined, actions: RepairA
   return lines.length ? lines.join('\n') : '环境依赖未就绪';
 }
 
+function appendInstallHint(message: string): string {
+  const lower = message.toLowerCase();
+  const fromDmg =
+    lower.includes('read-only') ||
+    lower.includes('不可写') ||
+    lower.includes('/volumes/');
+  if (!fromDmg) return message;
+  return `${message}\n\n提示：请勿从 DMG 卷直接运行。将「灵犀」拖到「应用程序」后打开；或删除 ~/Library/Application Support/dev.media2text.desktop/runtime/ 后重试以重新同步运行环境。`;
+}
+
 export async function pollApiHealth(
   baseUrl: string,
   options?: { fetchFn?: typeof fetch; maxAttempts?: number; intervalMs?: number },
@@ -106,7 +116,7 @@ export async function ensureEnvironmentReady(
   const repair = (await repairRes.json()) as RepairResponse;
   if (repair.repair_ok) return;
 
-  throw new Error(formatRepairFailure(repair.checks, repair.actions));
+  throw new Error(appendInstallHint(formatRepairFailure(repair.checks, repair.actions)));
 }
 
 export async function runBootstrap(

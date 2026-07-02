@@ -24,3 +24,6 @@ midscene_run/
 node_modules/
 apps/m2t-desktop/dist/
 apps/m2t-desktop/src-tauri/target/
+apps/m2t-desktop/src-tauri/resources/m2t-runtime/.venv/
+apps/m2t-desktop/src-tauri/resources/m2t-runtime/src/
+apps/m2t-desktop/src-tauri/resources/m2t-runtime/bin/
