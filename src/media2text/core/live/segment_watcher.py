@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -13,6 +14,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.live.hls_recorder import mark_closed_with_duration, part_rel_path
 from media2text.core.live.segment_manifest import SegmentManifestRepo, SegmentProcessJobRepo
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo
 from media2text.core.workspace import open_db
 
@@ -149,17 +151,33 @@ class SegmentWatcher:
                 continue
 
             size = path.stat().st_size
-            if row is None:
-                repo.upsert_part(
-                    session_id=session_id,
-                    part_index=idx,
-                    rel_path=part_rel_path(idx),
-                    state="recording",
+
+            def _close_and_enqueue() -> str | None:
+                current = repo.get_part(session_id, idx)
+                if current is None:
+                    repo.upsert_part(
+                        session_id=session_id,
+                        part_index=idx,
+                        rel_path=part_rel_path(idx),
+                        state="recording",
+                    )
+                mark_closed_with_duration(
+                    repo, session_id, idx, session_dir, bytes=size
                 )
-            mark_closed_with_duration(
-                repo, session_id, idx, session_dir, bytes=size
-            )
-            job_id = jobs.enqueue(session_id=session_id, part_index=idx)
+                return jobs.enqueue(session_id=session_id, part_index=idx)
+
+            try:
+                job_id = with_db_lock_retry(_close_and_enqueue)
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower():
+                    log.warning(
+                        "segment_watcher_db_locked",
+                        session_id=session_id,
+                        part_index=idx,
+                        error=str(exc),
+                    )
+                    continue
+                raise
             if job_id:
                 log.info(
                     "segment_watcher_enqueued",
@@ -174,6 +192,11 @@ class SegmentWatcher:
             conn = open_db(self._cfg)
             try:
                 self.tick_once(conn)
+            except sqlite3.OperationalError as exc:
+                if "locked" in str(exc).lower():
+                    log.warning("segment_watcher_db_locked", error=str(exc))
+                else:
+                    log.exception("segment_watcher_tick_failed")
             except Exception:
                 log.exception("segment_watcher_tick_failed")
             finally:
@@ -217,10 +240,25 @@ def enqueue_closed_hls_part(
         )
     elif row.state in ("uploaded", "local_deleted"):
         return None
-    mark_closed_with_duration(
-        repo, session_id, part_index, session_dir, bytes=part_path.stat().st_size
-    )
-    job_id = jobs.enqueue(session_id=session_id, part_index=part_index)
+
+    def _close_and_enqueue() -> str | None:
+        mark_closed_with_duration(
+            repo, session_id, part_index, session_dir, bytes=part_path.stat().st_size
+        )
+        return jobs.enqueue(session_id=session_id, part_index=part_index)
+
+    try:
+        job_id = with_db_lock_retry(_close_and_enqueue)
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower():
+            log.warning(
+                "segment_watcher_db_locked",
+                session_id=session_id,
+                part_index=part_index,
+                error=str(exc),
+            )
+            return None
+        raise
     if job_id:
         log.info(
             "segment_part_enqueued",

@@ -14,6 +14,7 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.ffmpeg import stop_process
 from media2text.core.live.transcript_writer import TranscriptWriter
+from media2text.core.proxy_env import without_socks_proxy_env
 
 log = structlog.get_logger()
 
@@ -120,18 +121,19 @@ class StreamingSttSession:
                 err = self._pcm_proc.stderr.read().decode(errors="replace")[-300:]
             raise RuntimeError(f"pcm ffmpeg exited early: {err}")
 
-        client = DeepgramClient(api_key=self._api_key)
-        model = self._cfg.transcribe.deepgram.model
-        self._conn_cm = client.listen.v1.connect(
-            model=model,
-            language=self._language,
-            smart_format=self._smart_format,
-            punctuate=True,
-            encoding="linear16",
-            sample_rate="16000",
-            channels="1",
-        )
-        self._connection = self._conn_cm.__enter__()
+        with without_socks_proxy_env():
+            client = DeepgramClient(api_key=self._api_key)
+            model = self._cfg.transcribe.deepgram.model
+            self._conn_cm = client.listen.v1.connect(
+                model=model,
+                language=self._language,
+                smart_format=self._smart_format,
+                punctuate=True,
+                encoding="linear16",
+                sample_rate="16000",
+                channels="1",
+            )
+            self._connection = self._conn_cm.__enter__()
 
         def on_open(_event) -> None:
             self._ready.set()

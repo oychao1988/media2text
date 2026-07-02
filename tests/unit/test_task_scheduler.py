@@ -70,13 +70,13 @@ def test_live_tick_not_blocked_by_slow_finalize(tmp_path, monkeypatch) -> None:
     watcher = MonitorWatcher(cfg)
     stop = threading.Event()
 
-    def slow_run_once(**_kwargs) -> dict:
+    def slow_run_once(*_args, **_kwargs) -> dict:
         time.sleep(0.3)
-        return {}
+        return {"active_recordings": 0}
 
-    with (
-        patch.object(watcher._douyin_live, "run_once", side_effect=slow_run_once),
-        patch.object(watcher._bilibili_live, "run_once", return_value={}),
+    with patch(
+        "media2text.core.live.scheduler.run_live_probe_tick",
+        side_effect=slow_run_once,
     ):
         live_loop = LiveTickLoop(
             watcher,
@@ -119,9 +119,15 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr("media2text.core.live.scheduler.open_db", tracking_open_db)
     monkeypatch.setattr("media2text.core.live.task_scheduler.open_db", tracking_open_db)
+    monkeypatch.setattr("media2text.core.live.probe.open_db", tracking_open_db)
+
+    def fake_probe(*_args, **_kwargs):
+        tracking_open_db(cfg)
+        return {"active_recordings": 0}
+
     monkeypatch.setattr(
         "media2text.core.live.probe.run_live_probe_tick",
-        lambda *a, **k: {},
+        fake_probe,
     )
 
     scheduler = MonitorScheduler(watcher, cfg)
@@ -197,7 +203,7 @@ def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
     conn = open_db(cfg)
     watcher = MonitorWatcher(cfg)
 
-    def slow_douyin(**kwargs):
+    def slow_douyin_run_once(**kwargs):
         deadline = kwargs.get("deadline")
         end = deadline if deadline is not None else time.monotonic() + 2
         while time.monotonic() < end:
@@ -205,15 +211,15 @@ def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
         return {"active": 0}
 
     with (
-        patch.object(watcher._douyin_live, "run_once", side_effect=slow_douyin),
+        patch.object(watcher._douyin_live, "run_once", side_effect=slow_douyin_run_once),
         patch.object(watcher._bilibili_live, "run_once", return_value={"skipped": "budget_exhausted"}),
     ):
         t0 = time.monotonic()
         run_live_probe_tick(
             cfg,
-            conn,
             douyin=watcher._douyin_live,
             bilibili=watcher._bilibili_live,
+            conn=conn,
         )
         elapsed = time.monotonic() - t0
 

@@ -62,7 +62,7 @@ def test_probe_never_enqueues(tmp_path, monkeypatch) -> None:
 
     monkeypatch.setattr(MonitorTaskRepo, "enqueue", fail_enqueue)
 
-    run_live_probe_tick(cfg, conn, douyin=douyin, bilibili=bilibili)
+    run_live_probe_tick(cfg, douyin=douyin, bilibili=bilibili, conn=conn)
     ProbeExecutionGuard.exit_probe_tick(strict=True)
 
 

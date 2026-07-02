@@ -8,6 +8,7 @@ from pathlib import Path
 
 import structlog
 
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.models import SegmentProcessJobRow
 
 log = structlog.get_logger()
@@ -51,32 +52,36 @@ class SegmentManifestRepo:
         discontinuity_seq: int = 0,
     ) -> None:
         now = _now_iso()
-        self._conn.execute(
-            """
-            INSERT INTO live_session_parts
-              (session_id, part_index, rel_path, state, bytes, duration_sec,
-               discontinuity_seq, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(session_id, part_index) DO UPDATE SET
-              rel_path = excluded.rel_path,
-              state = excluded.state,
-              bytes = COALESCE(excluded.bytes, live_session_parts.bytes),
-              duration_sec = COALESCE(excluded.duration_sec, live_session_parts.duration_sec),
-              discontinuity_seq = excluded.discontinuity_seq,
-              updated_at = excluded.updated_at
-            """,
-            (
-                session_id,
-                part_index,
-                rel_path,
-                state,
-                bytes,
-                duration_sec,
-                discontinuity_seq,
-                now,
-            ),
-        )
-        self._conn.commit()
+
+        def _write() -> None:
+            self._conn.execute(
+                """
+                INSERT INTO live_session_parts
+                  (session_id, part_index, rel_path, state, bytes, duration_sec,
+                   discontinuity_seq, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(session_id, part_index) DO UPDATE SET
+                  rel_path = excluded.rel_path,
+                  state = excluded.state,
+                  bytes = COALESCE(excluded.bytes, live_session_parts.bytes),
+                  duration_sec = COALESCE(excluded.duration_sec, live_session_parts.duration_sec),
+                  discontinuity_seq = excluded.discontinuity_seq,
+                  updated_at = excluded.updated_at
+                """,
+                (
+                    session_id,
+                    part_index,
+                    rel_path,
+                    state,
+                    bytes,
+                    duration_sec,
+                    discontinuity_seq,
+                    now,
+                ),
+            )
+            self._conn.commit()
+
+        with_db_lock_retry(_write)
 
     def get_part(self, session_id: str, part_index: int) -> LiveSessionPartRow | None:
         row = self._conn.execute(
@@ -99,18 +104,22 @@ class SegmentManifestRepo:
         duration_sec: float | None = None,
     ) -> None:
         now = _now_iso()
-        self._conn.execute(
-            """
-            UPDATE live_session_parts
-            SET state = 'closed',
-                bytes = COALESCE(?, bytes),
-                duration_sec = COALESCE(?, duration_sec),
-                updated_at = ?
-            WHERE session_id = ? AND part_index = ?
-            """,
-            (bytes, duration_sec, now, session_id, part_index),
-        )
-        self._conn.commit()
+
+        def _write() -> None:
+            self._conn.execute(
+                """
+                UPDATE live_session_parts
+                SET state = 'closed',
+                    bytes = COALESCE(?, bytes),
+                    duration_sec = COALESCE(?, duration_sec),
+                    updated_at = ?
+                WHERE session_id = ? AND part_index = ?
+                """,
+                (bytes, duration_sec, now, session_id, part_index),
+            )
+            self._conn.commit()
+
+        with_db_lock_retry(_write)
 
     def mark_uploaded(
         self,
