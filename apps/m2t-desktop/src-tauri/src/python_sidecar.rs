@@ -12,6 +12,8 @@ const CONFIG_URL: &str = "http://127.0.0.1:8765/api/config";
 const RUNTIME_URL: &str = "http://127.0.0.1:8765/api/runtime";
 const STARTUP_TIMEOUT: Duration = Duration::from_secs(60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
+const DESKTOP_APP_SUPPORT_ID: &str = "dev.media2text.desktop";
+const RUNTIME_BUNDLE_REVISION: &str = "2";
 
 struct PythonSidecarInner {
     child: Option<Child>,
@@ -49,7 +51,7 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
             eprintln!(
                 "[python-sidecar] dev mode: restarting existing API on :{API_PORT} to pick up code changes"
             );
-            try_kill_media2text_serve_on_port(API_PORT);
+            try_kill_all_media2text_serve(None);
             thread::sleep(Duration::from_millis(500));
         } else if existing_api_compatible(&client) {
             guard.reused_external = true;
@@ -58,24 +60,37 @@ pub fn start_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
             eprintln!(
                 "[python-sidecar] API on :{API_PORT} is stale (missing runtime, config secrets, or history APIs); restarting sidecar"
             );
-            try_kill_media2text_serve_on_port(API_PORT);
+            try_kill_all_media2text_serve(None);
             thread::sleep(Duration::from_millis(500));
         }
     }
 
     guard.reused_external = false;
 
-    let project_root = resolve_project_root()?;
-    let python = resolve_python_executable(&project_root)?;
+    if !cfg!(debug_assertions) {
+        warn_if_running_from_dmg_mount();
+    }
+    // Orphan sidecars (e.g. previous Desktop session) may hold monitor lock without the port.
+    try_kill_all_media2text_serve(None);
+    thread::sleep(Duration::from_millis(300));
+    let runtime_root = resolve_runtime_root()?;
+    let python = resolve_python_executable(&runtime_root)?;
+    let desktop_layout = prepare_desktop_layout(&runtime_root)?;
+
     let mut cmd = Command::new(&python);
     cmd.args(["-m", "media2text", "serve", "--port", &API_PORT.to_string(), "--host", "127.0.0.1"])
-        .current_dir(&project_root)
+        .current_dir(&runtime_root)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
     apply_playwright_env(&mut cmd);
     cmd.env("M2T_DESKTOP_MANAGED", "1");
+    cmd.env("M2T_PROJECT_ROOT", &runtime_root);
+    cmd.env("MEDIA2TEXT_CONFIG", &desktop_layout.config_path);
+    if let Some(dotenv) = desktop_layout.dotenv_path {
+        cmd.env("M2T_DOTENV_PATH", dotenv);
+    }
 
     let mut child = cmd
         .spawn()
@@ -112,14 +127,110 @@ pub fn stop_python_sidecar(state: &PythonSidecarState) -> Result<(), String> {
         let _ = child.kill();
         let _ = child.wait();
     } else if guard.reused_external {
-        try_kill_media2text_serve_on_port(API_PORT);
+        try_kill_all_media2text_serve(None);
     }
     guard.reused_external = false;
     // Orphan cleanup when the shell was spawned by us but exit did not reap it (e.g. force quit).
     if cfg!(debug_assertions) && had_spawned_child {
-        try_kill_media2text_serve_on_port(API_PORT);
+        try_kill_all_media2text_serve(None);
     }
     Ok(())
+}
+
+struct DesktopLayout {
+    config_path: PathBuf,
+    dotenv_path: Option<PathBuf>,
+}
+
+fn prepare_desktop_layout(runtime_root: &Path) -> Result<DesktopLayout, String> {
+    if cfg!(debug_assertions) {
+        let config_path = std::env::var("MEDIA2TEXT_CONFIG")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| runtime_root.join("config.yaml"));
+        let dotenv_path = std::env::var("M2T_DOTENV_PATH")
+            .ok()
+            .map(PathBuf::from)
+            .or_else(|| {
+                let root_dotenv = runtime_root.join(".env");
+                root_dotenv.is_file().then_some(root_dotenv)
+            });
+        return Ok(DesktopLayout {
+            config_path,
+            dotenv_path,
+        });
+    }
+
+    let support = desktop_app_support_dir()?;
+    std::fs::create_dir_all(&support)
+        .map_err(|e| format!("create app support dir {}: {e}", support.display()))?;
+    let data_dir = support.join("data");
+    std::fs::create_dir_all(&data_dir)
+        .map_err(|e| format!("create data dir {}: {e}", data_dir.display()))?;
+
+    let config_path = support.join("config.yaml");
+    if !config_path.is_file() {
+        seed_desktop_config(runtime_root, &config_path, &data_dir)?;
+        eprintln!(
+            "[python-sidecar] seeded config at {} (workspace={})",
+            config_path.display(),
+            data_dir.display()
+        );
+    }
+
+    let dotenv_path = support.join(".env");
+    Ok(DesktopLayout {
+        config_path,
+        dotenv_path: dotenv_path.is_file().then_some(dotenv_path),
+    })
+}
+
+fn seed_desktop_config(runtime_root: &Path, config_path: &Path, data_dir: &Path) -> Result<(), String> {
+    let template = runtime_root.join("config.example.yaml");
+    let content = std::fs::read_to_string(&template).map_err(|e| {
+        format!(
+            "read bundled config template {}: {e}",
+            template.display()
+        )
+    })?;
+    let workspace_line = format!("workspace: {}", data_dir.display());
+    let mut seeded = content.replace("workspace: ./data", &workspace_line);
+    let bundled_ffmpeg = runtime_root.join("bin/ffmpeg.bin");
+    if bundled_ffmpeg.is_file() {
+        let ffmpeg_line = format!(
+            "ffmpeg_path: {}",
+            runtime_root.join("bin/ffmpeg").display()
+        );
+        seeded = seeded.replace("ffmpeg_path: ffmpeg", &ffmpeg_line);
+    }
+    std::fs::write(config_path, seeded).map_err(|e| {
+        format!(
+            "write desktop config {}: {e}",
+            config_path.display()
+        )
+    })
+}
+
+fn desktop_app_support_dir() -> Result<PathBuf, String> {
+    #[cfg(target_os = "macos")]
+    {
+        let home = std::env::var("HOME")
+            .map_err(|_| "HOME is not set; cannot locate Application Support".to_string())?;
+        return Ok(PathBuf::from(home)
+            .join("Library/Application Support")
+            .join(DESKTOP_APP_SUPPORT_ID));
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let base = std::env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .or_else(|_| {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|home| PathBuf::from(home).join(".local/share"))
+            })
+            .ok_or_else(|| "cannot locate desktop app data directory".to_string())?;
+        Ok(base.join(DESKTOP_APP_SUPPORT_ID))
+    }
 }
 
 fn reap_dead_child(inner: &mut PythonSidecarInner) {
@@ -198,6 +309,47 @@ fn existing_api_compatible(client: &reqwest::blocking::Client) -> bool {
     }
 }
 
+fn try_kill_all_media2text_serve(except_pid: Option<u32>) {
+    #[cfg(unix)]
+    {
+        let Ok(output) = Command::new("pgrep")
+            .args(["-f", "media2text.*serve"])
+            .output()
+        else {
+            try_kill_media2text_serve_on_port(API_PORT);
+            return;
+        };
+        if output.status.success() {
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_text in pids.split_whitespace() {
+                let Ok(pid) = pid_text.parse::<i32>() else {
+                    continue;
+                };
+                if except_pid.is_some_and(|keep| keep as i32 == pid) {
+                    continue;
+                }
+                if !commandline_is_media2text_serve(pid) {
+                    continue;
+                }
+                let _ = Command::new("kill").arg(pid.to_string()).status();
+            }
+            thread::sleep(Duration::from_millis(400));
+        }
+        try_kill_media2text_serve_on_port(API_PORT);
+    }
+}
+
+fn commandline_is_media2text_serve(pid: i32) -> bool {
+    let Ok(ps_out) = Command::new("ps")
+        .args(["-p", &pid.to_string(), "-o", "command="])
+        .output()
+    else {
+        return false;
+    };
+    let cmdline = String::from_utf8_lossy(&ps_out.stdout).to_lowercase();
+    cmdline.contains("media2text") && cmdline.contains("serve")
+}
+
 fn try_kill_media2text_serve_on_port(port: u16) {
     #[cfg(unix)]
     {
@@ -247,9 +399,9 @@ fn wait_for_health() -> Result<(), String> {
     ))
 }
 
-fn resolve_project_root() -> Result<PathBuf, String> {
+fn resolve_runtime_root() -> Result<PathBuf, String> {
     if let Ok(root) = std::env::var("M2T_PROJECT_ROOT") {
-        let path = PathBuf::from(root);
+        let path = PathBuf::from(&root);
         if path.join("pyproject.toml").is_file() {
             return Ok(path);
         }
@@ -259,10 +411,217 @@ fn resolve_project_root() -> Result<PathBuf, String> {
         ));
     }
 
-    find_project_root(Path::new(env!("CARGO_MANIFEST_DIR")))
-        .ok_or_else(|| {
-            "could not locate media2text project root (set M2T_PROJECT_ROOT or run from repo checkout)".into()
-        })
+    if let Some(bundled) = resolve_bundled_runtime_root() {
+        if cfg!(debug_assertions) {
+            return Ok(bundled);
+        }
+        return materialize_writable_runtime(&bundled);
+    }
+
+    find_project_root(Path::new(env!("CARGO_MANIFEST_DIR"))).ok_or_else(|| {
+        "could not locate media2text runtime (bundle missing m2t-runtime; rebuild DMG or set M2T_PROJECT_ROOT)".into()
+    })
+}
+
+fn warn_if_running_from_dmg_mount() {
+    let Ok(exe) = std::env::current_exe() else {
+        return;
+    };
+    if exe.to_string_lossy().contains("/Volumes/") {
+        eprintln!(
+            "[python-sidecar] 检测到从 DMG 卷启动；运行环境将复制到 Application Support。建议安装后拖到「应用程序」文件夹。"
+        );
+    }
+}
+
+fn materialize_writable_runtime(bundled: &Path) -> Result<PathBuf, String> {
+    let support = desktop_app_support_dir()?;
+    let target = support.join("runtime/m2t-runtime");
+    let marker = support.join("runtime/.bundle-version");
+    let version = format!("{}:{}", env!("CARGO_PKG_VERSION"), RUNTIME_BUNDLE_REVISION);
+    let version_ref = version.as_str();
+
+    let needs_sync = !target.join(".venv/bin/python").is_file()
+        || read_runtime_version(&marker).as_deref() != Some(version_ref);
+
+    if needs_sync {
+        eprintln!(
+            "[python-sidecar] syncing bundled runtime to {} …",
+            target.display()
+        );
+        std::fs::create_dir_all(support.join("runtime"))
+            .map_err(|e| format!("create runtime dir under {}: {e}", support.display()))?;
+        if target.exists() {
+            std::fs::remove_dir_all(&target)
+                .map_err(|e| format!("remove stale runtime {}: {e}", target.display()))?;
+        }
+        copy_dir_recursive(bundled, &target)?;
+        relocate_copied_venv(bundled, &target)?;
+        write_runtime_version(&marker, version_ref)?;
+        eprintln!("[python-sidecar] runtime sync complete");
+    }
+
+    Ok(target)
+}
+
+fn read_runtime_version(marker: &Path) -> Option<String> {
+    std::fs::read_to_string(marker).ok().map(|s| s.trim().to_string())
+}
+
+fn write_runtime_version(marker: &Path, version: &str) -> Result<(), String> {
+    std::fs::write(marker, version).map_err(|e| format!("write runtime version {}: {e}", marker.display()))
+}
+
+fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| format!("create dir {}: {e}", dst.display()))?;
+    for entry in std::fs::read_dir(src).map_err(|e| format!("read dir {}: {e}", src.display()))? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let src_path = entry.path();
+        let dst_path = dst.join(entry.file_name());
+        let file_type = entry.file_type().map_err(|e| e.to_string())?;
+        if file_type.is_dir() {
+            copy_dir_recursive(&src_path, &dst_path)?;
+        } else if file_type.is_file() {
+            if let Some(parent) = dst_path.parent() {
+                std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+            }
+            std::fs::copy(&src_path, &dst_path).map_err(|e| {
+                format!(
+                    "copy {} -> {}: {e}",
+                    src_path.display(),
+                    dst_path.display()
+                )
+            })?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                if entry.file_name() == "ffmpeg.bin" {
+                    let unpacked = dst_path.with_file_name("ffmpeg");
+                    let _ = std::fs::copy(&dst_path, &unpacked);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        if let Ok(meta) = std::fs::metadata(&unpacked) {
+                            let mut perms = meta.permissions();
+                            perms.set_mode(0o755);
+                            let _ = std::fs::set_permissions(&unpacked, perms);
+                        }
+                    }
+                } else if entry.file_name() == "ffmpeg"
+                    || entry.file_name() == "python"
+                    || entry.file_name() == "python3"
+                {
+                    if let Ok(meta) = std::fs::metadata(&dst_path) {
+                        let mut perms = meta.permissions();
+                        perms.set_mode(0o755);
+                        let _ = std::fs::set_permissions(&dst_path, perms);
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn relocate_copied_venv(bundled: &Path, target: &Path) -> Result<(), String> {
+    let replacements = venv_path_replacements(bundled, target);
+    if replacements.is_empty() {
+        return Ok(());
+    }
+    let venv = target.join(".venv");
+    let cfg = venv.join("pyvenv.cfg");
+    if cfg.is_file() {
+        rewrite_path_prefixes(&cfg, &replacements)?;
+    }
+    let site = venv.join("lib/python3.12/site-packages");
+    if site.is_dir() {
+        for entry in std::fs::read_dir(&site).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("pth") {
+                rewrite_path_prefixes(&path, &replacements)?;
+            }
+        }
+    }
+    let bin = venv.join("bin");
+    if bin.is_dir() {
+        for entry in std::fs::read_dir(&bin).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let path = entry.path();
+            if entry.file_type().map_err(|e| e.to_string())?.is_file() {
+                rewrite_path_prefixes(&path, &replacements)?;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn venv_path_replacements(bundled: &Path, target: &Path) -> Vec<(String, String)> {
+    let mut pairs = vec![
+        (bundled.to_string_lossy().into_owned(), target.to_string_lossy().into_owned()),
+        (
+            bundled.join(".venv").to_string_lossy().into_owned(),
+            target.join(".venv").to_string_lossy().into_owned(),
+        ),
+    ];
+    if let Some(resources) = bundled.parent() {
+        if resources.ends_with("Resources") {
+            let contents = resources.parent().unwrap_or(resources);
+            let app_bundle = contents.parent().unwrap_or(contents);
+            pairs.push((
+                app_bundle.to_string_lossy().into_owned(),
+                target.parent()
+                    .and_then(|p| p.parent())
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| target.to_string_lossy().into_owned()),
+            ));
+        }
+    }
+    pairs.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    pairs
+}
+
+fn rewrite_path_prefixes(path: &Path, replacements: &[(String, String)]) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|e| format!("read {}: {e}", path.display()))?;
+    let Ok(original) = std::str::from_utf8(&bytes) else {
+        // venv bin/ also contains Mach-O python executables; skip binaries.
+        return Ok(());
+    };
+    let mut updated = original.to_string();
+    for (from, to) in replacements {
+        if from != to {
+            updated = updated.replace(from, to);
+        }
+    }
+    if updated != original {
+        std::fs::write(path, updated.as_bytes())
+            .map_err(|e| format!("write {}: {e}", path.display()))?;
+    }
+    Ok(())
+}
+
+fn resolve_bundled_runtime_root() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    resolve_bundled_runtime_from_exe(&exe)
+}
+
+fn resolve_bundled_runtime_from_exe(exe: &Path) -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    {
+        let contents = exe.parent()?.parent()?;
+        let runtime = contents.join("Resources/m2t-runtime");
+        if runtime.join("pyproject.toml").is_file() {
+            return Some(runtime);
+        }
+    }
+    #[cfg(not(target_os = "macos"))]
+    {
+        let resource = exe.parent()?.join("resources/m2t-runtime");
+        if resource.join("pyproject.toml").is_file() {
+            return Some(resource);
+        }
+    }
+    None
 }
 
 fn find_project_root(start: &Path) -> Option<PathBuf> {
@@ -355,6 +714,8 @@ fn apply_playwright_env(cmd: &mut Command) {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::fs;
+    use tempfile::TempDir;
 
     #[test]
     fn config_response_compatible_accepts_missing_or_empty_providers() {
@@ -379,5 +740,51 @@ mod tests {
         let root = find_project_root(start).expect("repo root");
         assert!(root.join("pyproject.toml").is_file());
         assert!(root.join("src/media2text").is_dir());
+    }
+
+    #[test]
+    fn seed_desktop_config_rewrites_workspace() {
+        let runtime = TempDir::new().expect("runtime tempdir");
+        fs::write(
+            runtime.path().join("config.example.yaml"),
+            "workspace: ./data\nnotify:\n  enabled: false\n",
+        )
+        .expect("write template");
+        let config = runtime.path().join("config.yaml");
+        let data = runtime.path().join("data");
+        seed_desktop_config(runtime.path(), &config, &data).expect("seed config");
+        let content = fs::read_to_string(&config).expect("read config");
+        assert!(content.contains(&format!("workspace: {}", data.display())));
+        assert!(!content.contains("workspace: ./data"));
+    }
+
+    #[test]
+    fn rewrite_path_prefixes_skips_binary_files() {
+        let dir = TempDir::new().expect("tempdir");
+        let binary = dir.path().join("python3");
+        fs::write(&binary, [0xCFu8, 0xFA, 0xED, 0xFE, 0x07, 0x00, 0x00, 0x01]).expect("write binary");
+        rewrite_path_prefixes(&binary, &[("/old".into(), "/new".into())]).expect("skip binary");
+        let script = dir.path().join("media2text");
+        fs::write(&script, "#!/old/.venv/bin/python\n").expect("write script");
+        rewrite_path_prefixes(&script, &[("/old".into(), "/new".into())]).expect("rewrite script");
+        let rewritten = fs::read_to_string(&script).expect("read script");
+        assert!(rewritten.contains("/new/.venv/bin/python"));
+    }
+
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn resolve_bundled_runtime_from_macos_layout() {
+        let bundle = TempDir::new().expect("bundle tempdir");
+        let contents = bundle.path().join("Contents");
+        let macos = contents.join("MacOS");
+        let resources = contents.join("Resources/m2t-runtime");
+        fs::create_dir_all(&macos).expect("macos dir");
+        fs::create_dir_all(&resources).expect("resources dir");
+        fs::write(resources.join("pyproject.toml"), "[project]\nname = \"media2text\"\n").expect("pyproject");
+        let exe = macos.join("lingxi");
+        fs::write(&exe, "").expect("fake exe");
+
+        let resolved = resolve_bundled_runtime_from_exe(&exe).expect("bundled runtime");
+        assert_eq!(resolved, resources);
     }
 }

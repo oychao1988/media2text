@@ -3,13 +3,13 @@
 from __future__ import annotations
 
 import json
-import random
 import sqlite3
-import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
+
+from media2text.core.storage.db import with_db_lock_retry
 
 
 @dataclass
@@ -44,15 +44,11 @@ def _utc_now() -> str:
 
 
 def _write_with_retry(conn: sqlite3.Connection, fn) -> None:
-    for attempt in range(5):
-        try:
-            fn()
-            conn.commit()
-            return
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower() or attempt == 4:
-                raise
-            time.sleep(0.05 * (2**attempt) + random.random() * 0.02)
+    def _run() -> None:
+        fn()
+        conn.commit()
+
+    with_db_lock_retry(_run)
 
 
 class SessionDB:

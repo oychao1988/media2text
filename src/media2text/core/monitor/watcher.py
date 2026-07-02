@@ -155,6 +155,16 @@ class MonitorWatcher:
                 log.warning("monitor_scheduler_stop_failed", error=str(exc))
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
+        from media2text.core.runtime.monitor_startup import assert_monitor_slot_available
+
+        blocked = assert_monitor_slot_available(self._cfg)
+        if blocked is not None:
+            log.error(
+                "monitor_watch_already_running",
+                managed_by=blocked.get("managed_by"),
+                pid=blocked.get("pid"),
+            )
+            raise LockError(blocked["error"])
         lock = self._ws / ".monitor-watch.lock"
         try:
             with workspace_lock(lock):

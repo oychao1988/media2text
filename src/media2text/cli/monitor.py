@@ -36,13 +36,18 @@ def watch(
                 as_json=json_out,
             )
             raise typer.Exit(1) from None
-        except LockError:
+        except LockError as exc:
+            from media2text.core.runtime.monitor_startup import assert_monitor_slot_available
+
+            blocked = assert_monitor_slot_available(cfg) or {}
             emit(
                 {
                     "ok": False,
                     "command": "monitor watch",
                     "already_running": True,
-                    "error": "monitor watch daemon already running",
+                    "managed_by": blocked.get("managed_by"),
+                    "pid": blocked.get("pid"),
+                    "error": str(exc),
                 },
                 as_json=json_out,
             )

@@ -129,8 +129,8 @@ def _api_client_for_cfg(cfg: AppConfig, monkeypatch) -> TestClient:
     return TestClient(app)
 
 
-def test_mp_smoke_runtime_embedded_after_external_cli_lock(tmp_path, monkeypatch) -> None:
-    """Desktop serve startup stops external CLI daemon and runs embedded monitor."""
+def test_mp_smoke_runtime_external_when_cli_lock(tmp_path, monkeypatch) -> None:
+    """Desktop serve startup skips embedded when external CLI daemon is running."""
     from datetime import datetime, timezone
 
     monkeypatch.chdir(tmp_path)
@@ -165,16 +165,11 @@ def test_mp_smoke_runtime_embedded_after_external_cli_lock(tmp_path, monkeypatch
     write_heartbeat(ws, last_tick_at=datetime.now(timezone.utc).isoformat())
 
     sup = MagicMock()
-    sup.takeover.return_value = {
-        "ok": True,
-        "stop_external": {"ok": True, "stopped": True, "pid": external_pid},
-        "start": {"ok": True, "managed_by": "embedded"},
-    }
     sup.status_dict.return_value = {
-        "managed_by": "embedded",
-        "thread_alive": True,
+        "managed_by": "external",
+        "thread_alive": False,
         "running": True,
-        "pid": os.getpid(),
+        "pid": external_pid,
         "started_at": datetime.now(timezone.utc).isoformat(),
         "last_tick_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -212,23 +207,14 @@ def test_mp_smoke_runtime_embedded_after_external_cli_lock(tmp_path, monkeypatch
         ),
         TestClient(app) as client,
     ):
-        (ws / ".monitor-watch.lock").write_text(
-            json.dumps(
-                {
-                    "pid": os.getpid(),
-                    "mode": "embedded",
-                    "argv": "media2text serve",
-                }
-            ),
-            encoding="utf-8",
-        )
         body = client.get("/api/runtime").json()
 
     assert body["ok"] is True
-    assert body["managed_by"] == "embedded"
+    assert body["managed_by"] == "external"
     assert body["health"] == "healthy"
     assert body["daemon"]["running"] is True
-    sup.takeover.assert_called_once()
+    sup.takeover.assert_not_called()
+    sup.start.assert_not_called()
 
 
 def test_mp_smoke_runtime_embedded_without_external_cli(tmp_path, monkeypatch) -> None:
@@ -296,6 +282,7 @@ async def test_mp_smoke_lifespan_auto_starts_embedded_without_cli(tmp_path, monk
     monkeypatch.setattr("media2text.core.config.AppConfig.load", lambda: cfg)
 
     sup = MagicMock()
+    sup._is_embedded_running.return_value = False
     sup.start.return_value = {"ok": True, "managed_by": "embedded"}
     sup.stop.return_value = {"ok": True, "stopped": True}
 

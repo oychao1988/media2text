@@ -15,6 +15,7 @@ import structlog
 
 from media2text.core.runtime.monitor_lock import (
     clear_invalid_monitor_lock,
+    is_embedded_monitor_pid,
     is_monitor_watch_pid,
     read_lock_pid,
     write_lock_record,
@@ -76,6 +77,13 @@ class MonitorSupervisor:
         lock_path = ws / ".monitor-watch.lock"
         clear_invalid_monitor_lock(lock_path)
         pid = read_lock_pid(lock_path)
+        if pid and is_embedded_monitor_pid(pid) and not self._holds_embedded_lock(pid):
+            return {
+                "ok": False,
+                "already_running_embedded": True,
+                "pid": pid,
+                "error": "embedded monitor already running in another serve process",
+            }
         if pid and is_monitor_watch_pid(pid) and not self._holds_embedded_lock(pid):
             return {
                 "ok": False,

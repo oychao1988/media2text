@@ -2402,12 +2402,18 @@ class DesktopEventRepo:
         return out
 
     def mark_delivered(self, event_id: str) -> None:
+        from media2text.core.storage.db import with_db_lock_retry
+
         now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            "UPDATE desktop_events SET delivered_at = ? WHERE id = ?",
-            (now, event_id),
-        )
-        self._conn.commit()
+
+        def _write() -> None:
+            self._conn.execute(
+                "UPDATE desktop_events SET delivered_at = ? WHERE id = ?",
+                (now, event_id),
+            )
+            self._conn.commit()
+
+        with_db_lock_retry(_write)
 
     def get(self, event_id: str) -> DesktopEventRow | None:
         row = self._conn.execute(

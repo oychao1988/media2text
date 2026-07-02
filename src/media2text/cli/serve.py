@@ -28,8 +28,25 @@ def serve(
             "[serve] 建议通过桌面端启动，手动 serve 可能与其他实例冲突",
             file=sys.stderr,
         )
-
+    managed = os.environ.get("M2T_DESKTOP_MANAGED") == "1"
     cfg = AppConfig.load()
+    ws = cfg.ensure_workspace()
+    from media2text.core.process_lock import clear_stale_workspace_lock
+    from media2text.core.runtime.monitor_lock import clear_invalid_monitor_lock
+
+    clear_stale_workspace_lock(ws / ".serve.lock")
+    clear_invalid_monitor_lock(ws / ".monitor-watch.lock")
+
+    from media2text.core.runtime.serve_startup import resolve_serve_conflicts
+
+    conflict = resolve_serve_conflicts(cfg, port, managed=managed)
+    if not conflict.get("ok"):
+        print(f"[serve] {conflict.get('error')}", file=sys.stderr)
+        raise typer.Exit(code=1)
+    killed = conflict.get("killed") or []
+    if killed:
+        print(f"[serve] stopped conflicting serve process(es): {killed}", file=sys.stderr)
+
     ws = cfg.ensure_workspace()
     lock_path = ws / ".serve.lock"
     try:
