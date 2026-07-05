@@ -49,7 +49,6 @@ def test_bundled_tool_missing_when_no_root(monkeypatch) -> None:
 
 
 def test_pip_install_target_writable_in_temp_venv(tmp_path, monkeypatch) -> None:
-    import site
     import sys
 
     venv = tmp_path / ".venv"

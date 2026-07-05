@@ -56,8 +56,8 @@ def test_summarize_releases_db_during_llm(tmp_path, monkeypatch) -> None:
 
     def slow_summarize(*_a, **_k):
         with patch(
-            "media2text.core.live.post_process.open_db",
-            side_effect=AssertionError("open_db called during LLM"),
+            "media2text.core.live.post_process.gateway_write",
+            side_effect=AssertionError("gateway_write called during LLM"),
         ):
             time.sleep(0.02)
         return {"summarized": True, "summary_path": "x.summary.md"}

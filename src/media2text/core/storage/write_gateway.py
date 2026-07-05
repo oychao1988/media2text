@@ -297,3 +297,9 @@ def write_gateway_status(cfg) -> dict[str, object]:
     if gw is None or not gw.is_running():
         return {"running": False, "queue_depth": 0}
     return gw.status()
+
+
+def gateway_write(cfg, fn, *, label: str = "write"):
+    """Run a write callback on the DbWriteGateway writer connection (DL-4c)."""
+    gw = ensure_write_gateway_started(cfg)
+    return gw.write(fn, label=label)

@@ -8,6 +8,7 @@ from media2text.core.live.post_process import run_post_process_job
 from media2text.core.notify import NotifyService
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.storage.repos import PostProcessJobRepo
+from media2text.core.storage.write_gateway import ensure_write_gateway_started
 from media2text.core.workspace import open_db
 
 
@@ -38,6 +39,7 @@ class PostProcessExecutor:
 
         def _run() -> None:
             NotifyDaemonGuard.enter()
+            ensure_write_gateway_started(cfg)
             conn = open_db(cfg)
             try:
                 run_post_process_job(cfg, conn, job_id=job_id, notify=notify)
@@ -55,7 +57,7 @@ class PostProcessExecutor:
         limit: int,
     ) -> None:
         """Claim on caller conn; submit each job to pool (non-blocking)."""
-        jobs = PostProcessJobRepo(conn)
+        jobs = PostProcessJobRepo(conn, cfg=cfg)
         jobs.reset_stale_running(older_than_sec=cfg.live.post_process_stale_running_sec)
         claimed = jobs.claim_pending(limit=limit)
         for job in claimed:

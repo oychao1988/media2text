@@ -9,6 +9,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator
 
+from media2text.core.config import AppConfig
+from media2text.core.storage.write_aware import WriteAwareRepo
 from media2text.core.storage.models import NotifyEventRow
 
 
@@ -40,9 +42,9 @@ class NotifyDaemonGuard:
             _daemon_ctx.active = False
 
 
-class NotifyEventRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class NotifyEventRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def enqueue(
         self,
@@ -54,30 +56,33 @@ class NotifyEventRepo:
         session_id: str | None = None,
         dedupe_key: str | None = None,
     ) -> str:
-        event_id = str(uuid.uuid4())
-        now = _now_iso()
-        payload_json = json.dumps(
-            {"title": title, "body": body},
-            ensure_ascii=False,
-        )
-        self._conn.execute(
-            """
-            INSERT INTO notify_events
-              (id, kind, dedupe_key, creator_id, session_id, payload_json, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                event_id,
-                kind,
-                dedupe_key,
-                creator_id,
-                session_id,
-                payload_json,
-                now,
-            ),
-        )
-        self._conn.commit()
-        return event_id
+        def _body() -> str:
+            event_id = str(uuid.uuid4())
+            now = _now_iso()
+            payload_json = json.dumps(
+                {"title": title, "body": body},
+                ensure_ascii=False,
+            )
+            self._conn.execute(
+                """
+                INSERT INTO notify_events
+                  (id, kind, dedupe_key, creator_id, session_id, payload_json, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    event_id,
+                    kind,
+                    dedupe_key,
+                    creator_id,
+                    session_id,
+                    payload_json,
+                    now,
+                ),
+            )
+            self._conn.commit()
+            return event_id
+
+        return self._mutate("notify_event.enqueue", _body)
 
     def claim_pending(self, *, limit: int = 50) -> list[NotifyEventRow]:
         rows = self._conn.execute(
@@ -97,12 +102,15 @@ class NotifyEventRepo:
         return out
 
     def mark_done(self, event_id: str) -> None:
-        now = _now_iso()
-        self._conn.execute(
-            "UPDATE notify_events SET delivered_at = ? WHERE id = ?",
-            (now, event_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            now = _now_iso()
+            self._conn.execute(
+                "UPDATE notify_events SET delivered_at = ? WHERE id = ?",
+                (now, event_id),
+            )
+            self._conn.commit()
+
+        self._mutate("notify_event.mark_done", _body)
 
     def count_pending(self) -> int:
         row = self._conn.execute(
