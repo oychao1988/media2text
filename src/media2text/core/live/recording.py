@@ -79,10 +79,10 @@ class _RecordingDb:
 
     def __init__(self, conn, cfg: AppConfig, notify: NotifyService) -> None:
         self.conn = conn
-        self.creators = CreatorRepo(conn)
-        self.sessions = LiveSessionRepo(conn)
+        self.creators = CreatorRepo(conn, cfg=cfg)
+        self.sessions = LiveSessionRepo(conn, cfg=cfg)
         self.state = StateWriter(conn, cfg=cfg, notify=notify)
-        self.jobs = PostProcessJobRepo(conn)
+        self.jobs = PostProcessJobRepo(conn, cfg=cfg)
 
 
 class LiveRecordingCore:

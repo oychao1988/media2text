@@ -64,8 +64,8 @@ class LiveWatcher:
         def _poll() -> dict:
             work_conn = conn
             core = self.core_for_conn(work_conn)
-            creators = CreatorRepo(work_conn)
-            sessions = LiveSessionRepo(work_conn)
+            creators = CreatorRepo(work_conn, cfg=self._cfg)
+            sessions = LiveSessionRepo(work_conn, cfg=self._cfg)
             targets = [c for c in creators.list_monitored() if c.platform == PLATFORM]
             if creator_id:
                 row = creators.get(creator_id)
@@ -126,7 +126,7 @@ class LiveWatcher:
                 log.warning("bilibili_live_stale_sessions_cleared", count=stale)
             return {
                 "platform": PLATFORM,
-                "active": len(LiveSessionRepo(conn).list_active()),
+                "active": len(LiveSessionRepo(conn, cfg=self._cfg).list_active()),
                 "stale_cleared": stale,
             }
 

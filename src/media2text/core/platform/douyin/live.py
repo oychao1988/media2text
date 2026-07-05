@@ -75,7 +75,7 @@ class LiveWatcher:
         def _poll() -> dict:
             work_conn = conn
             core = self.core_for_conn(work_conn)
-            sessions = LiveSessionRepo(work_conn)
+            sessions = LiveSessionRepo(work_conn, cfg=self._cfg)
             if deadline is not None and time.monotonic() >= deadline:
                 return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
             core.poll_active_recordings()
@@ -115,7 +115,7 @@ class LiveWatcher:
             if stale:
                 log.warning("live_stale_sessions_cleared", count=stale)
             return {
-                "active": len(LiveSessionRepo(conn).list_active()),
+                "active": len(LiveSessionRepo(conn, cfg=self._cfg).list_active()),
                 "stale_cleared": stale,
             }
 

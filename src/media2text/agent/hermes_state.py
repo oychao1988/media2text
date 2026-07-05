@@ -9,7 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any
 
-from media2text.core.storage.db import with_db_lock_retry
+from media2text.core.config import AppConfig
+from media2text.core.storage.write_gateway import WriteGuard, gateway_write
 
 
 @dataclass
@@ -43,17 +44,40 @@ def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _write_with_retry(conn: sqlite3.Connection, fn) -> None:
+def _write_with_retry(
+    db: "SessionDB",
+    fn,
+    *,
+    cfg: AppConfig | None = None,
+    label: str = "hermes.write",
+) -> None:
     def _run() -> None:
         fn()
-        conn.commit()
+        db._conn.commit()
+
+    if WriteGuard.is_active():
+        _run()
+        return
+    if cfg is not None:
+        def _on_writer(conn) -> None:
+            prev = db._conn
+            db._conn = conn
+            try:
+                _run()
+            finally:
+                db._conn = prev
+
+        gateway_write(cfg, _on_writer, label=label)
+        return
+    from media2text.core.storage.db import with_db_lock_retry
 
     with_db_lock_retry(_run)
 
 
 class SessionDB:
-    def __init__(self, conn: sqlite3.Connection) -> None:
+    def __init__(self, conn: sqlite3.Connection, *, cfg: AppConfig | None = None) -> None:
         self._conn = conn
+        self._cfg = cfg
 
     @property
     def conn(self) -> sqlite3.Connection:
@@ -100,7 +124,7 @@ class SessionDB:
                 ),
             )
 
-        _write_with_retry(self._conn, _insert)
+        _write_with_retry(self, _insert, cfg=self._cfg, label="hermes.create_session")
         return session_id
 
     def get_session_row(self, session_id: str) -> sqlite3.Row | None:
@@ -196,7 +220,7 @@ class SessionDB:
                 (title_val, json.dumps(binding), now, session_id),
             )
 
-        _write_with_retry(self._conn, _update)
+        _write_with_retry(self, _update, cfg=self._cfg, label="hermes.update_session")
         return True
 
     def activate_thread(
@@ -254,7 +278,7 @@ class SessionDB:
                 (creator_val, json.dumps(binding), now, session_id),
             )
 
-        _write_with_retry(self._conn, _update)
+        _write_with_retry(self, _update, cfg=self._cfg, label="hermes.update_session")
         return True
 
     def delete_thread(self, display_thread_id: str) -> bool:
@@ -276,7 +300,7 @@ class SessionDB:
                 (display_thread_id,),
             )
 
-        _write_with_retry(self._conn, _delete)
+        _write_with_retry(self, _delete, cfg=self._cfg, label="hermes.delete_thread")
         return True
 
     def append_message(self, session_id: str, message: MessageRow) -> str:
@@ -320,7 +344,7 @@ class SessionDB:
                 (now, session_id),
             )
 
-        _write_with_retry(self._conn, _insert)
+        _write_with_retry(self, _insert, cfg=self._cfg, label="hermes.create_session")
         return mid
 
     def get_message_by_id(self, message_id: str) -> sqlite3.Row | None:
@@ -340,7 +364,7 @@ class SessionDB:
                 (_utc_now(), session_id),
             )
 
-        _write_with_retry(self._conn, _delete)
+        _write_with_retry(self, _delete, cfg=self._cfg, label="hermes.delete_thread")
 
     def get_messages(self, display_thread_id: str) -> list[sqlite3.Row]:
         session_id = self.get_active_session_for_thread(display_thread_id)
@@ -441,7 +465,7 @@ class SessionDB:
                 ),
             )
 
-        _write_with_retry(self._conn, _insert)
+        _write_with_retry(self, _insert, cfg=self._cfg, label="hermes.create_session")
         return child_id
 
     def update_token_estimate(self, session_id: str, tokens: int) -> None:
@@ -456,7 +480,7 @@ class SessionDB:
                 (tokens, now, session_id),
             )
 
-        _write_with_retry(self._conn, _update)
+        _write_with_retry(self, _update, cfg=self._cfg, label="hermes.update_session")
 
     def _fts_search_table(
         self,
@@ -570,7 +594,7 @@ class SessionDB:
                 (payload, now, session_id),
             )
 
-        _write_with_retry(self._conn, _update)
+        _write_with_retry(self, _update, cfg=self._cfg, label="hermes.update_session")
 
     def count_user_messages(self, session_id: str) -> int:
         row = self._conn.execute(
@@ -600,7 +624,7 @@ class SessionDB:
                 (raw, now, child_id),
             )
 
-        _write_with_retry(self._conn, _update)
+        _write_with_retry(self, _update, cfg=self._cfg, label="hermes.update_session")
 
 
 def parse_binding(raw: str | None) -> dict[str, Any]:

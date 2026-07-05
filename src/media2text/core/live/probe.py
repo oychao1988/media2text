@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, Any
 from media2text.core.live.live_observe import LiveObserveService
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.db import with_db_lock_retry
-from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, gateway_write, get_write_gateway
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -133,15 +133,15 @@ def run_live_probe_tick(
                 bi_fin: dict[str, Any] = {}
                 active = 0
 
-                def _finalize() -> None:
+                def _finalize(wconn) -> None:
                     nonlocal dy_fin, bi_fin, active
-                    dy_fin = douyin.run_finalize(conn=conn)
-                    bi_fin = bilibili.run_finalize(conn=conn)
+                    dy_fin = douyin.run_finalize(conn=wconn)
+                    bi_fin = bilibili.run_finalize(conn=wconn)
                     from media2text.core.storage.repos import LiveSessionRepo
 
-                    active = len(LiveSessionRepo(conn).list_active())
+                    active = len(LiveSessionRepo(wconn, cfg=cfg).list_active())
 
-                with_db_lock_retry(_finalize)
+                gateway_write(cfg, _finalize, label="probe.finalize")
             finally:
                 conn.close()
 

@@ -144,10 +144,11 @@ def post_creator(
 def patch_creator(
     creator_id: str,
     payload: dict[str, Any],
+    cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
 ) -> dict:
     body = CreatorPatchBody.model_validate(payload)
-    repo = CreatorRepo(conn)
+    repo = CreatorRepo(conn, cfg=cfg)
     if not repo.get(creator_id):
         raise HTTPException(status_code=404, detail="creator not found")
     if body.auto_record_override is not None:

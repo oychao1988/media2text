@@ -15,7 +15,7 @@ from media2text.api.services.cloud_byte_proxy import stream_cloud_file
 from media2text.core.cloud.aliyundrive import AliyunDriveClient
 from media2text.core.config import AppConfig
 from media2text.core.manifest import refresh_manifest
-from media2text.core.storage.db import with_db_lock_retry
+from media2text.core.storage.write_gateway import gateway_write
 from media2text.core.storage.repos import (
     AwemeRepo,
     CloudUploadRepo,
@@ -233,7 +233,7 @@ def delete_local_media(
             if path and path.is_file():
                 path.unlink(missing_ok=True)
                 deleted.append(workspace_rel(ws, str(path)) or str(path))
-        LiveSessionRepo(conn).clear_local_path(item_id)
+        LiveSessionRepo(conn, cfg=cfg).clear_local_path(item_id)
     else:
         aweme = AwemeRepo(conn).get(item_id)
         if not aweme or aweme.creator_id != creator_id:
@@ -244,7 +244,7 @@ def delete_local_media(
         if path and path.is_file():
             path.unlink(missing_ok=True)
             deleted.append(workspace_rel(ws, str(path)) or str(path))
-        AwemeRepo(conn).clear_local_path(item_id)
+        AwemeRepo(conn, cfg=cfg).clear_local_path(item_id)
 
     refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
     return {
@@ -320,7 +320,7 @@ def download_from_cloud(
         return {"ok": False, "error": "cloud_download_failed", "detail": str(exc)}
 
     target.write_bytes(data)
-    LiveSessionRepo(conn).update_status(item_id, local_path=str(target))
+    LiveSessionRepo(conn, cfg=cfg).update_status(item_id, local_path=str(target))
     refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
     return {
         "ok": True,
@@ -370,15 +370,15 @@ def delete_history_record(
                 _delete_sidecars(path)
                 path.unlink(missing_ok=True)
 
-    def _persist_delete() -> None:
+    def _persist_delete(wconn) -> None:
         if kind == "live":
-            LiveSessionRepo(conn).delete(item_id)
+            LiveSessionRepo(wconn, cfg=cfg).delete(item_id)
         else:
-            AwemeRepo(conn).delete(item_id)
-        refresh_manifest(conn, sec_uid=creator.sec_uid, workspace=ws)
+            AwemeRepo(wconn, cfg=cfg).delete(item_id)
+        refresh_manifest(wconn, sec_uid=creator.sec_uid, workspace=ws)
 
     try:
-        with_db_lock_retry(_persist_delete)
+        gateway_write(cfg, _persist_delete, label="history.delete_record")
     except sqlite3.OperationalError as exc:
         if "locked" in str(exc).lower():
             return {"ok": False, "error": "database_locked"}
@@ -525,7 +525,7 @@ def retry_vod_download(
             "status": aweme.sync_status,
         }
 
-    if not AwemeRepo(conn).reset_failed_to_listed(item_id):
+    if not AwemeRepo(conn, cfg=cfg).reset_failed_to_listed(item_id):
         return {"ok": False, "error": "retry_failed"}
 
     task_id = MonitorTaskRepo(conn).enqueue(

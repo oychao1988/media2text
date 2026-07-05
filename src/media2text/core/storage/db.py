@@ -1,12 +1,10 @@
 import sqlite3
 import threading
-import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
 _connect_lock = threading.Lock()
 _migrated_db_paths: set[str] = set()
-_sqlite_write_lock = threading.RLock()
 
 DEFAULT_BUSY_TIMEOUT_MS = 30000
 
@@ -838,10 +836,10 @@ def with_db_lock_retry(
     max_attempts: int = 6,
     base_delay_sec: float = 0.2,
 ) -> T:
-    """Retry write callbacks on SQLite database is locked (DL-3 / DL-4a).
+    """Retry write callbacks on SQLite database is locked (DL-3 / DL-4a / DL-4d).
 
     When ``DbWriteGateway`` is running, delegates to the writer thread queue.
-    Otherwise falls back to ``_sqlite_write_lock`` (tests / short CLI paths).
+    Otherwise retries ``fn()`` directly (CLI / tests without gateway).
     """
     from media2text.core.storage.write_gateway import WriteGuard, get_write_gateway_optional
 
@@ -852,18 +850,7 @@ def with_db_lock_retry(
     if gw is not None and gw.is_running():
         return gw.write(lambda _conn: fn())
 
-    last_exc: sqlite3.OperationalError | None = None
-    for attempt in range(max_attempts):
-        try:
-            with _sqlite_write_lock:
-                return fn()
-        except sqlite3.OperationalError as exc:
-            if "locked" not in str(exc).lower():
-                raise
-            last_exc = exc
-            if attempt + 1 >= max_attempts:
-                raise
-            time.sleep(base_delay_sec * (2**attempt))
-    if last_exc is not None:
-        raise last_exc
-    raise RuntimeError("with_db_lock_retry exhausted")
+    raise RuntimeError(
+        "DbWriteGateway is not running; use gateway_write(cfg, ...) or "
+        "ensure_write_gateway_started(cfg) before with_db_lock_retry"
+    )
