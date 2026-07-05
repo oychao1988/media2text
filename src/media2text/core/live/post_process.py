@@ -149,6 +149,7 @@ def run_post_process_job(
                 )
             except Exception as exc:
                 duration_ms = int((time.monotonic() - t0) * 1000)
+                err_msg = str(exc)
 
                 def _fail(wconn) -> None:
                     if event_id:
@@ -157,7 +158,7 @@ def run_post_process_job(
                             status="failed",
                             ended_at=_now_iso(),
                             duration_ms=duration_ms,
-                            detail={"error": str(exc)},
+                            detail={"error": err_msg},
                         )
 
                 gateway_write(cfg, _fail, label="post_process.summarize.fail")

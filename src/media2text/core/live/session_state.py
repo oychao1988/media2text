@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING
 import structlog
 
 from media2text.core.config import AppConfig
-from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.live.session_recovery import recover_active_sessions

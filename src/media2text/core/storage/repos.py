@@ -8,7 +8,6 @@ from media2text.core.platform.douyin.models import AwemeItem
 import json
 
 from media2text.core.live.probe_guard import ProbeExecutionGuard
-from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.write_aware import WriteAwareRepo
 from media2text.core.config import AppConfig
 from media2text.core.storage.models import (

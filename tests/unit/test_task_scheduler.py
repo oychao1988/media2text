@@ -126,7 +126,6 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
 
     ensure_write_gateway_started(cfg)
     gw = get_write_gateway(cfg)
-    orig_batch = gw.write_batch
 
     def tracking_batch(fn, *, label: str = "batch", timeout_sec=None):
         conn = tracking_open_db(cfg)
