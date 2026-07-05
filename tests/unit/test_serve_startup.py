@@ -1,4 +1,3 @@
-from unittest.mock import patch
 
 from media2text.core.config import AppConfig, DesktopConfig
 from media2text.core.runtime.serve_startup import (

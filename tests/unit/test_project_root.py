@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 import media2text.core.config as config_mod
 from media2text.core.config import _project_root, load_dotenv_file

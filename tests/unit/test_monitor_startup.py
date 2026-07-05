@@ -1,7 +1,6 @@
 import json
 from unittest.mock import MagicMock, patch
 
-import pytest
 
 from media2text.core.config import AppConfig, DesktopConfig
 from media2text.core.runtime.monitor_startup import (
@@ -62,7 +61,7 @@ def test_monitor_owner_status_external(tmp_path, monkeypatch) -> None:
 
 def test_assert_monitor_slot_available_blocks_external(tmp_path, monkeypatch) -> None:
     cfg = _cfg(tmp_path)
-    ws = cfg.ensure_workspace()
+    cfg.ensure_workspace()
     external_pid = 515151
     monkeypatch.setattr(
         "media2text.core.runtime.monitor_startup.is_monitor_watch_pid",
