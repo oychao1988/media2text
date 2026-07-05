@@ -9,6 +9,8 @@ import json
 
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.db import with_db_lock_retry
+from media2text.core.storage.write_aware import WriteAwareRepo
+from media2text.core.config import AppConfig
 from media2text.core.storage.models import (
     AwemeRow,
     CloudUploadRow,
@@ -626,9 +628,9 @@ class DynamicRepo:
         return [DynamicRow(**dict(r)) for r in rows]
 
 
-class LiveSessionRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class LiveSessionRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def create(
         self,
@@ -641,32 +643,34 @@ class LiveSessionRepo:
         pipeline_mode: str | None = None,
         session_dir: str | None = None,
     ) -> str:
-        sid = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            INSERT INTO live_sessions
-              (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
-               first_seen_live_at, recording_started_at, platform_live_started_at,
-               pipeline_mode, session_dir)
-            VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?, ?)
-            """,
-            (
-                sid,
-                creator_id,
-                room_id,
-                ffmpeg_pid,
-                now,
-                temp_path,
-                now,
-                now,
-                platform_live_started_at,
-                pipeline_mode,
-                session_dir,
-            ),
-        )
-        self._conn.commit()
-        return sid
+        def _body():
+            sid = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                INSERT INTO live_sessions
+                  (id, creator_id, room_id, ffmpeg_pid, started_at, temp_path, status,
+                   first_seen_live_at, recording_started_at, platform_live_started_at,
+                   pipeline_mode, session_dir)
+                VALUES (?, ?, ?, ?, ?, ?, 'recording', ?, ?, ?, ?, ?)
+                """,
+                (
+                    sid,
+                    creator_id,
+                    room_id,
+                    ffmpeg_pid,
+                    now,
+                    temp_path,
+                    now,
+                    now,
+                    platform_live_started_at,
+                    pipeline_mode,
+                    session_dir,
+                ),
+            )
+            self._conn.commit()
+            return sid
+        return self._mutate('live_session.create', _body)
 
     def get_active_for_creator(self, creator_id: str) -> LiveSessionRow | None:
         row = self._conn.execute(
@@ -783,43 +787,47 @@ class LiveSessionRepo:
         return [LiveSessionRow(**dict(r)) for r in rows]
 
     def clear_local_path(self, session_id: str) -> None:
-        self._conn.execute(
-            """
-            UPDATE live_sessions
-            SET local_path = NULL, temp_path = NULL
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET local_path = NULL, temp_path = NULL
+                WHERE id = ?
+                """,
+                (session_id,),
+            )
+            self._conn.commit()
+        self._mutate('live_session.clear_local_path', _body)
 
     def delete(self, session_id: str) -> bool:
-        self._conn.execute(
-            "DELETE FROM cloud_uploads WHERE session_id = ?",
-            (session_id,),
-        )
-        self._conn.execute(
-            "DELETE FROM live_session_parts WHERE session_id = ?",
-            (session_id,),
-        )
-        self._conn.execute(
-            "DELETE FROM segment_process_jobs WHERE session_id = ?",
-            (session_id,),
-        )
-        self._conn.execute(
-            "DELETE FROM post_process_jobs WHERE session_id = ?",
-            (session_id,),
-        )
-        self._conn.execute(
-            "DELETE FROM live_pipeline_events WHERE session_id = ?",
-            (session_id,),
-        )
-        cur = self._conn.execute(
-            "DELETE FROM live_sessions WHERE id = ?",
-            (session_id,),
-        )
-        self._conn.commit()
-        return cur.rowcount > 0
+        def _body():
+            self._conn.execute(
+                "DELETE FROM cloud_uploads WHERE session_id = ?",
+                (session_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM live_session_parts WHERE session_id = ?",
+                (session_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM segment_process_jobs WHERE session_id = ?",
+                (session_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM post_process_jobs WHERE session_id = ?",
+                (session_id,),
+            )
+            self._conn.execute(
+                "DELETE FROM live_pipeline_events WHERE session_id = ?",
+                (session_id,),
+            )
+            cur = self._conn.execute(
+                "DELETE FROM live_sessions WHERE id = ?",
+                (session_id,),
+            )
+            self._conn.commit()
+            return cur.rowcount > 0
+        return self._mutate('live_session.delete', _body)
 
     def update_status(
         self,
@@ -834,96 +842,112 @@ class LiveSessionRepo:
         cloud_file_id: str | None = None,
         cloud_relative_path: str | None = None,
     ) -> None:
-        ended_at = datetime.now(timezone.utc).isoformat() if ended else None
-        self._conn.execute(
-            """
-            UPDATE live_sessions
-            SET status = COALESCE(?, status),
-                local_path = COALESCE(?, local_path),
-                error = COALESCE(?, error),
-                ended_at = COALESCE(?, ended_at),
-                transcribe_status = COALESCE(?, transcribe_status),
-                cloud_upload_status = COALESCE(?, cloud_upload_status),
-                cloud_file_id = COALESCE(?, cloud_file_id),
-                cloud_relative_path = COALESCE(?, cloud_relative_path)
-            WHERE id = ?
-            """,
-            (
-                status,
-                local_path,
-                error,
-                ended_at,
-                transcribe_status,
-                cloud_upload_status,
-                cloud_file_id,
-                cloud_relative_path,
-                session_id,
-            ),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            ended_at = datetime.now(timezone.utc).isoformat() if ended else None
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET status = COALESCE(?, status),
+                    local_path = COALESCE(?, local_path),
+                    error = COALESCE(?, error),
+                    ended_at = COALESCE(?, ended_at),
+                    transcribe_status = COALESCE(?, transcribe_status),
+                    cloud_upload_status = COALESCE(?, cloud_upload_status),
+                    cloud_file_id = COALESCE(?, cloud_file_id),
+                    cloud_relative_path = COALESCE(?, cloud_relative_path)
+                WHERE id = ?
+                """,
+                (
+                    status,
+                    local_path,
+                    error,
+                    ended_at,
+                    transcribe_status,
+                    cloud_upload_status,
+                    cloud_file_id,
+                    cloud_relative_path,
+                    session_id,
+                ),
+            )
+            self._conn.commit()
+        self._mutate('live_session.update_status', _body)
 
     def clear_pid(self, session_id: str) -> None:
-        self._conn.execute(
-            "UPDATE live_sessions SET ffmpeg_pid = NULL WHERE id = ?",
-            (session_id,),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            self._conn.execute(
+                "UPDATE live_sessions SET ffmpeg_pid = NULL WHERE id = ?",
+                (session_id,),
+            )
+            self._conn.commit()
+        self._mutate('live_session.clear_pid', _body)
 
     def increment_offline_streak(self, session_id: str) -> int:
-        self._conn.execute(
-            """
-            UPDATE live_sessions
-            SET offline_streak = offline_streak + 1
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        self._conn.commit()
-        row = self.get(session_id)
-        return row.offline_streak if row else 0
+        def _body():
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET offline_streak = offline_streak + 1
+                WHERE id = ?
+                """,
+                (session_id,),
+            )
+            self._conn.commit()
+            row = self.get(session_id)
+            return row.offline_streak if row else 0
+        return self._mutate('live_session.increment_offline_streak', _body)
 
     def reset_offline_streak(self, session_id: str) -> None:
-        self._conn.execute(
-            "UPDATE live_sessions SET offline_streak = 0 WHERE id = ?",
-            (session_id,),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            self._conn.execute(
+                "UPDATE live_sessions SET offline_streak = 0 WHERE id = ?",
+                (session_id,),
+            )
+            self._conn.commit()
+        self._mutate('live_session.reset_offline_streak', _body)
 
     def set_offline_since(self, session_id: str, iso_ts: str) -> None:
-        self._conn.execute(
-            "UPDATE live_sessions SET offline_since_at = ? WHERE id = ?",
-            (iso_ts, session_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            self._conn.execute(
+                "UPDATE live_sessions SET offline_since_at = ? WHERE id = ?",
+                (iso_ts, session_id),
+            )
+            self._conn.commit()
+        self._mutate('live_session.set_offline_since', _body)
 
     def clear_offline_since(self, session_id: str) -> None:
-        self._conn.execute(
-            "UPDATE live_sessions SET offline_since_at = NULL WHERE id = ?",
-            (session_id,),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            self._conn.execute(
+                "UPDATE live_sessions SET offline_since_at = NULL WHERE id = ?",
+                (session_id,),
+            )
+            self._conn.commit()
+        self._mutate('live_session.clear_offline_since', _body)
 
     def increment_reconnect_attempts(self, session_id: str) -> int:
-        self._conn.execute(
-            """
-            UPDATE live_sessions
-            SET reconnect_attempts = reconnect_attempts + 1
-            WHERE id = ?
-            """,
-            (session_id,),
-        )
-        self._conn.commit()
-        row = self.get(session_id)
-        return row.reconnect_attempts if row else 0
+        def _body():
+            self._conn.execute(
+                """
+                UPDATE live_sessions
+                SET reconnect_attempts = reconnect_attempts + 1
+                WHERE id = ?
+                """,
+                (session_id,),
+            )
+            self._conn.commit()
+            row = self.get(session_id)
+            return row.reconnect_attempts if row else 0
+        return self._mutate('live_session.increment_reconnect_attempts', _body)
 
     def append_segment_path(self, session_id: str, path: str) -> None:
-        paths = self.list_segment_paths(session_id)
-        paths.append(path)
-        self._conn.execute(
-            "UPDATE live_sessions SET segment_paths_json = ? WHERE id = ?",
-            (json.dumps(paths), session_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            paths = self.list_segment_paths(session_id)
+            paths.append(path)
+            self._conn.execute(
+                "UPDATE live_sessions SET segment_paths_json = ? WHERE id = ?",
+                (json.dumps(paths), session_id),
+            )
+            self._conn.commit()
+        self._mutate('live_session.append_segment_path', _body)
 
     def list_segment_paths(self, session_id: str) -> list[str]:
         row = self.get(session_id)
@@ -943,25 +967,27 @@ class LiveSessionRepo:
         temp_path: str,
         session_dir: str | None = None,
     ) -> None:
-        if session_dir is not None:
-            self._conn.execute(
-                """
-                UPDATE live_sessions
-                SET ffmpeg_pid = ?, temp_path = ?, session_dir = ?
-                WHERE id = ?
-                """,
-                (ffmpeg_pid, temp_path, session_dir, session_id),
-            )
-        else:
-            self._conn.execute(
-                """
-                UPDATE live_sessions
-                SET ffmpeg_pid = ?, temp_path = ?
-                WHERE id = ?
-                """,
-                (ffmpeg_pid, temp_path, session_id),
-            )
-        self._conn.commit()
+        def _body() -> None:
+            if session_dir is not None:
+                self._conn.execute(
+                    """
+                    UPDATE live_sessions
+                    SET ffmpeg_pid = ?, temp_path = ?, session_dir = ?
+                    WHERE id = ?
+                    """,
+                    (ffmpeg_pid, temp_path, session_dir, session_id),
+                )
+            else:
+                self._conn.execute(
+                    """
+                    UPDATE live_sessions
+                    SET ffmpeg_pid = ?, temp_path = ?
+                    WHERE id = ?
+                    """,
+                    (ffmpeg_pid, temp_path, session_id),
+                )
+            self._conn.commit()
+        self._mutate('live_session.update_recording_state', _body)
 
     def list_streaming_summary_since(self, since_iso: str) -> list[dict]:
         from media2text.core.live.transcript_writer import count_transcript_segments
@@ -1494,9 +1520,9 @@ class CreatorAgentJobRepo:
         return {"by_kind": by_kind, "latest_bootstrap": latest_row}
 
 
-class MonitorTaskRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class MonitorTaskRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def enqueue(
         self,
@@ -1507,31 +1533,34 @@ class MonitorTaskRepo:
         priority: int = 10,
         payload_json: str | None = None,
     ) -> str | None:
-        ProbeExecutionGuard.record_violation("enqueue")
-        task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        try:
-            self._conn.execute(
-                """
-                INSERT INTO monitor_tasks
-                  (id, creator_id, task_type, payload_json, priority, status,
-                   dedupe_key, created_at)
-                VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
-                """,
-                (
-                    task_id,
-                    creator_id,
-                    task_type,
-                    payload_json,
-                    priority,
-                    dedupe_key,
-                    now,
-                ),
-            )
-            self._conn.commit()
-            return task_id
-        except sqlite3.IntegrityError:
-            return None
+        def _body() -> str | None:
+            ProbeExecutionGuard.record_violation("enqueue")
+            task_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            try:
+                self._conn.execute(
+                    """
+                    INSERT INTO monitor_tasks
+                      (id, creator_id, task_type, payload_json, priority, status,
+                       dedupe_key, created_at)
+                    VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)
+                    """,
+                    (
+                        task_id,
+                        creator_id,
+                        task_type,
+                        payload_json,
+                        priority,
+                        dedupe_key,
+                        now,
+                    ),
+                )
+                self._conn.commit()
+                return task_id
+            except sqlite3.IntegrityError:
+                return None
+
+        return self._mutate("monitor_task.enqueue", _body)
 
     def ensure_task(
         self,
@@ -1552,17 +1581,19 @@ class MonitorTaskRepo:
         )
 
     def cancel_pending(self, *, dedupe_key: str) -> int:
-        now = datetime.now(timezone.utc).isoformat()
-        cur = self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'cancelled', finished_at = ?
-            WHERE dedupe_key = ? AND status = 'pending'
-            """,
-            (now, dedupe_key),
-        )
-        self._conn.commit()
-        return cur.rowcount
+        def _body():
+            now = datetime.now(timezone.utc).isoformat()
+            cur = self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'cancelled', finished_at = ?
+                WHERE dedupe_key = ? AND status = 'pending'
+                """,
+                (now, dedupe_key),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        return self._mutate('monitor_task.cancel_pending', _body)
 
     def has_active_dedupe(self, dedupe_key: str) -> bool:
         row = self._conn.execute(
@@ -1576,16 +1607,18 @@ class MonitorTaskRepo:
         return row is not None
 
     def mark_running(self, task_id: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'running', started_at = ?
-            WHERE id = ? AND status = 'pending'
-            """,
-            (now, task_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'running', started_at = ?
+                WHERE id = ? AND status = 'pending'
+                """,
+                (now, task_id),
+            )
+            self._conn.commit()
+        self._mutate('monitor_task.mark_running', _body)
 
     def get(self, task_id: str) -> MonitorTaskRow | None:
         row = self._conn.execute(
@@ -1658,102 +1691,112 @@ class MonitorTaskRepo:
         min_priority: int = 0,
         exclude_creator_ids: frozenset[str] | None = None,
     ) -> list[MonitorTaskRow]:
-        claimed: list[MonitorTaskRow] = []
-        now = datetime.now(timezone.utc).isoformat()
-        for _ in range(limit):
-            task_id = self._select_fair_pending_id(
-                min_priority=min_priority,
-                max_priority=max_priority,
-                exclude_creator_ids=exclude_creator_ids,
-            )
-            if not task_id:
-                break
-            row = {"id": task_id}
-            cur = self._conn.execute(
-                """
-                UPDATE monitor_tasks
-                SET status = 'running', started_at = ?
-                WHERE id = ? AND status = 'pending'
-                """,
-                (now, row["id"]),
-            )
-            if cur.rowcount != 1:
-                continue
-            task = self.get(row["id"])
-            if task:
-                claimed.append(task)
-        self._conn.commit()
-        return claimed
+        def _body():
+            claimed: list[MonitorTaskRow] = []
+            now = datetime.now(timezone.utc).isoformat()
+            for _ in range(limit):
+                task_id = self._select_fair_pending_id(
+                    min_priority=min_priority,
+                    max_priority=max_priority,
+                    exclude_creator_ids=exclude_creator_ids,
+                )
+                if not task_id:
+                    break
+                row = {"id": task_id}
+                cur = self._conn.execute(
+                    """
+                    UPDATE monitor_tasks
+                    SET status = 'running', started_at = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (now, row["id"]),
+                )
+                if cur.rowcount != 1:
+                    continue
+                task = self.get(row["id"])
+                if task:
+                    claimed.append(task)
+            self._conn.commit()
+            return claimed
+        return self._mutate('monitor_task.claim_pending', _body)
 
     def mark_done(self, task_id: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'done', finished_at = ?
-            WHERE id = ?
-            """,
-            (now, task_id),
-        )
-        self._conn.commit()
-
-    def mark_failed(self, task_id: str, *, error: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'failed', error = ?, finished_at = ?
-            WHERE id = ?
-            """,
-            (error, now, task_id),
-        )
-        self._conn.commit()
-
-    def fail_or_retry(self, task_id: str, *, error: str, max_retries: int) -> str:
-        """On worker failure: retry (pending) or DLQ (failed). Returns outcome."""
-        row = self.get(task_id)
-        if not row:
-            return "missing"
-        next_attempt = int(row.attempt_count) + 1
-        if next_attempt < max_retries:
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
             self._conn.execute(
                 """
                 UPDATE monitor_tasks
-                SET status = 'pending', attempt_count = ?, error = ?,
-                    started_at = NULL, finished_at = NULL
+                SET status = 'done', finished_at = ?
                 WHERE id = ?
                 """,
-                (next_attempt, error, task_id),
+                (now, task_id),
             )
             self._conn.commit()
-            return "retry"
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'failed', attempt_count = ?, error = ?,
-                finished_at = ?
-            WHERE id = ?
-            """,
-            (next_attempt, error, now, task_id),
-        )
-        self._conn.commit()
-        return "failed"
+        self._mutate('monitor_task.mark_done', _body)
+
+    def mark_failed(self, task_id: str, *, error: str) -> None:
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'failed', error = ?, finished_at = ?
+                WHERE id = ?
+                """,
+                (error, now, task_id),
+            )
+            self._conn.commit()
+        self._mutate('monitor_task.mark_failed', _body)
+
+    def fail_or_retry(self, task_id: str, *, error: str, max_retries: int) -> str:
+        def _body():
+            """On worker failure: retry (pending) or DLQ (failed). Returns outcome."""
+            row = self.get(task_id)
+            if not row:
+                return "missing"
+            next_attempt = int(row.attempt_count) + 1
+            if next_attempt < max_retries:
+                self._conn.execute(
+                    """
+                    UPDATE monitor_tasks
+                    SET status = 'pending', attempt_count = ?, error = ?,
+                        started_at = NULL, finished_at = NULL
+                    WHERE id = ?
+                    """,
+                    (next_attempt, error, task_id),
+                )
+                self._conn.commit()
+                return "retry"
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'failed', attempt_count = ?, error = ?,
+                    finished_at = ?
+                WHERE id = ?
+                """,
+                (next_attempt, error, now, task_id),
+            )
+            self._conn.commit()
+            return "failed"
+        return self._mutate('monitor_task.fail_or_retry', _body)
 
     def retry_failed(self, task_id: str) -> bool:
-        """Reset a failed task to pending. Returns True if updated."""
-        now = datetime.now(timezone.utc).isoformat()
-        cur = self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'pending', attempt_count = 0, error = NULL,
-                started_at = NULL, finished_at = NULL, created_at = ?
-            WHERE id = ? AND status = 'failed'
-            """,
-            (now, task_id),
-        )
-        self._conn.commit()
-        return cur.rowcount == 1
+        def _body():
+            """Reset a failed task to pending. Returns True if updated."""
+            now = datetime.now(timezone.utc).isoformat()
+            cur = self._conn.execute(
+                """
+                UPDATE monitor_tasks
+                SET status = 'pending', attempt_count = 0, error = NULL,
+                    started_at = NULL, finished_at = NULL, created_at = ?
+                WHERE id = ? AND status = 'failed'
+                """,
+                (now, task_id),
+            )
+            self._conn.commit()
+            return cur.rowcount == 1
+        return self._mutate('monitor_task.retry_failed', _body)
 
     def list_in_flight(self, *, limit: int = 50) -> list[MonitorTaskRow]:
         rows = self._conn.execute(
@@ -1771,66 +1814,72 @@ class MonitorTaskRepo:
         return [MonitorTaskRow(**dict(r)) for r in rows]
 
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
-        cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
-        rows = self._conn.execute(
-            "SELECT id, started_at FROM monitor_tasks WHERE status = 'running'"
-        ).fetchall()
-        count = 0
-        for row in rows:
-            started = row["started_at"]
-            if started:
-                try:
-                    started_dt = datetime.fromisoformat(
-                        str(started).replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    started_dt = datetime.now(timezone.utc)
-                if started_dt.timestamp() > cutoff:
+        def _body():
+            cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
+            rows = self._conn.execute(
+                "SELECT id, started_at FROM monitor_tasks WHERE status = 'running'"
+            ).fetchall()
+            count = 0
+            for row in rows:
+                started = row["started_at"]
+                if started:
+                    try:
+                        started_dt = datetime.fromisoformat(
+                            str(started).replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        started_dt = datetime.now(timezone.utc)
+                    if started_dt.timestamp() > cutoff:
+                        continue
+                elif older_than_sec > 0:
                     continue
-            elif older_than_sec > 0:
-                continue
-            self._conn.execute(
+                self._conn.execute(
+                    """
+                    UPDATE monitor_tasks
+                    SET status = 'pending', started_at = NULL, error = NULL
+                    WHERE id = ?
+                    """,
+                    (row["id"],),
+                )
+                count += 1
+            self._conn.commit()
+            return count
+        return self._mutate('monitor_task.reset_stale_running', _body)
+
+    def release_running_content_tasks_for_creators(self, creator_ids: list[str]) -> int:
+        def _body():
+            """Yield Playwright for live lane: reset running content tasks for given creators."""
+            if not creator_ids:
+                return 0
+            placeholders = ",".join("?" * len(creator_ids))
+            cur = self._conn.execute(
+                f"""
+                UPDATE monitor_tasks
+                SET status = 'pending', started_at = NULL, error = NULL
+                WHERE status = 'running'
+                  AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
+                  AND creator_id IN ({placeholders})
+                """,
+                tuple(creator_ids),
+            )
+            self._conn.commit()
+            return cur.rowcount
+        return self._mutate('monitor_task.release_running_content_tasks_for_creators', _body)
+
+    def release_running_content_tasks(self) -> int:
+        def _body():
+            """Release all running content tasks (legacy; prefer per-creator)."""
+            cur = self._conn.execute(
                 """
                 UPDATE monitor_tasks
                 SET status = 'pending', started_at = NULL, error = NULL
-                WHERE id = ?
-                """,
-                (row["id"],),
+                WHERE status = 'running'
+                  AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
+                """
             )
-            count += 1
-        self._conn.commit()
-        return count
-
-    def release_running_content_tasks_for_creators(self, creator_ids: list[str]) -> int:
-        """Yield Playwright for live lane: reset running content tasks for given creators."""
-        if not creator_ids:
-            return 0
-        placeholders = ",".join("?" * len(creator_ids))
-        cur = self._conn.execute(
-            f"""
-            UPDATE monitor_tasks
-            SET status = 'pending', started_at = NULL, error = NULL
-            WHERE status = 'running'
-              AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
-              AND creator_id IN ({placeholders})
-            """,
-            tuple(creator_ids),
-        )
-        self._conn.commit()
-        return cur.rowcount
-
-    def release_running_content_tasks(self) -> int:
-        """Release all running content tasks (legacy; prefer per-creator)."""
-        cur = self._conn.execute(
-            """
-            UPDATE monitor_tasks
-            SET status = 'pending', started_at = NULL, error = NULL
-            WHERE status = 'running'
-              AND task_type IN ('sync_catalog', 'download', 'sync_dynamic')
-            """
-        )
-        self._conn.commit()
-        return cur.rowcount
+            self._conn.commit()
+            return cur.rowcount
+        return self._mutate('monitor_task.release_running_content_tasks', _body)
 
     def count_by_status(self) -> dict[str, int]:
         rows = self._conn.execute(
@@ -2278,9 +2327,9 @@ class CloudUploadRepo:
         return int(cur.rowcount or 0)
 
 
-class LiveSnapshotRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class LiveSnapshotRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def upsert(
         self,
@@ -2323,7 +2372,7 @@ class LiveSnapshotRepo:
             self._conn.commit()
             return True
 
-        return with_db_lock_retry(_write)
+        return self._mutate("live_snapshot.upsert", _write)
 
     def touch_probe(self, creator_id: str, *, probe_error: str) -> bool:
         def _write() -> bool:
@@ -2352,7 +2401,7 @@ class LiveSnapshotRepo:
             self._conn.commit()
             return True
 
-        return with_db_lock_retry(_write)
+        return self._mutate("live_snapshot.touch_probe", _write)
 
     def get(self, creator_id: str) -> CreatorLiveSnapshotRow | None:
         row = self._conn.execute(
@@ -2402,7 +2451,6 @@ class DesktopEventRepo:
         return out
 
     def mark_delivered(self, event_id: str) -> None:
-        from media2text.core.storage.db import with_db_lock_retry
 
         now = datetime.now(timezone.utc).isoformat()
 
