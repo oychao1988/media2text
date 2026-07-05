@@ -25,8 +25,8 @@ from media2text.core.storage.repos import (
     PipelineEventRepo,
     PostProcessJobRepo,
 )
+from media2text.core.storage.write_gateway import gateway_write
 from media2text.core.transcribe.whisper import write_transcript_outputs
-from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
 
@@ -59,8 +59,8 @@ def run_post_process_job(
     job_id: str,
     notify: NotifyService,
 ) -> dict:
-    jobs = PostProcessJobRepo(conn)
-    sessions = LiveSessionRepo(conn)
+    jobs = PostProcessJobRepo(conn, cfg=cfg)
+    sessions = LiveSessionRepo(conn, cfg=cfg)
     creators = CreatorRepo(conn)
     job = jobs.get(job_id)
     if not job:
@@ -128,19 +128,17 @@ def run_post_process_job(
             def _now_iso() -> str:
                 return datetime.now(timezone.utc).isoformat()
 
-            wconn = open_db(cfg)
-            event_id: str | None = None
-            try:
-                PostProcessJobRepo(wconn).update_stage(job_id, stage="summarize")
-                event_id = PipelineEventRepo(wconn).insert(
+            def _prep(wconn) -> str | None:
+                PostProcessJobRepo(wconn, cfg=cfg).update_stage(job_id, stage="summarize")
+                return PipelineEventRepo(wconn).insert(
                     session_id=job.session_id,
                     stage="summarize",
                     status="started",
                     job_id=job_id,
                     started_at=_now_iso(),
                 )
-            finally:
-                wconn.close()
+
+            event_id = gateway_write(cfg, _prep, label="post_process.summarize.start")
 
             t0 = time.monotonic()
             try:
@@ -151,8 +149,8 @@ def run_post_process_job(
                 )
             except Exception as exc:
                 duration_ms = int((time.monotonic() - t0) * 1000)
-                wconn = open_db(cfg)
-                try:
+
+                def _fail(wconn) -> None:
                     if event_id:
                         PipelineEventRepo(wconn).complete(
                             event_id,
@@ -161,13 +159,13 @@ def run_post_process_job(
                             duration_ms=duration_ms,
                             detail={"error": str(exc)},
                         )
-                finally:
-                    wconn.close()
+
+                gateway_write(cfg, _fail, label="post_process.summarize.fail")
                 raise
 
             duration_ms = int((time.monotonic() - t0) * 1000)
-            wconn = open_db(cfg)
-            try:
+
+            def _complete(wconn) -> dict:
                 if event_id:
                     PipelineEventRepo(wconn).complete(
                         event_id,
@@ -208,14 +206,14 @@ def run_post_process_job(
                         )
                     )
                 return meta
-            finally:
-                wconn.close()
+
+            return gateway_write(cfg, _complete, label="post_process.summarize.complete")
 
         def _run_upload() -> dict:
             if not creator:
                 return {}
-            wconn = open_db(cfg)
-            try:
+
+            def _body(wconn) -> dict:
                 session = LiveSessionRepo(wconn).get(job.session_id)
                 if session and (session.pipeline_mode or "").strip().lower() == "legacy":
                     log.warning(
@@ -223,7 +221,7 @@ def run_post_process_job(
                         mode="legacy",
                         hint=_LIVE_PIPELINE_DEPRECATED_HINT,
                     )
-                PostProcessJobRepo(wconn).update_stage(job_id, stage="cloud_upload")
+                PostProcessJobRepo(wconn, cfg=cfg).update_stage(job_id, stage="cloud_upload")
                 with stage_event(
                     wconn, session_id=job.session_id, stage="cloud_upload", job_id=job_id
                 ):
@@ -239,8 +237,8 @@ def run_post_process_job(
                 if meta:
                     refresh_manifest(wconn, sec_uid=creator.sec_uid, workspace=ws)
                 return meta or {}
-            finally:
-                wconn.close()
+
+            return gateway_write(cfg, _body, label="post_process.upload")
 
         hls_session = is_hls_session_media(media)
         if hls_session and cfg.aliyundrive.enabled:
@@ -355,7 +353,7 @@ def drain_pending_jobs(
     notify: NotifyService,
     limit: int = 1,
 ) -> list[dict]:
-    jobs = PostProcessJobRepo(conn)
+    jobs = PostProcessJobRepo(conn, cfg=cfg)
     stale_sec = cfg.live.post_process_stale_running_sec
     jobs.reset_stale_running(older_than_sec=stale_sec)
     claimed = jobs.claim_pending(limit=limit)

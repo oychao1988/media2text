@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import re
-import sqlite3
 import threading
 import time
 from dataclasses import dataclass
@@ -14,9 +13,8 @@ import structlog
 from media2text.core.config import AppConfig
 from media2text.core.live.hls_recorder import mark_closed_with_duration, part_rel_path
 from media2text.core.live.segment_manifest import SegmentManifestRepo, SegmentProcessJobRepo
-from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo
-from media2text.core.workspace import open_db
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 
 log = structlog.get_logger()
 
@@ -63,7 +61,7 @@ class SegmentWatcher:
     def force_close_session(self, conn, session_id: str, session_dir: Path) -> None:
         """Finalize: force-close open parts and enqueue upload jobs."""
         self.stop_session(session_id)
-        enqueue_all_pending_hls_parts(conn, session_id, session_dir)
+        enqueue_all_pending_hls_parts(conn, session_id, session_dir, cfg=self._cfg)
 
     def tick_once(self, conn) -> None:
         if not self._cfg.live.segment_pipeline.enabled:
@@ -97,8 +95,8 @@ class SegmentWatcher:
         parts_dir = session_dir / "parts"
         if not parts_dir.is_dir():
             return
-        repo = SegmentManifestRepo(conn)
-        jobs = SegmentProcessJobRepo(conn)
+        repo = SegmentManifestRepo(conn, cfg=self._cfg)
+        jobs = SegmentProcessJobRepo(conn, cfg=self._cfg)
         now = time.monotonic()
         growing_index: int | None = None
         candidates: list[tuple[int, Path]] = []
@@ -151,33 +149,18 @@ class SegmentWatcher:
                 continue
 
             size = path.stat().st_size
-
-            def _close_and_enqueue() -> str | None:
-                current = repo.get_part(session_id, idx)
-                if current is None:
-                    repo.upsert_part(
-                        session_id=session_id,
-                        part_index=idx,
-                        rel_path=part_rel_path(idx),
-                        state="recording",
-                    )
-                mark_closed_with_duration(
-                    repo, session_id, idx, session_dir, bytes=size
+            current = repo.get_part(session_id, idx)
+            if current is None:
+                repo.upsert_part(
+                    session_id=session_id,
+                    part_index=idx,
+                    rel_path=part_rel_path(idx),
+                    state="recording",
                 )
-                return jobs.enqueue(session_id=session_id, part_index=idx)
-
-            try:
-                job_id = with_db_lock_retry(_close_and_enqueue)
-            except sqlite3.OperationalError as exc:
-                if "locked" in str(exc).lower():
-                    log.warning(
-                        "segment_watcher_db_locked",
-                        session_id=session_id,
-                        part_index=idx,
-                        error=str(exc),
-                    )
-                    continue
-                raise
+            mark_closed_with_duration(
+                repo, session_id, idx, session_dir, bytes=size
+            )
+            job_id = jobs.enqueue(session_id=session_id, part_index=idx)
             if job_id:
                 log.info(
                     "segment_watcher_enqueued",
@@ -188,19 +171,13 @@ class SegmentWatcher:
 
     def _run(self) -> None:
         interval = self._cfg.live.segment_pipeline.watch_interval_sec
+        ensure_write_gateway_started(self._cfg)
+        gw = get_write_gateway(self._cfg)
         while not self._stop.is_set():
-            conn = open_db(self._cfg)
             try:
-                self.tick_once(conn)
-            except sqlite3.OperationalError as exc:
-                if "locked" in str(exc).lower():
-                    log.warning("segment_watcher_db_locked", error=str(exc))
-                else:
-                    log.exception("segment_watcher_tick_failed")
+                gw.read(self.tick_once)
             except Exception:
                 log.exception("segment_watcher_tick_failed")
-            finally:
-                conn.close()
             self._stop.wait(timeout=interval)
 
 
@@ -222,10 +199,11 @@ def enqueue_closed_hls_part(
     session_id: str,
     session_dir: Path,
     part_index: int,
+    cfg: AppConfig | None = None,
 ) -> str | None:
     """Mark a part closed (if needed) and enqueue Tier-1 upload when the file exists."""
-    repo = SegmentManifestRepo(conn)
-    jobs = SegmentProcessJobRepo(conn)
+    repo = SegmentManifestRepo(conn, cfg=cfg)
+    jobs = SegmentProcessJobRepo(conn, cfg=cfg)
     rel = part_rel_path(part_index)
     part_path = session_dir / rel
     if not part_path.is_file() or part_path.stat().st_size == 0:
@@ -241,24 +219,10 @@ def enqueue_closed_hls_part(
     elif row.state in ("uploaded", "local_deleted"):
         return None
 
-    def _close_and_enqueue() -> str | None:
-        mark_closed_with_duration(
-            repo, session_id, part_index, session_dir, bytes=part_path.stat().st_size
-        )
-        return jobs.enqueue(session_id=session_id, part_index=part_index)
-
-    try:
-        job_id = with_db_lock_retry(_close_and_enqueue)
-    except sqlite3.OperationalError as exc:
-        if "locked" in str(exc).lower():
-            log.warning(
-                "segment_watcher_db_locked",
-                session_id=session_id,
-                part_index=part_index,
-                error=str(exc),
-            )
-            return None
-        raise
+    mark_closed_with_duration(
+        repo, session_id, part_index, session_dir, bytes=part_path.stat().st_size
+    )
+    job_id = jobs.enqueue(session_id=session_id, part_index=part_index)
     if job_id:
         log.info(
             "segment_part_enqueued",
@@ -269,7 +233,13 @@ def enqueue_closed_hls_part(
     return job_id
 
 
-def enqueue_all_pending_hls_parts(conn, session_id: str, session_dir: Path) -> int:
+def enqueue_all_pending_hls_parts(
+    conn,
+    session_id: str,
+    session_dir: Path,
+    *,
+    cfg: AppConfig | None = None,
+) -> int:
     """Close + enqueue every on-disk .m4s that is not yet uploaded."""
     parts_dir = session_dir / "parts"
     if not parts_dir.is_dir():
@@ -281,7 +251,11 @@ def enqueue_all_pending_hls_parts(conn, session_id: str, session_dir: Path) -> i
             continue
         idx = int(m.group(1))
         if enqueue_closed_hls_part(
-            conn, session_id=session_id, session_dir=session_dir, part_index=idx
+            conn,
+            session_id=session_id,
+            session_dir=session_dir,
+            part_index=idx,
+            cfg=cfg,
         ):
             enqueued += 1
     return enqueued

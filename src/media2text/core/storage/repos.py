@@ -1024,9 +1024,9 @@ class LiveSessionRepo(WriteAwareRepo):
         return out
 
 
-class PostProcessJobRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class PostProcessJobRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def get_active_for_session(self, session_id: str) -> PostProcessJobRow | None:
         row = self._conn.execute(
@@ -1047,18 +1047,21 @@ class PostProcessJobRepo:
         creator_id: str,
         mp4_path: str,
     ) -> str:
-        job_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            INSERT INTO post_process_jobs
-              (id, session_id, creator_id, mp4_path, status, created_at, updated_at)
-            VALUES (?, ?, ?, ?, 'pending', ?, ?)
-            """,
-            (job_id, session_id, creator_id, mp4_path, now, now),
-        )
-        self._conn.commit()
-        return job_id
+        def _body() -> str:
+            job_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                INSERT INTO post_process_jobs
+                  (id, session_id, creator_id, mp4_path, status, created_at, updated_at)
+                VALUES (?, ?, ?, ?, 'pending', ?, ?)
+                """,
+                (job_id, session_id, creator_id, mp4_path, now, now),
+            )
+            self._conn.commit()
+            return job_id
+
+        return self._mutate("post_process.enqueue", _body)
 
     def ensure_enqueue(
         self,
@@ -1097,141 +1100,161 @@ class PostProcessJobRepo:
         return [PostProcessJobRow(**dict(r)) for r in rows]
 
     def claim_pending(self, *, limit: int = 1) -> list[PostProcessJobRow]:
-        claimed: list[PostProcessJobRow] = []
-        now = datetime.now(timezone.utc).isoformat()
-        for _ in range(limit):
-            row = self._conn.execute(
-                """
-                SELECT id FROM post_process_jobs
-                WHERE status = 'pending'
-                ORDER BY created_at ASC
-                LIMIT 1
-                """
-            ).fetchone()
-            if not row:
-                break
-            cur = self._conn.execute(
+        def _body() -> list[PostProcessJobRow]:
+            claimed: list[PostProcessJobRow] = []
+            now = datetime.now(timezone.utc).isoformat()
+            for _ in range(limit):
+                row = self._conn.execute(
+                    """
+                    SELECT id FROM post_process_jobs
+                    WHERE status = 'pending'
+                    ORDER BY created_at ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+                if not row:
+                    break
+                cur = self._conn.execute(
+                    """
+                    UPDATE post_process_jobs
+                    SET status = 'running', updated_at = ?
+                    WHERE id = ? AND status = 'pending'
+                    """,
+                    (now, row["id"]),
+                )
+                if cur.rowcount != 1:
+                    continue
+                job = self.get(row["id"])
+                if job:
+                    claimed.append(job)
+            self._conn.commit()
+            return claimed
+
+        return self._mutate("post_process.claim_pending", _body)
+
+    def mark_running(self, job_id: str) -> None:
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
                 """
                 UPDATE post_process_jobs
                 SET status = 'running', updated_at = ?
-                WHERE id = ? AND status = 'pending'
+                WHERE id = ?
                 """,
-                (now, row["id"]),
+                (now, job_id),
             )
-            if cur.rowcount != 1:
-                continue
-            job = self.get(row["id"])
-            if job:
-                claimed.append(job)
-        self._conn.commit()
-        return claimed
+            self._conn.commit()
 
-    def mark_running(self, job_id: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE post_process_jobs
-            SET status = 'running', updated_at = ?
-            WHERE id = ?
-            """,
-            (now, job_id),
-        )
-        self._conn.commit()
+        self._mutate("post_process.mark_running", _body)
 
     def update_stage(self, job_id: str, *, stage: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE post_process_jobs
-            SET stage = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (stage, now, job_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET stage = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (stage, now, job_id),
+            )
+            self._conn.commit()
+
+        self._mutate("post_process.update_stage", _body)
 
     def mark_done(self, job_id: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE post_process_jobs
-            SET status = 'done', updated_at = ?
-            WHERE id = ?
-            """,
-            (now, job_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET status = 'done', updated_at = ?
+                WHERE id = ?
+                """,
+                (now, job_id),
+            )
+            self._conn.commit()
+
+        self._mutate("post_process.mark_done", _body)
 
     def mark_failed(self, job_id: str, *, error: str) -> None:
-        now = datetime.now(timezone.utc).isoformat()
-        self._conn.execute(
-            """
-            UPDATE post_process_jobs
-            SET status = 'failed', error = ?, updated_at = ?
-            WHERE id = ?
-            """,
-            (error, now, job_id),
-        )
-        self._conn.commit()
+        def _body() -> None:
+            now = datetime.now(timezone.utc).isoformat()
+            self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET status = 'failed', error = ?, updated_at = ?
+                WHERE id = ?
+                """,
+                (error, now, job_id),
+            )
+            self._conn.commit()
+
+        self._mutate("post_process.mark_failed", _body)
 
     def retry_failed(self, job_id: str) -> bool:
-        """Reset a failed job to pending. Returns True if updated."""
-        now = datetime.now(timezone.utc).isoformat()
-        cur = self._conn.execute(
-            """
-            UPDATE post_process_jobs
-            SET status = 'pending', stage = NULL, error = NULL, updated_at = ?
-            WHERE id = ? AND status = 'failed'
-            """,
-            (now, job_id),
-        )
-        self._conn.commit()
-        return cur.rowcount == 1
+        def _body() -> bool:
+            now = datetime.now(timezone.utc).isoformat()
+            cur = self._conn.execute(
+                """
+                UPDATE post_process_jobs
+                SET status = 'pending', stage = NULL, error = NULL, updated_at = ?
+                WHERE id = ? AND status = 'failed'
+                """,
+                (now, job_id),
+            )
+            self._conn.commit()
+            return cur.rowcount == 1
+
+        return self._mutate("post_process.retry_failed", _body)
 
     def reset_stale_running(self, *, older_than_sec: int = 3600) -> int:
-        cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
-        rows = self._conn.execute(
-            """
-            SELECT j.id, j.updated_at, j.session_id, s.status AS session_status
-            FROM post_process_jobs j
-            LEFT JOIN live_sessions s ON s.id = j.session_id
-            WHERE j.status = 'running'
-            """
-        ).fetchall()
-        count = 0
-        now = datetime.now(timezone.utc).isoformat()
-        for row in rows:
-            try:
-                updated = datetime.fromisoformat(
-                    str(row["updated_at"]).replace("Z", "+00:00")
-                )
-            except ValueError:
-                updated = datetime.now(timezone.utc)
-            if updated.timestamp() > cutoff:
-                continue
-            session_status = (row["session_status"] or "").strip().lower()
-            if session_status in ("completed", "failed"):
-                self._conn.execute(
-                    """
-                    UPDATE post_process_jobs
-                    SET status = 'failed', stage = NULL,
-                        error = 'superseded:session_terminal', updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (now, row["id"]),
-                )
-            else:
-                self._conn.execute(
-                    """
-                    UPDATE post_process_jobs
-                    SET status = 'pending', stage = NULL, updated_at = ?
-                    WHERE id = ?
-                    """,
-                    (now, row["id"]),
-                )
-            count += 1
-        self._conn.commit()
-        return count
+        def _body() -> int:
+            cutoff = datetime.now(timezone.utc).timestamp() - older_than_sec
+            rows = self._conn.execute(
+                """
+                SELECT j.id, j.updated_at, j.session_id, s.status AS session_status
+                FROM post_process_jobs j
+                LEFT JOIN live_sessions s ON s.id = j.session_id
+                WHERE j.status = 'running'
+                """
+            ).fetchall()
+            count = 0
+            now = datetime.now(timezone.utc).isoformat()
+            for row in rows:
+                try:
+                    updated = datetime.fromisoformat(
+                        str(row["updated_at"]).replace("Z", "+00:00")
+                    )
+                except ValueError:
+                    updated = datetime.now(timezone.utc)
+                if updated.timestamp() > cutoff:
+                    continue
+                session_status = (row["session_status"] or "").strip().lower()
+                if session_status in ("completed", "failed"):
+                    self._conn.execute(
+                        """
+                        UPDATE post_process_jobs
+                        SET status = 'failed', stage = NULL,
+                            error = 'superseded:session_terminal', updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, row["id"]),
+                    )
+                else:
+                    self._conn.execute(
+                        """
+                        UPDATE post_process_jobs
+                        SET status = 'pending', stage = NULL, updated_at = ?
+                        WHERE id = ?
+                        """,
+                        (now, row["id"]),
+                    )
+                count += 1
+            self._conn.commit()
+            return count
+
+        return self._mutate("post_process.reset_stale_running", _body)
 
     def list_in_flight(self, *, limit: int = 50) -> list[PostProcessJobRow]:
         rows = self._conn.execute(
@@ -2416,25 +2439,28 @@ class LiveSnapshotRepo(WriteAwareRepo):
         return CreatorLiveSnapshotRow(**dict(row))
 
 
-class DesktopEventRepo:
-    def __init__(self, conn) -> None:
-        self._conn = conn
+class DesktopEventRepo(WriteAwareRepo):
+    def __init__(self, conn, *, cfg: AppConfig | None = None) -> None:
+        super().__init__(conn, cfg=cfg)
 
     def enqueue_creator_updated(
         self, creator_id: str, *, payload: dict | None = None
     ) -> str:
-        event_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
-        payload_json = json.dumps(payload) if payload else None
-        self._conn.execute(
-            """
-            INSERT INTO desktop_events (id, event_type, creator_id, payload_json, created_at)
-            VALUES (?, 'creator.updated', ?, ?, ?)
-            """,
-            (event_id, creator_id, payload_json, now),
-        )
-        self._conn.commit()
-        return event_id
+        def _body() -> str:
+            event_id = str(uuid.uuid4())
+            now = datetime.now(timezone.utc).isoformat()
+            payload_json = json.dumps(payload) if payload else None
+            self._conn.execute(
+                """
+                INSERT INTO desktop_events (id, event_type, creator_id, payload_json, created_at)
+                VALUES (?, 'creator.updated', ?, ?, ?)
+                """,
+                (event_id, creator_id, payload_json, now),
+            )
+            self._conn.commit()
+            return event_id
+
+        return self._mutate("desktop_event.enqueue", _body)
 
     def claim_pending(self, *, limit: int = 50) -> list[DesktopEventRow]:
         rows = self._conn.execute(
@@ -2454,17 +2480,16 @@ class DesktopEventRepo:
         return out
 
     def mark_delivered(self, event_id: str) -> None:
-
         now = datetime.now(timezone.utc).isoformat()
 
-        def _write() -> None:
+        def _body() -> None:
             self._conn.execute(
                 "UPDATE desktop_events SET delivered_at = ? WHERE id = ?",
                 (now, event_id),
             )
             self._conn.commit()
 
-        with_db_lock_retry(_write)
+        self._mutate("desktop_event.mark_delivered", _body)
 
     def get(self, event_id: str) -> DesktopEventRow | None:
         row = self._conn.execute(

@@ -22,7 +22,7 @@ def run_segment_process_job(
     job_id: str,
     notify: NotifyService,
 ) -> dict:
-    jobs = SegmentProcessJobRepo(conn)
+    jobs = SegmentProcessJobRepo(conn, cfg=cfg)
     job = jobs.get(job_id)
     if not job:
         return {"ok": False, "error": "job_not_found"}
@@ -43,7 +43,7 @@ def run_segment_process_job(
         jobs.mark_failed(job_id, error="creator_not_found")
         return {"ok": False, "error": "creator_not_found"}
 
-    parts_repo = SegmentManifestRepo(conn)
+    parts_repo = SegmentManifestRepo(conn, cfg=cfg)
     part = parts_repo.get_part(job.session_id, job.part_index)
     if not part:
         jobs.mark_failed(job_id, error="part_not_found")

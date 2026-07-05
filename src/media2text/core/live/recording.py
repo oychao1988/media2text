@@ -992,6 +992,7 @@ class LiveRecordingCore:
             session_id=session_id,
             session_dir=session_dir,
             part_index=idx,
+            cfg=self._cfg,
         )
 
     def _resolve_hls_part_index(self, session_id: str, session_dir: Path) -> int | None:
@@ -1985,7 +1986,9 @@ class LiveRecordingCore:
             seg_watcher.force_close_session(self._conn, session_id, session_dir)
         else:
             self._close_hls_part_if_any(session_id, session_dir)
-            enqueue_all_pending_hls_parts(self._conn, session_id, session_dir)
+            enqueue_all_pending_hls_parts(
+                self._conn, session_id, session_dir, cfg=self._cfg
+            )
         finalize_hls_endlist(session_dir)
         manifest_repo = SegmentManifestRepo(self._conn)
         manifest_repo.export_json(session_id, session_dir=session_dir)
