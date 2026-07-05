@@ -1,4 +1,3 @@
-import sqlite3
 import threading
 
 from media2text.agent.hermes_state import SessionDB
@@ -9,7 +8,6 @@ def test_hermes_write_uses_shared_db_lock(tmp_path) -> None:
     db_path = tmp_path / "media2text.db"
     conn_a = connect(db_path)
     conn_b = connect(db_path)
-    db_a = SessionDB(conn_a)
     db_b = SessionDB(conn_b)
 
     held = threading.Event()
