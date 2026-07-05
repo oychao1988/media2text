@@ -32,6 +32,12 @@ monitor:
   probe_parallelism: 4  # parallel live probes (I/O only); snapshot writes serialized (DL-1)
   probe_http_timeout_sec: 5
   probe_guard_strict: false  # dev: true raises on probe-tick side effects
+  write_guard_strict: false  # dev: true raises on Playwright/HTTP inside gateway.write
+  write_gateway:
+    queue_maxsize: 1024
+    write_timeout_sec: 60
+    read_timeout_sec: 30
+    shutdown_drain_sec: 5
 
 live:
   auto_record: true               # false = poll only updates snapshots; manual start via desktop API

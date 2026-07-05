@@ -32,6 +32,9 @@ def playwright_exclusive(timeout: float | None = None) -> Iterator[None]:
             if ProbeExecutionGuard.is_active()
             else _PLAYWRIGHT_ACQUIRE_TIMEOUT
         )
+    from media2text.core.storage.write_gateway import WriteGuard
+
+    WriteGuard.assert_no_blocking_io("playwright_exclusive")
     acquired = _PLAYWRIGHT_EXCLUSIVE.acquire(blocking=True, timeout=timeout)
     if not acquired:
         raise TimeoutError(

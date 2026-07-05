@@ -838,11 +838,17 @@ def with_db_lock_retry(
     max_attempts: int = 6,
     base_delay_sec: float = 0.2,
 ) -> T:
-    """Retry write callbacks on SQLite database is locked (DL-3).
+    """Retry write callbacks on SQLite database is locked (DL-3 / DL-4a).
 
-    Serializes in-process writes via ``_sqlite_write_lock`` so daemon threads
-    (live probe, task scheduler, segment watcher, workers) do not collide.
+    When ``DbWriteGateway`` is running, delegates to the writer thread queue.
+    Otherwise falls back to ``_sqlite_write_lock`` (tests / short CLI paths).
     """
+    from media2text.core.storage.write_gateway import get_write_gateway_optional
+
+    gw = get_write_gateway_optional()
+    if gw is not None and gw.is_running():
+        return gw.write(lambda _conn: fn())
+
     last_exc: sqlite3.OperationalError | None = None
     for attempt in range(max_attempts):
         try:

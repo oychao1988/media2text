@@ -241,6 +241,8 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
     if cfg.live.is_streaming_pipeline():
         ok = ok and any(c["ok"] for c in checks if c["name"] == "streaming_stt_deepgram")
 
+    from media2text.core.storage.write_gateway import write_gateway_status
+
     return {
         "ok": ok,
         "checks": checks,
@@ -249,4 +251,5 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         "index_stale": is_index_stale(conn, ws),
         "monitor_lock_pid": lock_pid,
         "monitor_lock_valid": lock_valid,
+        "write_gateway": write_gateway_status(cfg),
     }

@@ -306,3 +306,21 @@ Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/mo
 | DL-3 | [#358](https://github.com/oychao1988/media2text/issues/358) | [dl3-external-coexist](./monitor-db-lock-dl3-external-coexist.md) | `issue-358-monitor-db-lock-dl3` |
 
 **合并顺序**：#356 → #357 → #358。
+
+### Monitor DB Write Path Phase 2（2026-07-05，Writer 线程 + SessionStateMachine）
+
+规格：[monitor-db-write-gateway-session-sm-design.md](../superpowers/specs/2026-07-05-monitor-db-write-gateway-session-sm-design.md) · Epic manifest：[monitor-db-write-path-phase2-2026-07-05.yaml](./epic-manifests/monitor-db-write-path-phase2-2026-07-05.yaml) · 验收：`docs/superpowers/verification/2026-07-05-monitor-db-write-path-phase2-acceptance.md`（E2E-1 交付）
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| DL-4a | [#367](https://github.com/oychao1988/media2text/issues/367) | [dl4a-write-gateway](./monitor-db-lock-dl4a-write-gateway.md) | `issue-367-monitor-db-lock-dl4a` |
+| DL-4b | [#368](https://github.com/oychao1988/media2text/issues/368) | [dl4b-p0-repos-scheduler](./monitor-db-lock-dl4b-p0-repos-scheduler.md) | `issue-368-monitor-db-lock-dl4b` |
+| MH-4a | [#369](https://github.com/oychao1988/media2text/issues/369) | [mh4a-state-machine](./monitor-session-sm-mh4a-state-machine.md) | `issue-369-monitor-session-sm-mh4a` |
+| MH-4b | [#370](https://github.com/oychao1988/media2text/issues/370) | [mh4b-remove-long-conn](./monitor-session-sm-mh4b-remove-long-conn.md) | `issue-370-monitor-session-sm-mh4b` |
+| MH-4c | [#371](https://github.com/oychao1988/media2text/issues/371) | [mh4c-worker-dispatch](./monitor-session-sm-mh4c-worker-dispatch.md) | `issue-371-monitor-session-sm-mh4c` |
+| DL-4c | [#372](https://github.com/oychao1988/media2text/issues/372) | [dl4c-p1-workers-drains](./monitor-db-lock-dl4c-p1-workers-drains.md) | `issue-372-monitor-db-lock-dl4c` |
+| MH-4d | [#373](https://github.com/oychao1988/media2text/issues/373) | [mh4d-recording-facade](./monitor-session-sm-mh4d-recording-facade.md) | `issue-373-monitor-session-sm-mh4d` |
+| DL-4d | [#374](https://github.com/oychao1988/media2text/issues/374) | [dl4d-p2-api-audit](./monitor-db-lock-dl4d-p2-api-audit.md) | `issue-374-monitor-db-lock-dl4d` |
+| E2E-1 | [#375](https://github.com/oychao1988/media2text/issues/375) | [e2e-stress](./monitor-db-lock-e2e-stress.md) | `issue-375-monitor-db-lock-e2e` |
+
+**合并顺序**：#367 → #368 → #369 → #370 → #371 → #372（可与 #371 并行）→ #373 → #374（可与 #373 并行）→ **#375**（Epic 验收闸门）。

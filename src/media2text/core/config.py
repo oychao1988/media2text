@@ -45,6 +45,13 @@ class PlatformsConfig(BaseModel):
         return self
 
 
+class MonitorWriteGatewayConfig(BaseModel):
+    queue_maxsize: int = 1024
+    write_timeout_sec: float = 60.0
+    read_timeout_sec: float = 30.0
+    shutdown_drain_sec: float = 5.0
+
+
 class MonitorConfig(BaseModel):
     live_poll_interval_sec: int = 60
     vod_poll_interval_sec: int = 300
@@ -62,6 +69,8 @@ class MonitorConfig(BaseModel):
     probe_parallelism: int = 4
     probe_http_timeout_sec: int = 5
     probe_guard_strict: bool = False
+    write_guard_strict: bool = False
+    write_gateway: MonitorWriteGatewayConfig = Field(default_factory=MonitorWriteGatewayConfig)
 
 
 class StreamingSttConfig(BaseModel):

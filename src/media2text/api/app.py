@@ -47,6 +47,12 @@ async def lifespan(app: FastAPI):
     from media2text.core.logging import enable_monitor_log_sink
 
     enable_monitor_log_sink(cfg.ensure_workspace())
+    from media2text.core.storage.write_gateway import (
+        ensure_write_gateway_started,
+        shutdown_write_gateway,
+    )
+
+    ensure_write_gateway_started(cfg)
     supervisor = MonitorSupervisor()
     app.state.supervisor = supervisor
     # Mounted ``/api`` sub-app does not inherit parent ``app.state``.
@@ -67,6 +73,7 @@ async def lifespan(app: FastAPI):
     stop.set()
     supervisor.stop(cfg)
     await asyncio.gather(drain_task, notify_drain_task, health_task)
+    shutdown_write_gateway()
 
 
 def create_app() -> FastAPI:

@@ -166,9 +166,18 @@ class MonitorWatcher:
             )
             raise LockError(blocked["error"])
         lock = self._ws / ".monitor-watch.lock"
+        from media2text.core.storage.write_gateway import (
+            ensure_write_gateway_started,
+            shutdown_write_gateway,
+        )
+
         try:
             with workspace_lock(lock):
-                self._run_daemon_locked(creator_id=creator_id)
+                ensure_write_gateway_started(self._cfg)
+                try:
+                    self._run_daemon_locked(creator_id=creator_id)
+                finally:
+                    shutdown_write_gateway()
         except LockError:
             log.error("monitor_watch_lock_held")
             raise
