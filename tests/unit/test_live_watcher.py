@@ -1,15 +1,18 @@
 import sys
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, TranscribeConfig
 from media2text.core.platform.douyin.live import LiveWatcher
 from media2text.core.platform.douyin.models import LiveRoomInfo
-from media2text.core.storage.repos import CreatorRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
+from media2text.core.workspace import open_db
+
+
 def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
-    conn = watcher._conn
+    conn = open_db(cfg)
     repo = CreatorRepo(conn)
     cid = repo.add(
         sec_uid="MS4wLjABAAAAtest",
@@ -22,21 +25,25 @@ def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> 
         is_live=True,
         stream_flv_url="https://example.com/live.flv",
     )
-    with patch.object(watcher._core._adapter, "get_live_room", return_value=live):
+    with patch.object(watcher._adapter, "get_live_room", return_value=live):
         result = watcher.run_once(creator_id=cid)
 
     assert result.get("probe") is True
     assert result.get("started") == 0
-    assert watcher._sessions.get_active_for_creator(cid) is None
+    assert LiveSessionRepo(conn).get_active_for_creator(cid) is None
 
 
 def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> None:
     """Dead ffmpeg: poll writes obs; stale must not mark failed (Reconciler owns exit)."""
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(min_recording_sec_before_offline_end=0),
+    )
     watcher = LiveWatcher(cfg)
-    conn = watcher._conn
+    conn = open_db(cfg)
     repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     sec_uid = "MS4wLjABAAAAstalefix"
     cid = repo.add(
         sec_uid=sec_uid,
@@ -47,7 +54,7 @@ def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> Non
     live_dir.mkdir(parents=True)
     flv = live_dir / "20260602T120000Z.flv"
     flv.write_bytes(b"x" * 64)
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="99",
         temp_path=str(flv),
@@ -56,8 +63,11 @@ def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> Non
 
     offline = LiveRoomInfo(room_id="99", is_live=False, stream_flv_url=None)
     with (
-        patch.object(watcher._core._adapter, "get_live_room", return_value=offline),
-        patch.object(watcher._core, "_process_alive", return_value=False),
+        patch.object(watcher._adapter, "get_live_room", return_value=offline),
+        patch(
+            "media2text.core.live.recording.LiveRecordingCore._process_alive",
+            return_value=False,
+        ),
     ):
         watcher.run_once(creator_id=cid)
 
@@ -73,21 +83,21 @@ def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> Non
 def test_get_active_for_creator_keeps_dead_pid_for_poll(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
-    watcher = LiveWatcher(cfg)
-    conn = watcher._conn
+    conn = open_db(cfg)
     repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     cid = repo.add(
         sec_uid="MS4wLjABAAAAdead",
         profile_url="https://example.com/u",
         monitor_enabled=True,
     )
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="123",
         temp_path=str(tmp_path / "x.flv"),
         ffmpeg_pid=999999,
     )
-    active = watcher._sessions.get_active_for_creator(cid)
+    active = sessions.get_active_for_creator(cid)
     assert active is not None
     assert active.id == sid
     row = conn.execute("SELECT status, error FROM live_sessions WHERE id = ?", (sid,)).fetchone()
@@ -99,13 +109,15 @@ def test_poll_skips_fresh_sessions(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     cid = repo.add(
         sec_uid="MS4wLjABAAAAskip",
         profile_url="https://example.com/u",
         monitor_enabled=True,
     )
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="123",
         temp_path=str(tmp_path / "live.flv"),
@@ -127,7 +139,9 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     sec_uid = "MS4wLjABAAAAfinalize"
     cid = repo.add(
         sec_uid=sec_uid,
@@ -138,7 +152,7 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
     live_dir.mkdir(parents=True)
     flv = live_dir / "20260520T120000Z.flv"
     flv.write_bytes(b"x" * 64)
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="99",
         temp_path=str(flv),
@@ -164,7 +178,7 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
     assert meta["path"] == str(mp4)
     assert mock_refresh.call_count == 1
     mock_refresh.assert_called_with(
-        watcher._conn,
+        ANY,
         sec_uid=sec_uid,
         workspace=cfg.ensure_workspace(),
         platform="douyin",
@@ -181,8 +195,10 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
         transcribe=TranscribeConfig(engine="whisper"),
     )
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
-    jobs = PostProcessJobRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
+    jobs = PostProcessJobRepo(conn)
     sec_uid = "MS4wLjABAAAAtx"
     cid = repo.add(
         sec_uid=sec_uid,
@@ -193,7 +209,7 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
     live_dir.mkdir(parents=True)
     flv = live_dir / "20260520T130000Z.flv"
     flv.write_bytes(b"x" * 64)
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="99",
         temp_path=str(flv),
@@ -227,7 +243,9 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
         transcribe=TranscribeConfig(engine="whisper"),
     )
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     cid = repo.add(
         sec_uid="MS4wLjABAAAAskip",
         profile_url="https://example.com/u",
@@ -237,7 +255,7 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
     live_dir.mkdir(parents=True)
     flv = live_dir / "20260520T140000Z.flv"
     flv.write_bytes(b"x" * 64)
-    sid = watcher._sessions.create(
+    sid = sessions.create(
         creator_id=cid,
         room_id="1",
         temp_path=str(flv),

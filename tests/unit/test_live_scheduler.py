@@ -199,7 +199,7 @@ def test_finalize_enqueued_once_on_poll(tmp_path, monkeypatch) -> None:
     conn.commit()
 
     watcher = MonitorWatcher(cfg)
-    core = watcher._douyin_live._core
+    core = watcher._douyin_live.core_for_conn(conn)
 
     with (
         patch.object(core, "_process_alive", return_value=True),

@@ -16,10 +16,10 @@ from media2text.core.notify import EventKind, NotifyService
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
-from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo
+from media2text.core.storage.repos import MonitorTaskRepo
 from media2text.core.live.scheduler import MonitorScheduler
 from media2text.core.monitor.intervals import bilibili_archive_poll_sec
-from media2text.core.workspace import open_db
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 
 log = structlog.get_logger()
 
@@ -66,8 +66,6 @@ class MonitorWatcher:
     def __init__(self, cfg: AppConfig) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
-        self._conn = open_db(cfg)
-        self._creators = CreatorRepo(self._conn)
         self._session_runtime = SessionRuntime()
         self._douyin_live = DouyinLiveWatcher(cfg, runtime=self._session_runtime)
         self._bilibili_live = BilibiliLiveWatcher(cfg, runtime=self._session_runtime)
@@ -78,6 +76,10 @@ class MonitorWatcher:
     def session_registry(self):
         return self._session_registry
 
+    def _gateway(self):
+        ensure_write_gateway_started(self._cfg)
+        return get_write_gateway(self._cfg)
+
     def core_for_platform(self, conn, platform: str) -> LiveRecordingCore:
         if platform == "douyin":
             return self._douyin_live.core_for_conn(conn)
@@ -86,17 +88,24 @@ class MonitorWatcher:
         raise ValueError(f"unsupported_platform:{platform}")
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
+        gw = self._gateway()
         douyin_live = self._douyin_live.run_once(creator_id=creator_id)
         bilibili_live = self._bilibili_live.run_once(creator_id=creator_id)
         live_result = _merge_live_results(douyin_live, bilibili_live)
 
-        vod_result = self._run_vod_tick(conn=self._conn, creator_id=creator_id)
-        archive_result = self._run_archive_tick(conn=self._conn, creator_id=creator_id)
-        dynamic_result = self._run_dynamic_tick(
-            conn=self._conn,
-            creator_id=creator_id,
+        vod_result = gw.write(
+            lambda conn: self._run_vod_tick(conn=conn, creator_id=creator_id),
+            label="watcher.vod_tick",
         )
-        self._drain_priority_zero_tasks_sync()
+        archive_result = gw.write(
+            lambda conn: self._run_archive_tick(conn=conn, creator_id=creator_id),
+            label="watcher.archive_tick",
+        )
+        dynamic_result = gw.write(
+            lambda conn: self._run_dynamic_tick(conn=conn, creator_id=creator_id),
+            label="watcher.dynamic_tick",
+        )
+        gw.write(lambda _conn: self._drain_priority_zero_tasks(_conn), label="watcher.drain_p0")
         errors = (
             list(live_result.get("errors") or [])
             + list(vod_result.get("errors") or [])
@@ -205,6 +214,8 @@ class MonitorWatcher:
         )
 
     def _run_dynamic_tick(self, *, conn, creator_id: str | None = None) -> dict:
+        from media2text.core.storage.repos import CreatorRepo
+
         creators = CreatorRepo(conn)
         targets = [
             c for c in creators.list_content_sync_enabled() if c.platform == "bilibili"
@@ -233,14 +244,14 @@ class MonitorWatcher:
             "interval_sec": self._cfg.platforms.bilibili.dynamic_poll_interval_sec,
         }
 
-    def _drain_priority_zero_tasks_sync(self, *, max_rounds: int = 10) -> None:
+    def _drain_priority_zero_tasks(self, conn, *, max_rounds: int = 10) -> None:
         """Single-shot debug: reconcile + inline drain priority=0 (finalize) only."""
         if self._cfg.monitor.reconciler_enabled:
             from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 
-            reconcile_live(self._cfg, self._conn)
-            reconcile_content(self._cfg, self._conn)
-        repo = MonitorTaskRepo(self._conn)
+            reconcile_live(self._cfg, conn)
+            reconcile_content(self._cfg, conn)
+        repo = MonitorTaskRepo(conn, cfg=self._cfg)
         for _ in range(max_rounds):
             repo.reset_stale_running(older_than_sec=self._cfg.monitor.stale_running_sec)
             claimed = repo.claim_pending(
@@ -253,7 +264,7 @@ class MonitorWatcher:
             for task in claimed:
                 run_monitor_task(
                     self._cfg,
-                    self._conn,
+                    conn,
                     task_id=task.id,
                     watcher=self,
                     notify=self._notify,
@@ -268,6 +279,8 @@ class MonitorWatcher:
         new_content_kind: EventKind,
     ) -> dict:
         _ = new_content_kind
+        from media2text.core.storage.repos import CreatorRepo
+
         creators = CreatorRepo(conn)
         targets = [
             c for c in creators.list_content_sync_enabled() if c.platform == platform

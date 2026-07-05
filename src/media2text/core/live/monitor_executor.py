@@ -130,10 +130,8 @@ def _core_for_task(
     creator = CreatorRepo(conn).get(task.creator_id)
     if not creator:
         raise ValueError(f"creator_not_found:{task.creator_id}")
-    # Hybrid DB conn (MH-3): repo claim/mark/fail use worker `conn` (closed when
-    # run_monitor_task returns). LiveRecordingCore binds to watcher._conn because
-    # STT/ffmpeg side effects outlive the worker task.
-    return watcher.core_for_platform(watcher._conn, creator.platform)
+    # Worker task conn for LiveRecordingCore (MH-4b: no watcher._conn).
+    return watcher.core_for_platform(conn, creator.platform)
 
 
 def _run_prepare_live_recording(

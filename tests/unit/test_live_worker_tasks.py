@@ -243,7 +243,7 @@ def test_live_worker_core_uses_watcher_conn_not_worker_conn(tmp_path, monkeypatc
         run_monitor_task(cfg, conn, task_id=task_id, watcher=watcher)
 
     mock_core.assert_called_once()
-    assert mock_core.call_args.args[0] is watcher._conn
+    assert mock_core.call_args.args[0] is conn
 
 
 def test_prepare_not_blocked_by_executor_playwright_lock(tmp_path, monkeypatch) -> None:

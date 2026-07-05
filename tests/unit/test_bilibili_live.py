@@ -9,7 +9,8 @@ from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE
 from media2text.core.platform.bilibili.live import LiveWatcher
 from media2text.core.platform.bilibili.parse import check_api_code
 from media2text.core.platform.bilibili.resolver import resolve_mid
-from media2text.core.storage.repos import CreatorRepo, PipelineEventRepo
+from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo, PipelineEventRepo
+from media2text.core.workspace import open_db
 
 
 def test_resolve_mid_from_space_url() -> None:
@@ -64,13 +65,16 @@ def test_bilibili_live_run_once_starts_recording(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
+    sessions = LiveSessionRepo(conn)
     cid = repo.add(
         sec_uid="12345",
         profile_url="https://space.bilibili.com/12345",
         platform="bilibili",
         monitor_enabled=True,
     )
+    core = watcher.core_for_conn(conn)
 
     mock_proc = MagicMock()
     mock_proc.pid = os.getpid()
@@ -87,10 +91,10 @@ def test_bilibili_live_run_once_starts_recording(tmp_path, monkeypatch) -> None:
         patch("media2text.core.live.recording.stop_process"),
         patch("media2text.core.live.recording.remux_to_mp4"),
     ):
-        meta = watcher._core.start_recording_for_creator(cid)
+        meta = core.start_recording_for_creator(cid)
 
     assert meta.get("session_id")
-    active = watcher._sessions.get_active_for_creator(cid)
+    active = sessions.get_active_for_creator(cid)
     assert active is not None
     assert active.status == "recording"
 
@@ -99,7 +103,8 @@ def test_bilibili_live_skips_douyin_creator(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
     repo.add(
         sec_uid="MS4wLjABAAAAtest",
         profile_url="https://www.douyin.com/user/MS4wLjABAAAAtest",
@@ -122,13 +127,15 @@ def test_bilibili_live_starts_streaming_stt_dual_path(tmp_path, monkeypatch) -> 
         ),
     )
     watcher = LiveWatcher(cfg)
-    repo = CreatorRepo(watcher._conn)
+    conn = open_db(cfg)
+    repo = CreatorRepo(conn)
     cid = repo.add(
         sec_uid="12345",
         profile_url="https://space.bilibili.com/12345",
         platform="bilibili",
         monitor_enabled=True,
     )
+    core = watcher.core_for_conn(conn)
 
     mock_proc = MagicMock()
     mock_proc.pid = os.getpid()
@@ -150,12 +157,12 @@ def test_bilibili_live_starts_streaming_stt_dual_path(tmp_path, monkeypatch) -> 
             return_value=mock_stt,
         ),
     ):
-        meta = watcher._core.start_recording_for_creator(cid)
+        meta = core.start_recording_for_creator(cid)
 
     assert meta.get("session_id")
     mock_stt.start.assert_called_once()
     session_id = meta["session_id"]
-    assert session_id in watcher._core._stt_sessions
-    events = PipelineEventRepo(watcher._conn).list_for_session(session_id)
+    assert session_id in core._stt_sessions
+    events = PipelineEventRepo(conn).list_for_session(session_id)
     stages = {(e.stage, e.status) for e in events}
     assert ("streaming_stt", "started") in stages

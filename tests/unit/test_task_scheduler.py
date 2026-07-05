@@ -94,7 +94,7 @@ def test_live_tick_not_blocked_by_slow_finalize(tmp_path, monkeypatch) -> None:
 
 
 def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
-    """Probe and Scheduler each open_db; no cross-thread writes on watcher._conn."""
+    """Probe and Scheduler each open_db; MonitorWatcher holds no long-lived conn."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -102,7 +102,7 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
         monitor=MonitorConfig(scheduler_interval_sec=1),
     )
     watcher = MonitorWatcher(cfg)
-    shared_conn_ids: set[int] = {id(watcher._conn)}
+    assert not hasattr(watcher, "_conn")
     probe_conn_ids: list[int] = []
     scheduler_conn_ids: list[int] = []
 
@@ -158,8 +158,6 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
 
     assert probe_conn_ids, "live-probe thread should open_db"
     assert scheduler_conn_ids, "task-scheduler thread should open_db"
-    assert shared_conn_ids.isdisjoint(set(probe_conn_ids))
-    assert shared_conn_ids.isdisjoint(set(scheduler_conn_ids))
 
 
 def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None:
@@ -170,7 +168,7 @@ def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None
         monitor=MonitorConfig(scheduler_interval_sec=1),
     )
     watcher = MonitorWatcher(cfg)
-    shared_conn_ids: set[int] = {id(watcher._conn)}
+    assert not hasattr(watcher, "_conn")
     slow_conn_ids: list[int] = []
 
     orig_open = open_db
@@ -193,7 +191,6 @@ def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None
     scheduler.stop()
 
     assert slow_conn_ids, "slow-tick thread should open_db"
-    assert shared_conn_ids.isdisjoint(set(slow_conn_ids))
 
 
 def test_probe_workers_prefers_probe_parallelism(tmp_path) -> None:
