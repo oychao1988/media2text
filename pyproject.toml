@@ -44,6 +44,7 @@ markers = [
   "live: needs real Douyin network",
   "desktop: m2t-desktop API unit tests (requires desktop extra)",
   "agent: Hermes agent kernel unit tests",
+  "db_stress: sustained DB lock stress gate (60s+)",
 ]
 
 [tool.ruff]
