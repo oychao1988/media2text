@@ -699,47 +699,50 @@ class LiveSessionRepo(WriteAwareRepo):
         return session
 
     def mark_stale_recordings_failed(self) -> int:
-        rows = self.list_active()
-        count = 0
-        now = datetime.now(timezone.utc)
-        for row in rows:
-            if row.status != "recording":
-                continue
-            if row.ffmpeg_pid is None:
+        def _body() -> int:
+            rows = self.list_active()
+            count = 0
+            now = datetime.now(timezone.utc)
+            for row in rows:
+                if row.status != "recording":
+                    continue
+                if row.ffmpeg_pid is None:
+                    try:
+                        started = datetime.fromisoformat(
+                            row.started_at.replace("Z", "+00:00")
+                        )
+                    except ValueError:
+                        started = now
+                    age_sec = (now - started).total_seconds()
+                    temp_missing = not row.temp_path or not Path(row.temp_path).is_file()
+                    # Stream resolve + streaming STT startup can exceed 10s; avoid
+                    # marking failed while prepare_live_recording is still in flight.
+                    if age_sec > 60 and temp_missing:
+                        self.update_status(
+                            row.id,
+                            status="failed",
+                            error="recording_never_started",
+                            ended=True,
+                        )
+                        count += 1
+                    continue
+                if (row.reconnect_attempts or 0) > 0:
+                    continue
+                if row.offline_since_at:
+                    continue
                 try:
-                    started = datetime.fromisoformat(
-                        row.started_at.replace("Z", "+00:00")
-                    )
-                except ValueError:
-                    started = now
-                age_sec = (now - started).total_seconds()
-                temp_missing = not row.temp_path or not Path(row.temp_path).is_file()
-                # Stream resolve + streaming STT startup can exceed 10s; avoid
-                # marking failed while prepare_live_recording is still in flight.
-                if age_sec > 60 and temp_missing:
+                    os.kill(row.ffmpeg_pid, 0)
+                except OSError:
                     self.update_status(
                         row.id,
                         status="failed",
-                        error="recording_never_started",
+                        error="stale_recording",
                         ended=True,
                     )
                     count += 1
-                continue
-            if (row.reconnect_attempts or 0) > 0:
-                continue
-            if row.obs_ffmpeg_alive == 0:
-                continue
-            try:
-                os.kill(row.ffmpeg_pid, 0)
-            except OSError:
-                self.update_status(
-                    row.id,
-                    status="failed",
-                    error="stale_recording",
-                    ended=True,
-                )
-                count += 1
-        return count
+            return count
+
+        return self._mutate("live_session.mark_stale_failed", _body)
 
     def list_active(self) -> list[LiveSessionRow]:
         rows = self._conn.execute(

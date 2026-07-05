@@ -86,6 +86,7 @@ class LiveTickLoop:
                 douyin=self._watcher._douyin_live,
                 bilibili=self._watcher._bilibili_live,
                 creator_id=self._creator_id,
+                session_registry=self._watcher.session_registry,
             )
             active = int(result.get("active_recordings") or 0)
             log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)

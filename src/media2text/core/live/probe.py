@@ -53,6 +53,7 @@ def run_live_probe_tick(
     bilibili: BilibiliLiveWatcher,
     creator_id: str | None = None,
     conn=None,
+    session_registry=None,
 ) -> dict[str, Any]:
     """Live probe tick with short DB connections (DL-1).
 
@@ -83,18 +84,26 @@ def run_live_probe_tick(
 
         conn = open_db(cfg)
         try:
-            dy_poll = douyin.run_poll_active(
-                conn=conn, creator_id=creator_id, deadline=deadline
-            )
-            if time.monotonic() >= deadline:
-                return {
-                    "douyin": dy_poll,
-                    "bilibili": {"skipped": "budget_exhausted"},
-                    "active_recordings": dy_poll.get("active", 0),
-                }
-            bi_poll = bilibili.run_poll_active(
-                conn=conn, creator_id=creator_id, deadline=deadline
-            )
+            if session_registry is not None:
+                session_registry.poll_active_for_platform("douyin")
+                session_registry.poll_active_for_platform("bilibili")
+                from media2text.core.storage.repos import LiveSessionRepo
+
+                dy_poll = {"active": len(LiveSessionRepo(conn).list_active())}
+                bi_poll = dy_poll
+            else:
+                dy_poll = douyin.run_poll_active(
+                    conn=conn, creator_id=creator_id, deadline=deadline
+                )
+                if time.monotonic() >= deadline:
+                    return {
+                        "douyin": dy_poll,
+                        "bilibili": {"skipped": "budget_exhausted"},
+                        "active_recordings": dy_poll.get("active", 0),
+                    }
+                bi_poll = bilibili.run_poll_active(
+                    conn=conn, creator_id=creator_id, deadline=deadline
+                )
         finally:
             conn.close()
 
