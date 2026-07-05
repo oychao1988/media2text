@@ -41,7 +41,7 @@ StateMachine + worker dispatch 就绪后，**删除** `recording.py` 内重复 p
 ```bash
 source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt.py tests/unit/test_live_worker_tasks.py tests/unit/test_session_state_machine.py -v
+pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt_resilience.py tests/unit/test_live_worker_tasks.py tests/unit/test_session_state_machine.py -v
 ruff check src/media2text/core/live/recording.py
 pyright src/media2text/core/live/recording.py src/media2text/core/live/session_state.py
 ```
