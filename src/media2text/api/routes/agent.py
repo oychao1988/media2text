@@ -122,8 +122,11 @@ def _message_dict(row, *, display_thread_id: str) -> dict[str, Any]:
     }
 
 
-def _get_db_session(conn=Depends(get_db)) -> SessionDB:
-    return SessionDB(conn)
+def _get_db_session(
+    conn=Depends(get_db),
+    cfg: AppConfig = Depends(get_cfg),
+) -> SessionDB:
+    return SessionDB(conn, cfg=cfg)
 
 
 def _assert_thread_exists(db: SessionDB, thread_id: str) -> None:
@@ -147,7 +150,7 @@ def _run_turn(
 
     conn = open_db(cfg)
     try:
-        db = SessionDB(conn)
+        db = SessionDB(conn, cfg=cfg)
         agent = AIAgent(db, cfg, supervisor=supervisor)
         cancel = handle.cancel if handle else None
         agent.run_conversation(
@@ -185,7 +188,11 @@ def list_threads(
 
 
 @router.post("/threads")
-def create_thread(body: ThreadCreateBody, conn=Depends(get_db)) -> dict:
+def create_thread(
+    body: ThreadCreateBody,
+    cfg: AppConfig = Depends(get_cfg),
+    conn=Depends(get_db),
+) -> dict:
     if body.context_mode not in _VALID_CONTEXT_MODES:
         raise HTTPException(
             status_code=400,
@@ -193,7 +200,7 @@ def create_thread(body: ThreadCreateBody, conn=Depends(get_db)) -> dict:
         )
     if body.creator_id is not None and not CreatorRepo(conn).get(body.creator_id):
         raise HTTPException(status_code=404, detail="creator not found")
-    db = SessionDB(conn)
+    db = SessionDB(conn, cfg=cfg)
     thread_id = str(uuid.uuid4())
     db.create_session(
         display_thread_id=thread_id,
@@ -249,6 +256,7 @@ def patch_thread(
 def activate_thread(
     thread_id: str,
     payload: dict[str, Any],
+    cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
 ) -> dict:
     body = ActivateBody.model_validate(payload)
@@ -259,7 +267,7 @@ def activate_thread(
         )
     if body.creator_id is not None and not CreatorRepo(conn).get(body.creator_id):
         raise HTTPException(status_code=404, detail="creator not found")
-    db = SessionDB(conn)
+    db = SessionDB(conn, cfg=cfg)
     if db.get_thread_by_display_id(thread_id) is None:
         raise HTTPException(status_code=404, detail="thread not found")
     db.activate_thread(

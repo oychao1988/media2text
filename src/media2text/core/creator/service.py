@@ -72,7 +72,7 @@ def add_creator_from_url(
         return {"ok": False, "platform": plat, "error": str(exc)}
 
     conn = open_db(cfg)
-    repo = CreatorRepo(conn)
+    repo = CreatorRepo(conn, cfg=cfg)
     existing = repo.get_by_sec_uid(sec_uid, platform=plat)
     if existing:
         return {
@@ -120,7 +120,7 @@ def remove_creator(
     delete_media: bool = False,
 ) -> dict[str, Any]:
     conn = open_db(cfg)
-    repo = CreatorRepo(conn)
+    repo = CreatorRepo(conn, cfg=cfg)
     creator = repo.get(creator_id)
     if not creator:
         return {
@@ -146,7 +146,7 @@ def remove_creator(
 
 def get_creator_detail(cfg: AppConfig, creator_id: str) -> dict[str, Any] | None:
     conn = open_db(cfg)
-    creators = CreatorRepo(conn)
+    creators = CreatorRepo(conn, cfg=cfg)
     row = creators.get(creator_id)
     if not row:
         return None

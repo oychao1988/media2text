@@ -2,6 +2,8 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.scheduler import LiveTickLoop, MonitorScheduler
@@ -9,6 +11,16 @@ from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.watcher import MonitorWatcher
 from media2text.core.storage.repos import CreatorRepo, MonitorTaskRepo
 from media2text.core.workspace import open_db
+
+
+@pytest.fixture(autouse=True)
+def _reset_db_write_gateway() -> None:
+    yield
+    import media2text.core.storage.write_gateway as wg_mod
+    from media2text.core.storage.write_gateway import shutdown_write_gateway
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
 
 
 def test_monitor_scheduler_config_defaults() -> None:
@@ -141,7 +153,7 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
         return {"active_recordings": 0}
 
     monkeypatch.setattr(
-        "media2text.core.live.probe.run_live_probe_tick",
+        "media2text.core.live.scheduler.run_live_probe_tick",
         fake_probe,
     )
 
@@ -180,7 +192,7 @@ def test_slow_tick_uses_own_conn_not_watcher_conn(tmp_path, monkeypatch) -> None
 
     monkeypatch.setattr("media2text.core.live.scheduler.open_db", tracking_open_db)
     monkeypatch.setattr(
-        "media2text.core.live.probe.run_live_probe_tick",
+        "media2text.core.live.scheduler.run_live_probe_tick",
         lambda *a, **k: {},
     )
 

@@ -28,8 +28,14 @@ jobs:
       - name: Ruff
         run: ruff check src tests
 
+      - name: DB write audit (DL-4d)
+        run: python scripts/audit_db_writes.py
+
       - name: Live session write guard (R3b)
         run: python scripts/check_no_direct_live_repo.py
+
+      - name: DB write path audit (DL-4d)
+        run: python scripts/audit_db_writes.py
 
       - name: Pyright (agent kernel)
         run: pyright src/media2text/agent/

@@ -17,6 +17,7 @@ from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo
+from media2text.core.storage.write_gateway import ensure_write_gateway_started
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -75,12 +76,13 @@ class LiveWatcher:
         def _poll() -> dict:
             work_conn = conn
             core = self.core_for_conn(work_conn)
-            sessions = LiveSessionRepo(work_conn)
+            sessions = LiveSessionRepo(work_conn, cfg=self._cfg)
             if deadline is not None and time.monotonic() >= deadline:
                 return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
             core.poll_active_recordings()
             return {"active": len(sessions.list_active())}
 
+        ensure_write_gateway_started(self._cfg)
         return with_db_lock_retry(_poll)
 
     def run_probe_observe(
@@ -115,10 +117,11 @@ class LiveWatcher:
             if stale:
                 log.warning("live_stale_sessions_cleared", count=stale)
             return {
-                "active": len(LiveSessionRepo(conn).list_active()),
+                "active": len(LiveSessionRepo(conn, cfg=self._cfg).list_active()),
                 "stale_cleared": stale,
             }
 
+        ensure_write_gateway_started(self._cfg)
         return with_db_lock_retry(_finalize)
 
     def run_once(

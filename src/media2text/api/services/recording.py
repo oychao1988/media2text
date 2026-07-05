@@ -35,7 +35,7 @@ def _build_core(cfg: AppConfig, conn, platform: str) -> LiveRecordingCore:
 
 
 def start_recording(cfg: AppConfig, conn, creator_id: str) -> dict[str, Any]:
-    row = CreatorRepo(conn).get(creator_id)
+    row = CreatorRepo(conn, cfg=cfg).get(creator_id)
     if not row:
         return {"ok": False, "error": "creator not found", "not_found": True}
     core = _build_core(cfg, conn, row.platform)
@@ -57,7 +57,7 @@ def start_recording(cfg: AppConfig, conn, creator_id: str) -> dict[str, Any]:
 
 
 def stop_recording(cfg: AppConfig, conn, creator_id: str) -> dict[str, Any]:
-    row = CreatorRepo(conn).get(creator_id)
+    row = CreatorRepo(conn, cfg=cfg).get(creator_id)
     if not row:
         return {"ok": False, "error": "creator not found", "not_found": True}
     core = _build_core(cfg, conn, row.platform)

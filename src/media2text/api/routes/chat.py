@@ -36,10 +36,11 @@ def list_threads(
 def create_thread(
     response: Response,
     body: agent_routes.ThreadCreateBody,
+    cfg: AppConfig = Depends(get_cfg),
     conn=Depends(get_db),
 ) -> dict:
     agent_routes.mark_deprecated(response)
-    return agent_routes.create_thread(body=body, conn=conn)
+    return agent_routes.create_thread(body=body, cfg=cfg, conn=conn)
 
 
 @router.get("/threads/{thread_id}")

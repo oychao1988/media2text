@@ -30,7 +30,7 @@ class StateWriter(WriteAwareRepo):
         super().__init__(conn, cfg=cfg)
         self._cfg = cfg
         self._sessions = LiveSessionRepo(conn, cfg=cfg)
-        self._creators = CreatorRepo(conn)
+        self._creators = CreatorRepo(conn, cfg=cfg)
         self._notify = notify or NotifyService(cfg)
 
     def write_obs(
