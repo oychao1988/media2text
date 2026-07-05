@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import structlog
@@ -20,7 +19,6 @@ from media2text.core.platform.vod import download_pending, sync_creator
 from media2text.core.storage.repos import (
     AwemeRepo,
     CreatorRepo,
-    LiveSessionRepo,
     MonitorTaskRepo,
 )
 from media2text.core.transcribe.errors import TranscribeConfigError
@@ -32,6 +30,7 @@ from media2text.core.transcribe.whisper import write_transcript_outputs
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
+    from media2text.core.live.session_state import SessionStateMachineRegistry
     from media2text.core.monitor.watcher import MonitorWatcher
 
 log = structlog.get_logger()
@@ -44,6 +43,17 @@ _PLAYWRIGHT_TASK_TYPES = frozenset(
     }
 )
 
+_LIVE_SESSION_TASK_TYPES = frozenset(
+    {
+        "finalize",
+        "prepare_live_recording",
+        "reconnect_recording",
+        "start_streaming_stt",
+        "reconnect_streaming_stt",
+    }
+)
+_ = _LIVE_SESSION_TASK_TYPES  # documented dispatch set (MH-4c)
+
 
 def run_monitor_task(
     cfg: AppConfig,
@@ -53,7 +63,7 @@ def run_monitor_task(
     watcher: MonitorWatcher | None = None,
     notify: NotifyService | None = None,
 ) -> dict[str, Any]:
-    repo = MonitorTaskRepo(conn)
+    repo = MonitorTaskRepo(conn, cfg=cfg)
     task = repo.get(task_id)
     if not task:
         return {"ok": False, "error": "task_not_found", "task_id": task_id}
@@ -90,6 +100,15 @@ def run_monitor_task(
         return {"ok": False, "error": str(exc), "task_id": task_id, "outcome": outcome}
 
 
+def _require_registry(
+    cfg: AppConfig,
+    watcher: MonitorWatcher | None,
+) -> SessionStateMachineRegistry:
+    if watcher is None:
+        raise RuntimeError("live_worker_requires_watcher")
+    return watcher.ensure_session_registry()
+
+
 def _dispatch_task(
     cfg: AppConfig,
     conn,
@@ -119,21 +138,6 @@ def _dispatch_task(
     raise ValueError(f"unknown_monitor_task_type:{task.task_type}")
 
 
-def _core_for_task(
-    conn,
-    task,
-    *,
-    watcher: MonitorWatcher | None,
-) -> LiveRecordingCore:
-    if watcher is None:
-        raise RuntimeError("live_worker_requires_watcher")
-    creator = CreatorRepo(conn).get(task.creator_id)
-    if not creator:
-        raise ValueError(f"creator_not_found:{task.creator_id}")
-    # Worker task conn for LiveRecordingCore (MH-4b: no watcher._conn).
-    return watcher.core_for_platform(conn, creator.platform)
-
-
 def _run_prepare_live_recording(
     cfg: AppConfig,
     conn,
@@ -141,21 +145,11 @@ def _run_prepare_live_recording(
     *,
     watcher: MonitorWatcher | None,
 ) -> dict[str, Any]:
-    """Dispatch prepare without executor-level playwright_exclusive (MH-3).
-
-    Nested Playwright (only when stream URL must be resolved):
-    run_prepare_live_recording → _start_recording_after_session →
-    DouyinAdapter._resolve_stream_url tries signed HTTP enter, reflow HTTP, then
-    resolve_stream_via_web_enter (playwright_exclusive inside live_enter.py).
-    Payload live_info.stream_flv_url skips resolve entirely.
-    """
+    """Dispatch prepare via SessionStateMachineRegistry (MH-4c)."""
     payload = json.loads(task.payload_json or "{}")
     live_info = LiveRecordingCore.live_info_from_payload(payload)
-    core = _core_for_task(conn, task, watcher=watcher)
-    return core.run_prepare_live_recording(
-        task.creator_id,
-        live_info=live_info,
-    )
+    registry = _require_registry(cfg, watcher)
+    return registry.run_prepare(task.creator_id, live_info=live_info)
 
 
 def _run_reconnect_recording(
@@ -169,8 +163,8 @@ def _run_reconnect_recording(
     session_id = payload.get("session_id")
     if not session_id:
         raise ValueError("reconnect_recording_missing_session_id")
-    core = _core_for_task(conn, task, watcher=watcher)
-    return core.run_reconnect_recording(session_id)
+    registry = _require_registry(cfg, watcher)
+    return registry.run_reconnect_recording(session_id)
 
 
 def _run_start_streaming_stt(
@@ -184,8 +178,8 @@ def _run_start_streaming_stt(
     session_id = payload.get("session_id")
     if not session_id:
         raise ValueError("start_streaming_stt_missing_session_id")
-    core = _core_for_task(conn, task, watcher=watcher)
-    return core.run_start_streaming_stt(session_id)
+    registry = _require_registry(cfg, watcher)
+    return registry.run_start_streaming_stt(session_id)
 
 
 def _run_reconnect_streaming_stt(
@@ -199,8 +193,8 @@ def _run_reconnect_streaming_stt(
     session_id = payload.get("session_id")
     if not session_id:
         raise ValueError("reconnect_streaming_stt_missing_session_id")
-    core = _core_for_task(conn, task, watcher=watcher)
-    return core.run_reconnect_streaming_stt(session_id)
+    registry = _require_registry(cfg, watcher)
+    return registry.run_reconnect_streaming_stt(session_id)
 
 
 def _run_finalize(
@@ -210,23 +204,12 @@ def _run_finalize(
     *,
     watcher: MonitorWatcher | None,
 ) -> dict[str, Any]:
-    if watcher is None:
-        raise RuntimeError("finalize_requires_watcher")
     payload = json.loads(task.payload_json or "{}")
     session_id = payload.get("session_id")
     if not session_id:
         raise ValueError("finalize_missing_session_id")
-    session = LiveSessionRepo(conn).get(session_id)
-    if not session:
-        raise ValueError(f"session_not_found:{session_id}")
-    creator = CreatorRepo(conn).get(session.creator_id)
-    if not creator:
-        raise ValueError(f"creator_not_found:{session.creator_id}")
-    core = watcher.core_for_platform(conn, creator.platform)
-    meta = core._finalize_recording(
-        session_id, session.temp_path, session.ffmpeg_pid or 0
-    )
-    return {"finalized": meta} if meta else {}
+    registry = _require_registry(cfg, watcher)
+    return registry.run_finalize(session_id)
 
 
 def _run_sync_catalog(
@@ -257,6 +240,8 @@ def _run_download(
     *,
     notify: NotifyService,
 ) -> dict[str, Any]:
+    from pathlib import Path
+
     download_result = download_pending(cfg, creator_id=task.creator_id)
     transcribed = 0
     available, _reason = transcribe_engine_available(cfg)
@@ -419,7 +404,7 @@ class MonitorExecutor:
         can_accept = min(limit, self.inflight_available)
         if can_accept <= 0:
             return
-        repo = MonitorTaskRepo(conn)
+        repo = MonitorTaskRepo(conn, cfg=cfg)
         repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
         claimed = repo.claim_pending(
             limit=can_accept,
@@ -444,7 +429,7 @@ class MonitorExecutor:
         can_accept = min(limit, self.inflight_available)
         if can_accept <= 0:
             return 0
-        repo = MonitorTaskRepo(conn)
+        repo = MonitorTaskRepo(conn, cfg=cfg)
         repo.reset_stale_running(older_than_sec=cfg.monitor.stale_running_sec)
         claimed = repo.claim_pending(limit=can_accept, max_priority=0, min_priority=0)
         for task in claimed:

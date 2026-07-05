@@ -96,50 +96,11 @@ def bootstrap_streaming_stt(cfg: AppConfig, watcher) -> int:
     if not cfg.live.streaming_stt.enabled:
         return 0
 
-    import structlog
-
-    log = structlog.get_logger()
-    from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
+    from media2text.core.storage.write_gateway import ensure_write_gateway_started
 
     ensure_write_gateway_started(cfg)
-    gateway = get_write_gateway(cfg)
-
-    def _bootstrap(conn) -> int:
-        sessions = LiveSessionRepo(conn)
-        creators = CreatorRepo(conn)
-        recovered = 0
-
-        for row in sessions.list_active():
-            if row.status != "recording" or not _pid_alive(row.ffmpeg_pid):
-                continue
-            if not _is_streaming_session(cfg, row):
-                continue
-            creator = creators.get(row.creator_id)
-            if not creator:
-                continue
-            core = watcher.core_for_platform(conn, creator.platform)
-            stt = core._stt_sessions.get(row.id)
-            if stt is not None and stt.is_alive():
-                continue
-            try:
-                result = core.run_reconnect_streaming_stt(row.id)
-                if result.get("skipped"):
-                    continue
-                recovered += 1
-                log.info(
-                    "bootstrap_streaming_stt_recovered",
-                    session_id=row.id,
-                    creator_id=creator.id,
-                )
-            except Exception as exc:  # noqa: BLE001
-                log.warning(
-                    "bootstrap_streaming_stt_failed",
-                    session_id=row.id,
-                    error=str(exc),
-                )
-        return recovered
-
-    return gateway.read(_bootstrap)
+    registry = watcher.ensure_session_registry()
+    return registry.bootstrap_streaming_stt()
 
 
 def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:

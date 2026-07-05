@@ -200,8 +200,8 @@ def test_reconnect_streaming_stt_task(tmp_path, monkeypatch) -> None:
     mock_stt_reconnect.assert_called_once()
 
 
-def test_live_worker_core_uses_watcher_conn_not_worker_conn(tmp_path, monkeypatch) -> None:
-    """STT tasks must not bind callbacks to the worker conn closed after task return."""
+def test_live_worker_dispatch_via_registry(tmp_path, monkeypatch) -> None:
+    """Live worker tasks dispatch through SessionStateMachineRegistry (MH-4c)."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
@@ -236,14 +236,16 @@ def test_live_worker_core_uses_watcher_conn_not_worker_conn(tmp_path, monkeypatc
     )
 
     watcher = MonitorWatcher(cfg)
-    with (
-        patch.object(watcher, "core_for_platform", wraps=watcher.core_for_platform) as mock_core,
-        patch.object(LiveRecordingCore, "_handle_stt_disconnect"),
-    ):
-        run_monitor_task(cfg, conn, task_id=task_id, watcher=watcher)
+    registry = watcher.ensure_session_registry()
+    with patch.object(
+        registry,
+        "run_reconnect_streaming_stt",
+        return_value={"stt_reconnect_attempted": True},
+    ) as mock_run:
+        result = run_monitor_task(cfg, conn, task_id=task_id, watcher=watcher)
 
-    mock_core.assert_called_once()
-    assert mock_core.call_args.args[0] is conn
+    assert result["ok"] is True
+    mock_run.assert_called_once_with(sid)
 
 
 def test_prepare_not_blocked_by_executor_playwright_lock(tmp_path, monkeypatch) -> None:
