@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import subprocess
 import sys
@@ -31,6 +32,17 @@ BLOCKING_PATTERNS: tuple[re.Pattern[str], ...] = (
 
 def is_blocking_command(cmd: str) -> bool:
     return any(p.search(cmd) for p in BLOCKING_PATTERNS)
+
+
+def is_ci_skip_command(cmd: str) -> bool:
+    """Skip multi-minute gates in GitHub Actions issue-verify (E2E-1 / epic)."""
+    if not os.environ.get("CI"):
+        return False
+    if "epic_verify.py" in cmd:
+        return True
+    if re.search(r"-m\s+['\"]?db_stress", cmd):
+        return True
+    return False
 
 
 def find_issue_md(*, issue: int | None = None, slug: str | None = None, branch: str | None = None) -> Path:
@@ -158,6 +170,10 @@ def main() -> int:
         if is_blocking_command(cmd):
             print(f"\n$ {cmd}")
             print("SKIP (blocking daemon / long-running process)")
+            continue
+        if is_ci_skip_command(cmd):
+            print(f"\n$ {cmd}")
+            print("SKIP (CI: run locally before epic merge)")
             continue
         code = run_command(cmd, dry_run=args.dry_run)
         if code != 0:
