@@ -16,7 +16,7 @@ from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.db import with_db_lock_retry
-from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
+from media2text.core.storage.repos import LiveSessionRepo
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -41,13 +41,9 @@ class LiveWatcher:
     ) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
-        self._conn = open_db(cfg)
-        self._creators = CreatorRepo(self._conn)
-        self._sessions = LiveSessionRepo(self._conn)
         self._adapter = self._build_adapter()
         self._runtime = runtime or SessionRuntime()
         self._notify = NotifyService(cfg)
-        self._core = self._make_core(self._conn)
 
     def _make_core(self, conn) -> LiveRecordingCore:
         return LiveRecordingCore(
@@ -60,8 +56,6 @@ class LiveWatcher:
         )
 
     def core_for_conn(self, conn) -> LiveRecordingCore:
-        if conn is self._conn:
-            return self._core
         return self._make_core(conn)
 
     def _build_adapter(self) -> DouyinAdapterV1:
@@ -94,19 +88,26 @@ class LiveWatcher:
         *,
         creator_id: str | None = None,
         deadline: float | None = None,
+        conn=None,
     ) -> dict:
-        core = self.core_for_conn(self._conn)
-        errors, auth_required, platform_changed = core.probe_live(
-            creator_id=creator_id,
-            deadline=deadline,
-        )
-        return {
-            "probe": True,
-            "started": 0,
-            "errors": errors,
-            "auth_required": auth_required,
-            "platform_changed": platform_changed,
-        }
+        work_conn = conn or open_db(self._cfg)
+        close = conn is None
+        try:
+            core = self.core_for_conn(work_conn)
+            errors, auth_required, platform_changed = core.probe_live(
+                creator_id=creator_id,
+                deadline=deadline,
+            )
+            return {
+                "probe": True,
+                "started": 0,
+                "errors": errors,
+                "auth_required": auth_required,
+                "platform_changed": platform_changed,
+            }
+        finally:
+            if close:
+                work_conn.close()
 
     def run_finalize(self, *, conn) -> dict:
         def _finalize() -> dict:
@@ -127,19 +128,26 @@ class LiveWatcher:
         conn=None,
         deadline: float | None = None,
     ) -> dict:
-        work_conn = conn or self._conn
-        poll = self.run_poll_active(
-            conn=work_conn, creator_id=creator_id, deadline=deadline
-        )
-        if poll.get("skipped"):
-            return poll
-        observe = self.run_probe_observe(creator_id=creator_id, deadline=deadline)
-        finalize = self.run_finalize(conn=work_conn)
-        return {
-            **poll,
-            **observe,
-            **finalize,
-        }
+        work_conn = conn or open_db(self._cfg)
+        close = conn is None
+        try:
+            poll = self.run_poll_active(
+                conn=work_conn, creator_id=creator_id, deadline=deadline
+            )
+            if poll.get("skipped"):
+                return poll
+            observe = self.run_probe_observe(
+                creator_id=creator_id, deadline=deadline, conn=work_conn
+            )
+            finalize = self.run_finalize(conn=work_conn)
+            return {
+                **poll,
+                **observe,
+                **finalize,
+            }
+        finally:
+            if close:
+                work_conn.close()
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         poll = live_poll_interval_sec(self._cfg)
@@ -155,12 +163,26 @@ class LiveWatcher:
             raise
 
     def _poll_active_recordings(self, *, skip_session_ids: set[str] | None = None) -> list[dict]:
-        return self._core.poll_active_recordings(skip_session_ids=skip_session_ids)
+        conn = open_db(self._cfg)
+        try:
+            return self.core_for_conn(conn).poll_active_recordings(
+                skip_session_ids=skip_session_ids
+            )
+        finally:
+            conn.close()
 
     def _finalize_recording(
         self, session_id: str, temp_path: str | None, pid: int
     ) -> dict | None:
-        return self._core._finalize_recording(session_id, temp_path, pid)
+        conn = open_db(self._cfg)
+        try:
+            return self.core_for_conn(conn)._finalize_recording(session_id, temp_path, pid)
+        finally:
+            conn.close()
 
     def _process_alive(self, pid: int) -> bool:
-        return self._core._process_alive(pid)
+        conn = open_db(self._cfg)
+        try:
+            return self.core_for_conn(conn)._process_alive(pid)
+        finally:
+            conn.close()

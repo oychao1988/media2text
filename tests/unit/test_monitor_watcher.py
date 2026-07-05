@@ -26,8 +26,10 @@ def test_run_once_calls_reconcile_without_watcher_kwarg(tmp_path, monkeypatch) -
     ):
         result = watcher.run_once()
 
-    reconcile_live.assert_called_once_with(cfg, watcher._conn)
-    reconcile_content.assert_called_once_with(cfg, watcher._conn)
+    reconcile_live.assert_called_once()
+    assert reconcile_live.call_args.args[0] is cfg
+    reconcile_content.assert_called_once()
+    assert reconcile_content.call_args.args[0] is cfg
     assert result["errors"] == []
 
 

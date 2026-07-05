@@ -4,8 +4,10 @@ import math
 import time
 from typing import TYPE_CHECKING, Any
 
+from media2text.core.live.live_observe import LiveObserveService
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 from media2text.core.storage.db import with_db_lock_retry
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -81,17 +83,20 @@ def run_live_probe_tick(
             conn.close()
 
         deadline = time.monotonic() + probe_budget_sec(cfg, n_targets)
+        ensure_write_gateway_started(cfg)
+        gateway = get_write_gateway(cfg)
 
-        conn = open_db(cfg)
-        try:
-            if session_registry is not None:
-                session_registry.poll_active_for_platform("douyin")
-                session_registry.poll_active_for_platform("bilibili")
-                from media2text.core.storage.repos import LiveSessionRepo
-
-                dy_poll = {"active": len(LiveSessionRepo(conn).list_active())}
-                bi_poll = dy_poll
-            else:
+        if session_registry is not None:
+            poll = LiveObserveService.poll_active_recordings(
+                cfg,
+                registry=session_registry,
+                gateway=gateway,
+            )
+            dy_poll = poll
+            bi_poll = poll
+        else:
+            conn = open_db(cfg)
+            try:
                 dy_poll = douyin.run_poll_active(
                     conn=conn, creator_id=creator_id, deadline=deadline
                 )
@@ -104,8 +109,8 @@ def run_live_probe_tick(
                 bi_poll = bilibili.run_poll_active(
                     conn=conn, creator_id=creator_id, deadline=deadline
                 )
-        finally:
-            conn.close()
+            finally:
+                conn.close()
 
         dy = douyin.run_probe_observe(creator_id=creator_id, deadline=deadline)
         if time.monotonic() >= deadline:
@@ -116,23 +121,29 @@ def run_live_probe_tick(
             }
         bi = bilibili.run_probe_observe(creator_id=creator_id, deadline=deadline)
 
-        conn = open_db(cfg)
-        try:
-            dy_fin: dict[str, Any] = {}
-            bi_fin: dict[str, Any] = {}
-            active = 0
+        if session_registry is not None:
+            fin = LiveObserveService.run_finalize(cfg, gateway=gateway)
+            dy_fin = fin
+            bi_fin = fin
+            active = fin.get("active", 0)
+        else:
+            conn = open_db(cfg)
+            try:
+                dy_fin: dict[str, Any] = {}
+                bi_fin: dict[str, Any] = {}
+                active = 0
 
-            def _finalize() -> None:
-                nonlocal dy_fin, bi_fin, active
-                dy_fin = douyin.run_finalize(conn=conn)
-                bi_fin = bilibili.run_finalize(conn=conn)
-                from media2text.core.storage.repos import LiveSessionRepo
+                def _finalize() -> None:
+                    nonlocal dy_fin, bi_fin, active
+                    dy_fin = douyin.run_finalize(conn=conn)
+                    bi_fin = bilibili.run_finalize(conn=conn)
+                    from media2text.core.storage.repos import LiveSessionRepo
 
-                active = len(LiveSessionRepo(conn).list_active())
+                    active = len(LiveSessionRepo(conn).list_active())
 
-            with_db_lock_retry(_finalize)
-        finally:
-            conn.close()
+                with_db_lock_retry(_finalize)
+            finally:
+                conn.close()
 
         return {
             "douyin": {**dy_poll, **dy, **dy_fin},

@@ -30,13 +30,9 @@ class LiveWatcher:
     ) -> None:
         self._cfg = cfg
         self._ws = cfg.ensure_workspace()
-        self._conn = open_db(cfg)
-        self._creators = CreatorRepo(self._conn)
-        self._sessions = LiveSessionRepo(self._conn)
         self._adapter = self._build_adapter()
         self._runtime = runtime or SessionRuntime()
         self._notify = NotifyService(cfg)
-        self._core = self._make_core(self._conn)
 
     def _make_core(self, conn) -> LiveRecordingCore:
         return LiveRecordingCore(
@@ -49,8 +45,6 @@ class LiveWatcher:
         )
 
     def core_for_conn(self, conn) -> LiveRecordingCore:
-        if conn is self._conn:
-            return self._core
         return self._make_core(conn)
 
     def _build_adapter(self) -> BilibiliAdapterV1:
@@ -97,26 +91,33 @@ class LiveWatcher:
         *,
         creator_id: str | None = None,
         deadline: float | None = None,
+        conn=None,
     ) -> dict:
-        core = self.core_for_conn(self._conn)
-        creators = CreatorRepo(self._conn)
-        targets = [c for c in creators.list_monitored() if c.platform == PLATFORM]
-        if creator_id:
-            row = creators.get(creator_id)
-            targets = [row] if row and row.platform == PLATFORM else []
-        errors, auth_required, platform_changed = core.probe_live(
-            creator_id=creator_id,
-            deadline=deadline,
-        )
-        return {
-            "platform": PLATFORM,
-            "probe": True,
-            "checked": len(targets),
-            "started": 0,
-            "errors": errors,
-            "auth_required": auth_required,
-            "platform_changed": platform_changed,
-        }
+        work_conn = conn or open_db(self._cfg)
+        close = conn is None
+        try:
+            core = self.core_for_conn(work_conn)
+            creators = CreatorRepo(work_conn)
+            targets = [c for c in creators.list_monitored() if c.platform == PLATFORM]
+            if creator_id:
+                row = creators.get(creator_id)
+                targets = [row] if row and row.platform == PLATFORM else []
+            errors, auth_required, platform_changed = core.probe_live(
+                creator_id=creator_id,
+                deadline=deadline,
+            )
+            return {
+                "platform": PLATFORM,
+                "probe": True,
+                "checked": len(targets),
+                "started": 0,
+                "errors": errors,
+                "auth_required": auth_required,
+                "platform_changed": platform_changed,
+            }
+        finally:
+            if close:
+                work_conn.close()
 
     def run_finalize(self, *, conn) -> dict:
         def _finalize() -> dict:
@@ -138,15 +139,22 @@ class LiveWatcher:
         conn=None,
         deadline: float | None = None,
     ) -> dict:
-        work_conn = conn or self._conn
-        poll = self.run_poll_active(
-            conn=work_conn, creator_id=creator_id, deadline=deadline
-        )
-        if poll.get("skipped"):
-            return poll
-        observe = self.run_probe_observe(creator_id=creator_id, deadline=deadline)
-        finalize = self.run_finalize(conn=work_conn)
-        return {**poll, **observe, **finalize}
+        work_conn = conn or open_db(self._cfg)
+        close = conn is None
+        try:
+            poll = self.run_poll_active(
+                conn=work_conn, creator_id=creator_id, deadline=deadline
+            )
+            if poll.get("skipped"):
+                return poll
+            observe = self.run_probe_observe(
+                creator_id=creator_id, deadline=deadline, conn=work_conn
+            )
+            finalize = self.run_finalize(conn=work_conn)
+            return {**poll, **observe, **finalize}
+        finally:
+            if close:
+                work_conn.close()
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         bcfg = self._cfg.platforms.bilibili
@@ -167,4 +175,8 @@ class LiveWatcher:
             raise
 
     def _process_alive(self, pid: int) -> bool:
-        return self._core._process_alive(pid)
+        conn = open_db(self._cfg)
+        try:
+            return self.core_for_conn(conn)._process_alive(pid)
+        finally:
+            conn.close()

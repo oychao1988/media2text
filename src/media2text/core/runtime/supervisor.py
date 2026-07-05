@@ -353,10 +353,7 @@ class MonitorSupervisor:
             )
         finally:
             if watcher is not None:
-                try:
-                    watcher._conn.close()
-                except Exception:
-                    pass
+                pass
             self._reset_stale_queue_work(cfg)
             self._release_lock()
             self._thread = None
