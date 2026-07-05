@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING
 import structlog
 
 from media2text.core.config import AppConfig
+from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.live.state_writer import StateWriter
 from media2text.core.live.session_runtime import SessionRuntime
 from media2text.core.live.session_recovery import recover_active_sessions
@@ -91,6 +92,42 @@ class SessionStateMachine:
 
         self._gateway.write(_write, label="session.transition_finalizing")
 
+    def run_finalize(self) -> dict:
+        def _finalize(conn) -> dict:
+            session = LiveSessionRepo(conn, cfg=self._cfg).get(self._handle.session_id)
+            if not session:
+                raise ValueError(f"session_not_found:{self._handle.session_id}")
+            core = self._watcher.core_for_platform(conn, self._handle.platform)
+            meta = core._finalize_recording(
+                session.id,
+                session.temp_path,
+                session.ffmpeg_pid or 0,
+            )
+            return {"finalized": meta} if meta else {}
+
+        return self._gateway.write(_finalize, label="session.finalize")
+
+    def run_reconnect_recording(self) -> dict:
+        def _reconnect(conn) -> dict:
+            core = self._watcher.core_for_platform(conn, self._handle.platform)
+            return core.run_reconnect_recording(self._handle.session_id)
+
+        return self._gateway.write(_reconnect, label="session.reconnect_rec")
+
+    def run_start_streaming_stt(self) -> dict:
+        def _start(conn) -> dict:
+            core = self._watcher.core_for_platform(conn, self._handle.platform)
+            return core.run_start_streaming_stt(self._handle.session_id)
+
+        return self._gateway.write(_start, label="session.start_stt")
+
+    def run_reconnect_streaming_stt(self) -> dict:
+        def _reconnect(conn) -> dict:
+            core = self._watcher.core_for_platform(conn, self._handle.platform)
+            return core.run_reconnect_streaming_stt(self._handle.session_id)
+
+        return self._gateway.write(_reconnect, label="session.reconnect_stt")
+
 
 class SessionStateMachineRegistry:
     """In-process registry of active session machines."""
@@ -173,6 +210,84 @@ class SessionStateMachineRegistry:
             lambda conn: recover_active_sessions(self._cfg, conn),
             label="registry.recover_all",
         )
+
+    def run_prepare(self, creator_id: str, *, live_info) -> dict:
+        def _prepare(conn) -> dict:
+            creator = CreatorRepo(conn).get(creator_id)
+            if not creator:
+                raise ValueError(f"creator_not_found:{creator_id}")
+            core = self._watcher.core_for_platform(conn, creator.platform)
+            return core.run_prepare_live_recording(creator_id, live_info=live_info)
+
+        return self._gateway.write(_prepare, label="registry.prepare")
+
+    def _machine_for_session(self, session_id: str) -> SessionStateMachine:
+        def _load(conn):
+            row = LiveSessionRepo(conn, cfg=self._cfg).get(session_id)
+            if not row:
+                raise ValueError(f"session_not_found:{session_id}")
+            creator = CreatorRepo(conn).get(row.creator_id)
+            if not creator:
+                raise ValueError(f"creator_not_found:{row.creator_id}")
+            return row, creator.platform
+
+        row, platform = self._gateway.read(_load)
+        return self.get_or_create(row, platform=platform)
+
+    def run_finalize(self, session_id: str) -> dict:
+        return self._machine_for_session(session_id).run_finalize()
+
+    def run_reconnect_recording(self, session_id: str) -> dict:
+        return self._machine_for_session(session_id).run_reconnect_recording()
+
+    def run_start_streaming_stt(self, session_id: str) -> dict:
+        return self._machine_for_session(session_id).run_start_streaming_stt()
+
+    def run_reconnect_streaming_stt(self, session_id: str) -> dict:
+        return self._machine_for_session(session_id).run_reconnect_streaming_stt()
+
+    def bootstrap_streaming_stt(self) -> int:
+        """Reconnect STT after daemon restart (empty SessionRuntime)."""
+        if not self._cfg.live.streaming_stt.enabled:
+            return 0
+
+        def _bootstrap(conn) -> int:
+            from media2text.core.live.task_reconciler import _is_streaming_session, _pid_alive
+
+            recovered = 0
+            sessions = LiveSessionRepo(conn, cfg=self._cfg)
+            creators = CreatorRepo(conn)
+            for row in sessions.list_active():
+                if row.status != "recording" or not _pid_alive(row.ffmpeg_pid):
+                    continue
+                if not _is_streaming_session(self._cfg, row):
+                    continue
+                creator = creators.get(row.creator_id)
+                if not creator:
+                    continue
+                core = self._watcher.core_for_platform(conn, creator.platform)
+                stt = core._stt_sessions.get(row.id)
+                if stt is not None and stt.is_alive():
+                    continue
+                try:
+                    result = core.run_reconnect_streaming_stt(row.id)
+                    if result.get("skipped"):
+                        continue
+                    recovered += 1
+                    log.info(
+                        "bootstrap_streaming_stt_recovered",
+                        session_id=row.id,
+                        creator_id=creator.id,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "bootstrap_streaming_stt_failed",
+                        session_id=row.id,
+                        error=str(exc),
+                    )
+            return recovered
+
+        return self._gateway.write(_bootstrap, label="registry.bootstrap_stt")
 
 
 def build_registry(watcher: MonitorWatcher) -> SessionStateMachineRegistry:

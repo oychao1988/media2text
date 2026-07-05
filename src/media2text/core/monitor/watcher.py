@@ -76,6 +76,14 @@ class MonitorWatcher:
     def session_registry(self):
         return self._session_registry
 
+    def ensure_session_registry(self):
+        from media2text.core.live.session_state import build_registry
+
+        if self._session_registry is None:
+            ensure_write_gateway_started(self._cfg)
+            self._session_registry = build_registry(self)
+        return self._session_registry
+
     def _gateway(self):
         ensure_write_gateway_started(self._cfg)
         return get_write_gateway(self._cfg)
