@@ -18,9 +18,24 @@ from media2text.core.workspace import open_db
 pytestmark = pytest.mark.desktop
 
 
+@pytest.fixture(autouse=True)
+def _reset_write_gateway() -> None:
+    from media2text.core.storage import write_gateway as wg_mod
+    from media2text.core.storage.write_gateway import shutdown_write_gateway
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
+    yield
+    shutdown_write_gateway()
+    wg_mod._gateway = None
+
+
 def test_probe_live_parallel_persists_all_snapshots(tmp_path, monkeypatch) -> None:
+    from media2text.core.storage.write_gateway import ensure_write_gateway_started
+
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     cfg.ensure_workspace()
+    ensure_write_gateway_started(cfg)
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
     creators = []
@@ -64,8 +79,14 @@ def test_probe_live_parallel_persists_all_snapshots(tmp_path, monkeypatch) -> No
 
 
 def test_observe_for_probe_does_not_open_db_during_fetch(tmp_path) -> None:
+    from media2text.core.storage.write_gateway import (
+        ensure_write_gateway_started,
+        get_write_gateway,
+    )
+
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     cfg.ensure_workspace()
+    ensure_write_gateway_started(cfg)
     conn = open_db(cfg)
     cid = CreatorRepo(conn).add(
         sec_uid="sec_fetch",
@@ -78,6 +99,7 @@ def test_observe_for_probe_does_not_open_db_during_fetch(tmp_path) -> None:
 
     live = LiveRoomInfo(room_id="r1", is_live=True, title="t")
     in_fetch = {"value": False}
+    in_persist = {"value": False}
 
     def slow_fetch(_creator):
         in_fetch["value"] = True
@@ -93,24 +115,32 @@ def test_observe_for_probe_does_not_open_db_during_fetch(tmp_path) -> None:
         notify=MagicMock(),
     )
 
-    real_open = open_db
+    gw = get_write_gateway(cfg)
+    orig_write = gw.write
 
-    def tracked_open(app_cfg):
-        assert not in_fetch["value"], "open_db must not run during live fetch I/O"
-        return real_open(app_cfg)
+    def tracked_write(fn, *, label="", timeout_sec=None):
+        assert not in_fetch["value"], "persist must not run during live fetch I/O"
+        in_persist["value"] = True
+        return orig_write(fn, label=label, timeout_sec=timeout_sec)
 
-    with patch("media2text.core.live.snapshot.open_db", side_effect=tracked_open):
+    with patch.object(gw, "write", side_effect=tracked_write):
         with patch.object(core, "_fetch_live_info", side_effect=slow_fetch):
             info, err = core._observe_for_probe(creator)
 
     assert err is None
     assert info is not None
+    assert in_persist["value"]
     snap = LiveSnapshotRepo(open_db(cfg)).get(cid)
     assert snap is not None
     assert snap.is_live == 1
 
 
 def test_concurrent_persist_live_probe_result_no_lock_error(tmp_path) -> None:
+    from media2text.core.storage import write_gateway as wg_mod
+    from media2text.core.storage.write_gateway import shutdown_write_gateway
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     cfg.ensure_workspace()
     conn = open_db(cfg)

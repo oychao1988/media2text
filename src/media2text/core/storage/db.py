@@ -843,7 +843,10 @@ def with_db_lock_retry(
     When ``DbWriteGateway`` is running, delegates to the writer thread queue.
     Otherwise falls back to ``_sqlite_write_lock`` (tests / short CLI paths).
     """
-    from media2text.core.storage.write_gateway import get_write_gateway_optional
+    from media2text.core.storage.write_gateway import WriteGuard, get_write_gateway_optional
+
+    if WriteGuard.is_active():
+        return fn()
 
     gw = get_write_gateway_optional()
     if gw is not None and gw.is_running():

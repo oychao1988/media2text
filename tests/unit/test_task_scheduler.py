@@ -118,8 +118,24 @@ def test_conn_per_thread_no_shared_watcher_conn(tmp_path, monkeypatch) -> None:
         return conn
 
     monkeypatch.setattr("media2text.core.live.scheduler.open_db", tracking_open_db)
-    monkeypatch.setattr("media2text.core.live.task_scheduler.open_db", tracking_open_db)
     monkeypatch.setattr("media2text.core.live.probe.open_db", tracking_open_db)
+    from media2text.core.storage.write_gateway import (
+        ensure_write_gateway_started,
+        get_write_gateway,
+    )
+
+    ensure_write_gateway_started(cfg)
+    gw = get_write_gateway(cfg)
+    orig_batch = gw.write_batch
+
+    def tracking_batch(fn, *, label: str = "batch", timeout_sec=None):
+        conn = tracking_open_db(cfg)
+        try:
+            return fn(conn)
+        finally:
+            conn.close()
+
+    monkeypatch.setattr(gw, "write_batch", tracking_batch)
 
     def fake_probe(*_args, **_kwargs):
         tracking_open_db(cfg)
@@ -477,7 +493,7 @@ def test_scheduler_releases_only_recording_creator_running_content(
         profile_url="https://example.com/b",
         monitor_enabled=True,
     )
-    repo = MonitorTaskRepo(conn)
+    repo = MonitorTaskRepo(conn, cfg=cfg)
     task_a = repo.enqueue(
         creator_id=cid_a,
         task_type="sync_catalog",
@@ -493,7 +509,7 @@ def test_scheduler_releases_only_recording_creator_running_content(
     assert task_a is not None
     assert task_b is not None
     repo.claim_pending(limit=2, min_priority=10)
-    LiveSessionRepo(conn).create(
+    LiveSessionRepo(conn, cfg=cfg).create(
         creator_id=cid_a,
         room_id="1",
         temp_path=str(tmp_path / "a.flv"),
@@ -519,9 +535,30 @@ def test_scheduler_releases_only_recording_creator_running_content(
 
     monkeypatch.setattr(task_scheduler_mod, "reconcile_live", lambda *a, **k: 0)
     monkeypatch.setattr(task_scheduler_mod, "reconcile_content", lambda *a, **k: 0)
-    loop.tick_once(conn)
-    assert repo.get(task_a).status == "pending"
-    assert repo.get(task_b).status == "running"
+    from media2text.core.storage.write_gateway import (
+        ensure_write_gateway_started,
+        get_write_gateway,
+    )
+
+    ensure_write_gateway_started(cfg)
+    get_write_gateway(cfg).write_batch(
+        lambda c: loop.tick_once(c),
+        label="scheduler_tick",
+    )
+    verify = open_db(cfg)
+    try:
+        row_a = verify.execute(
+            "SELECT status FROM monitor_tasks WHERE creator_id = ? AND task_type = 'sync_catalog'",
+            (cid_a,),
+        ).fetchone()
+        row_b = verify.execute(
+            "SELECT status FROM monitor_tasks WHERE creator_id = ? AND task_type = 'download'",
+            (cid_b,),
+        ).fetchone()
+        assert row_a is not None and row_a[0] == "pending"
+        assert row_b is not None and row_b[0] == "running"
+    finally:
+        verify.close()
 
 
 def test_content_drain_claims_other_creator_while_recording(

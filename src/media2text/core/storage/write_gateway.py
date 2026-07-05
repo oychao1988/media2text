@@ -176,7 +176,13 @@ class DbWriteGateway:
             return {
                 "running": self._running,
                 "queue_depth": depth,
+                "db_path": str(self._db_path) if self._db_path else None,
             }
+
+    @property
+    def db_path(self) -> Path | None:
+        with self._state_lock:
+            return self._db_path
 
     def _require_queue(self) -> queue.Queue[_WriteOp | None]:
         with self._state_lock:
@@ -265,8 +271,13 @@ def get_write_gateway_optional() -> DbWriteGateway | None:
 
 def ensure_write_gateway_started(cfg) -> DbWriteGateway:
     gw = get_write_gateway(cfg)
+    path = db_path(cfg.ensure_workspace()).resolve()
+    if gw.is_running():
+        current = gw.db_path
+        if current is not None and current != path:
+            gw.shutdown(timeout_sec=gw._shutdown_drain_sec)
     if not gw.is_running():
-        gw.start(db_path(cfg.ensure_workspace()))
+        gw.start(path)
     return gw
 
 

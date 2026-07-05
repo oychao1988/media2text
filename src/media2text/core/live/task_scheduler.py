@@ -13,9 +13,8 @@ from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
 from media2text.core.live.segment_process_pool import SegmentProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
-from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo, MonitorTaskRepo
-from media2text.core.workspace import open_db
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 
 if TYPE_CHECKING:
     from media2text.core.monitor.watcher import MonitorWatcher
@@ -106,9 +105,11 @@ class TaskSchedulerLoop:
             )
         else:
             log.info("post_process_deferred_for_live_lane", count=live_lane_count)
-        recording_creator_ids = frozenset(LiveSessionRepo(conn).list_recording_creator_ids())
+        recording_creator_ids = frozenset(
+            LiveSessionRepo(conn, cfg=self._cfg).list_recording_creator_ids()
+        )
         if recording_creator_ids:
-            released = MonitorTaskRepo(conn).release_running_content_tasks_for_creators(
+            released = MonitorTaskRepo(conn, cfg=self._cfg).release_running_content_tasks_for_creators(
                 sorted(recording_creator_ids)
             )
             if released:
@@ -133,10 +134,14 @@ class TaskSchedulerLoop:
 
     def _run(self) -> None:
         NotifyDaemonGuard.enter()
+        ensure_write_gateway_started(self._cfg)
+        gw = get_write_gateway(self._cfg)
         while not self._stop.is_set():
-            conn = open_db(self._cfg)
             try:
-                with_db_lock_retry(lambda: self.tick_once(conn))
+                gw.write_batch(
+                    lambda conn: self.tick_once(conn),
+                    label="scheduler_tick",
+                )
             except sqlite3.OperationalError as exc:
                 if "locked" in str(exc).lower():
                     log.warning("task_scheduler_db_locked", error=str(exc))
@@ -147,6 +152,4 @@ class TaskSchedulerLoop:
                     log.debug("task_scheduler_stopped_during_shutdown", error=str(exc))
                     break
                 raise
-            finally:
-                conn.close()
             self._stop.wait(timeout=self._cfg.monitor.scheduler_interval_sec)
