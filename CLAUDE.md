@@ -88,7 +88,9 @@ cat data/.monitor-watch.lock   # 单实例 PID
 | 模式 | 行为 |
 |------|------|
 | 无 `--daemon` | 跑一轮后退出 |
-| `--daemon` | **三线程**：`LiveTick`（抖音/B 站 live poll + 非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 10s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
+| `--daemon` | **三线程**：`LiveTick`（`LiveObserveService` + `SessionStateMachineRegistry` 经 `DbWriteGateway` poll/finalize；非阻塞 post-process claim/submit，默认 `live.live_poll_interval_sec` 10s，回退 `monitor.live_poll_interval_sec`）；`SlowTick`（VOD / B 站 archive / dynamic，各自 poll 间隔）；`PostProcessPool`（worker 每 job 独立 `open_db`）。主线程持锁 idle |
+
+**Live DB 写路径（MH-4）**：无 `watcher._conn` 长绑定。`LiveTick` → `LiveObserveService.poll_active_recordings(registry, gateway)`；live worker（finalize/prepare/reconnect/STT）→ `SessionStateMachineRegistry` + `LiveRecordingCore.bind(conn)`  per gateway write；content 任务仍经 `MonitorExecutor` 短 conn。
 
 **DB**：daemon 热路径频繁 `open_db()`；schema migration 对同一 `media2text.db` 路径在进程内只跑一次（MH-5），后续 connect 不再重复 migrate。
 

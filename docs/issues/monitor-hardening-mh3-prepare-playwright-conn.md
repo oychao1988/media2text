@@ -8,6 +8,8 @@ depends_on: []
 
 # MH-3：prepare 开录路径 — Playwright 解耦 + hybrid DB conn
 
+> **Superseded (2026-07-05):** MH-4c/MH-4d 已移除 `watcher._conn` hybrid 路径；live worker 经 `SessionStateMachineRegistry` + `DbWriteGateway` dispatch，见 [monitor-db-write-gateway-session-sm-design.md](../superpowers/specs/2026-07-05-monitor-db-write-gateway-session-sm-design.md) §5.4–5.5。
+
 GitHub Issue: [#347](https://github.com/oychao1988/media2text/issues/347)  
 Epic：**Monitor Hardening**（2026-06-26）  
 系列：MH-1 / MH-2 / **MH-3** 可并行 → MH-4
