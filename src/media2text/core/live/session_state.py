@@ -93,11 +93,15 @@ class SessionStateMachine:
 
     def run_finalize(self) -> dict:
         def _finalize(conn) -> dict:
+            from media2text.core.live.session_finalize import finalize_recording
+
             session = LiveSessionRepo(conn, cfg=self._cfg).get(self._handle.session_id)
             if not session:
                 raise ValueError(f"session_not_found:{self._handle.session_id}")
             core = self._watcher.core_for_platform(conn, self._handle.platform)
-            meta = core._finalize_recording(
+            meta = finalize_recording(
+                core,
+                conn,
                 session.id,
                 session.temp_path,
                 session.ffmpeg_pid or 0,
