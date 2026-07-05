@@ -192,4 +192,5 @@ def run_poll_active_tick(
         douyin.run_poll_active(conn=conn, creator_id=creator_id, deadline=deadline)
         bilibili.run_poll_active(conn=conn, creator_id=creator_id, deadline=deadline)
 
+    ensure_write_gateway_started(cfg)
     with_db_lock_retry(_poll)

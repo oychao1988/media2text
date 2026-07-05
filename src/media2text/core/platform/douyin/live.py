@@ -17,6 +17,7 @@ from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
 from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo
+from media2text.core.storage.write_gateway import ensure_write_gateway_started
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -81,6 +82,7 @@ class LiveWatcher:
             core.poll_active_recordings()
             return {"active": len(sessions.list_active())}
 
+        ensure_write_gateway_started(self._cfg)
         return with_db_lock_retry(_poll)
 
     def run_probe_observe(
@@ -119,6 +121,7 @@ class LiveWatcher:
                 "stale_cleared": stale,
             }
 
+        ensure_write_gateway_started(self._cfg)
         return with_db_lock_retry(_finalize)
 
     def run_once(

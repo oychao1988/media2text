@@ -1,5 +1,6 @@
 import sqlite3
 import threading
+import time
 from pathlib import Path
 from typing import Callable, TypeVar
 
@@ -848,7 +849,11 @@ def with_db_lock_retry(
 
     gw = get_write_gateway_optional()
     if gw is not None and gw.is_running():
-        return gw.write(lambda _conn: fn())
+        try:
+            return gw.write(lambda _conn: fn())
+        except RuntimeError as exc:
+            if "not running" not in str(exc).lower():
+                raise
 
     last_exc: sqlite3.OperationalError | None = None
     for attempt in range(max_attempts):
