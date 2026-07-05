@@ -127,10 +127,6 @@ class TaskSchedulerLoop:
             min_priority=10,
             exclude_creator_ids=recording_creator_ids or None,
         )
-        try:
-            drain_once(self._cfg, limit=20)
-        except Exception:
-            log.exception("notify_drain_tick_failed")
 
     def _run(self) -> None:
         NotifyDaemonGuard.enter()
@@ -152,4 +148,8 @@ class TaskSchedulerLoop:
                     log.debug("task_scheduler_stopped_during_shutdown", error=str(exc))
                     break
                 raise
+            try:
+                drain_once(self._cfg, limit=20)
+            except Exception:
+                log.exception("notify_drain_tick_failed")
             self._stop.wait(timeout=self._cfg.monitor.scheduler_interval_sec)
