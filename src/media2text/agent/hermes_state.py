@@ -69,9 +69,8 @@ def _write_with_retry(
 
         gateway_write(cfg, _on_writer, label=label)
         return
-    from media2text.core.storage.db import with_db_lock_retry
 
-    with_db_lock_retry(_run)
+    _run()
 
 
 class SessionDB:

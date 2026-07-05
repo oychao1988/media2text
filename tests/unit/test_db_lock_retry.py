@@ -17,12 +17,14 @@ def _reset_gateway() -> None:
     wg_mod._gateway = None
 
 
-def test_with_db_lock_retry_requires_gateway(tmp_path) -> None:
-    def noop() -> None:
-        return None
+def test_with_db_lock_retry_inline_without_gateway() -> None:
+    calls = {"n": 0}
 
-    with pytest.raises(RuntimeError, match="DbWriteGateway is not running"):
-        with_db_lock_retry(noop)
+    def bump() -> None:
+        calls["n"] += 1
+
+    with_db_lock_retry(bump)
+    assert calls["n"] == 1
 
 
 def test_with_db_lock_retry_delegates_when_gateway_running(tmp_path) -> None:
@@ -38,7 +40,6 @@ def test_with_db_lock_retry_delegates_when_gateway_running(tmp_path) -> None:
 
     with_db_lock_retry(bump)
     assert calls["n"] == 1
-    shutdown_write_gateway()
 
 
 def test_with_db_lock_retry_reraises_non_lock_errors(tmp_path) -> None:
@@ -57,5 +58,3 @@ def test_with_db_lock_retry_reraises_non_lock_errors(tmp_path) -> None:
         assert "no such table" in str(exc)
     else:
         raise AssertionError("expected OperationalError")
-    finally:
-        shutdown_write_gateway()

@@ -850,7 +850,17 @@ def with_db_lock_retry(
     if gw is not None and gw.is_running():
         return gw.write(lambda _conn: fn())
 
-    raise RuntimeError(
-        "DbWriteGateway is not running; use gateway_write(cfg, ...) or "
-        "ensure_write_gateway_started(cfg) before with_db_lock_retry"
-    )
+    last_exc: sqlite3.OperationalError | None = None
+    for attempt in range(max_attempts):
+        try:
+            return fn()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+            last_exc = exc
+            if attempt + 1 >= max_attempts:
+                raise
+            time.sleep(base_delay_sec * (2**attempt))
+    if last_exc is not None:
+        raise last_exc
+    raise RuntimeError("with_db_lock_retry exhausted")
