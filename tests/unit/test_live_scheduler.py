@@ -2,11 +2,23 @@ import threading
 import time
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.live.scheduler import LiveTickLoop, MonitorScheduler, SlowTickLoop
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.watcher import MonitorWatcher
+
+
+@pytest.fixture(autouse=True)
+def _reset_db_write_gateway() -> None:
+    yield
+    import media2text.core.storage.write_gateway as wg_mod
+    from media2text.core.storage.write_gateway import shutdown_write_gateway
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
 
 
 def test_live_tick_not_blocked_by_finalize_drain(tmp_path, monkeypatch) -> None:
@@ -147,7 +159,7 @@ def test_monitor_scheduler_start_stop(tmp_path, monkeypatch) -> None:
     scheduler = MonitorScheduler(watcher, cfg)
 
     with (
-        patch("media2text.core.live.probe.run_live_probe_tick", return_value={}),
+        patch("media2text.core.live.scheduler.run_live_probe_tick", return_value={}),
         patch.object(watcher, "_run_vod_tick", return_value={}),
         patch.object(watcher, "_run_archive_tick", return_value={}),
         patch.object(watcher, "_run_dynamic_tick", return_value={}),
@@ -244,7 +256,7 @@ def test_monitor_scheduler_stop_joins_before_executor_shutdown(tmp_path, monkeyp
     monkeypatch.setattr(MonitorExecutor, "shutdown", track_shutdown)
 
     with (
-        patch("media2text.core.live.probe.run_live_probe_tick", return_value={}),
+        patch("media2text.core.live.scheduler.run_live_probe_tick", return_value={}),
         patch.object(watcher, "_run_vod_tick", return_value={}),
         patch.object(watcher, "_run_archive_tick", return_value={}),
         patch.object(watcher, "_run_dynamic_tick", return_value={}),
