@@ -33,7 +33,7 @@ StateMachine + worker dispatch 就绪后，**删除** `recording.py` 内重复 p
 
 ### Task 3 — 回归
 
-- [ ] `pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt.py tests/unit/test_live_worker_tasks.py -v` PASS
+- [ ] `pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt_resilience.py tests/unit/test_live_worker_tasks.py -v` PASS
 - [ ] `recording.py` 行数较 MH-4c 前显著减少（目标 -30% 以上 poll/finalize 相关）
 
 ## 验证命令

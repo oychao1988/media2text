@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import subprocess
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from pathlib import Path
 
 import structlog
 
-from media2text.core.live.probe_guard import ProbeExecutionGuard, guarded_popen as Popen
+from media2text.core.live.probe_guard import ProbeExecutionGuard
 
 from media2text.core.config import AppConfig
 from media2text.core.desktop.auto_record import effective_auto_record
@@ -95,7 +96,7 @@ class LiveRecordingCore:
         adapter: LivePlatformAdapter,
         platform: str,
         notify: NotifyService,
-        processes: dict[str, Popen] | None = None,
+        processes: dict[str, subprocess.Popen] | None = None,
         runtime: SessionRuntime | None = None,
     ) -> None:
         self._cfg = cfg
@@ -158,7 +159,7 @@ class LiveRecordingCore:
         return self._require_db().jobs
 
     @property
-    def _processes(self) -> dict[str, Popen]:
+    def _processes(self) -> dict[str, subprocess.Popen]:
         return self._runtime.processes
 
     @property
@@ -1067,7 +1068,7 @@ class LiveRecordingCore:
         session_dir: Path,
         part_index: int,
         discontinuity_seq: int = 0,
-    ) -> Popen:
+    ) -> subprocess.Popen:
         existing = self._processes.pop(session_id, None)
         if existing is not None:
             stop_hls_recorder(existing, timeout=self._cfg.live.ffmpeg_stop_timeout_sec)
