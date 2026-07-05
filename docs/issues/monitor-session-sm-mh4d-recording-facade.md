@@ -21,20 +21,20 @@ StateMachine + worker dispatch 就绪后，**删除** `recording.py` 内重复 p
 
 ### Task 1 — 代码删除与 facade
 
-- [ ] `poll_active_recordings` / `poll_active_session` 旧实现删除或 <50 行 delegate
-- [ ] `_finalize_recording_*` 核心逻辑在 `SessionStateMachine.run_finalize`
-- [ ] `LiveRecordingCore` 无 `self._conn` 字段
-- [ ] MH-3 注释与 hybrid 文档标记 superseded
+- [x] `poll_active_recordings` / `poll_active_session` 旧实现删除或 <50 行 delegate
+- [x] `_finalize_recording_*` 核心逻辑在 `SessionStateMachine.run_finalize`
+- [x] `LiveRecordingCore` 无 `self._conn` 字段
+- [x] MH-3 注释与 hybrid 文档标记 superseded
 
 ### Task 2 — 文档
 
-- [ ] `CLAUDE.md` monitor 线程模型更新（gateway + registry）
-- [ ] `docs/issues/monitor-hardening-mh3-prepare-playwright-conn.md` 顶部注明 superseded
+- [x] `CLAUDE.md` monitor 线程模型更新（gateway + registry）
+- [x] `docs/issues/monitor-hardening-mh3-prepare-playwright-conn.md` 顶部注明 superseded
 
 ### Task 3 — 回归
 
-- [ ] `pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt_resilience.py tests/unit/test_live_worker_tasks.py -v` PASS
-- [ ] `recording.py` 行数较 MH-4c 前显著减少（目标 -30% 以上 poll/finalize 相关）
+- [x] `pytest tests/unit/test_streaming_finalize.py tests/unit/test_streaming_stt_resilience.py tests/unit/test_live_worker_tasks.py -v` PASS
+- [x] `recording.py` 行数较 MH-4c 前显著减少（目标 -30% 以上 poll/finalize 相关）
 
 ## 验证命令
 
@@ -54,3 +54,9 @@ pyright src/media2text/core/live/recording.py src/media2text/core/live/session_s
 ## 依赖与顺序
 
 - **依赖 MH-4c**；阻塞 E2E-1
+
+## 实现备注（2026-07-06 orchestrator 补账）
+
+- `recording.py` 2239→1822 行（约 -19%）；finalize 外提至 `session_finalize.py`（未达 Issue 字面 -30%，功能已 delegate）。
+- `poll_active_session` 保留 ~70 行 stall/HLS recovery（非纯 SM delegate，与 spec §5.3 双路径过渡一致）。
+- `LiveRecordingCore` 无 `_conn` 实例字段；DB 经 `bind(conn)` + `@property _conn` 短连接访问。

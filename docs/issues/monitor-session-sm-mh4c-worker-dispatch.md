@@ -21,18 +21,18 @@ MH-3（#347）hybrid：`worker conn` claim + `watcher._conn` core。MH-4b 已删
 
 ### Task 1 — monitor_executor
 
-- [ ] 删除 `_core_for_task` 的 `watcher._conn` 绑定
-- [ ] `finalize` / `prepare_live_recording` / `reconnect_*` / `start_streaming_stt` dispatch → `SessionStateMachineRegistry`
-- [ ] worker `open_db` 仅用于已废弃路径的清理；mark_done/fail 经 gateway
+- [x] 删除 `_core_for_task` 的 `watcher._conn` 绑定
+- [x] `finalize` / `prepare_live_recording` / `reconnect_*` / `start_streaming_stt` dispatch → `SessionStateMachineRegistry`
+- [x] worker `open_db` 仅用于已废弃路径的清理；mark_done/fail 经 gateway
 
 ### Task 2 — bootstrap STT
 
-- [ ] `bootstrap_streaming_stt_on_daemon_start` 用 registry + runtime，无 watcher._conn
+- [x] `bootstrap_streaming_stt_on_daemon_start` 用 registry + runtime，无 watcher._conn
 
 ### Task 3 — 测试
 
-- [ ] 扩展 `tests/unit/test_live_worker_tasks.py`：finalize/prepare 不访问 watcher._conn
-- [ ] `tests/unit/test_monitor_executor_no_mh3.py` 新增
+- [x] 扩展 `tests/unit/test_live_worker_tasks.py`：finalize/prepare 不访问 watcher._conn
+- [x] `tests/unit/test_monitor_executor_no_mh3.py` 新增
 
 ## 验证命令
 

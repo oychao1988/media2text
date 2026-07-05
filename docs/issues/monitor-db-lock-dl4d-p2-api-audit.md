@@ -21,19 +21,19 @@ P1 完成后，API 写路由、Hermes `SessionDB`、剩余 repos mutator 全部�
 
 ### Task 1 — 剩余 mutators
 
-- [ ] `CreatorRepo`、`AwemeRepo` 等 P2 mutators 经 gateway
-- [ ] `agent/hermes_state.py` `_write_with_retry` 改 gateway
-- [ ] API 写路由（recording start/stop、creators mutate）经 gateway
+- [x] `CreatorRepo`、`AwemeRepo` 等 P2 mutators 经 gateway
+- [x] `agent/hermes_state.py` `_write_with_retry` 改 gateway
+- [x] API 写路由（recording start/stop、creators mutate）经 gateway
 
 ### Task 2 — 删除旧锁
 
-- [ ] 删除 `db.py` 的 `_sqlite_write_lock`（`with_db_lock_retry` 仅委托 gateway）
-- [ ] grep 生产代码无 scattered `with_db_lock_retry(lambda: open_db` 模式
+- [x] 删除 `db.py` 的 `_sqlite_write_lock`（`with_db_lock_retry` 仅委托 gateway）
+- [x] grep 生产代码无 scattered `with_db_lock_retry(lambda: open_db` 模式
 
 ### Task 3 — Audit CI
 
-- [ ] 新增 `scripts/audit_db_writes.py`：检测 `repos.py` / `state_writer.py` 内裸 `commit()` 不在 gateway 包装
-- [ ] `.github/workflows/ci.yml` 或 `issue-verify` 调用 audit（fail on regression）
+- [x] 新增 `scripts/audit_db_writes.py`：检测 `repos.py` / `state_writer.py` 内裸 `commit()` 不在 gateway 包装
+- [x] `.github/workflows/ci.yml` 或 `issue-verify` 调用 audit（fail on regression）
 
 ## 验证命令
 
@@ -53,3 +53,7 @@ ruff check src/media2text/core/storage/db.py src/media2text/agent/hermes_state.p
 ## 依赖与顺序
 
 - **依赖 DL-4c**；与 MH-4d 可并行
+
+## 实现备注（2026-07-06 orchestrator 补账）
+
+- `_sqlite_write_lock` 已删除；`with_db_lock_retry` 在 gateway 未运行时 inline retry（CLI/单测），非 Issue 字面「仅委托 gateway」——见 retro review 非阻塞备注。

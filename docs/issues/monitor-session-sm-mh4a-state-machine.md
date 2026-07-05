@@ -23,25 +23,25 @@ Epic：**Monitor DB Write Path Phase 2**
 
 ### Task 1 — 核心类型
 
-- [ ] 新增 `src/media2text/core/live/session_state.py`：`SessionHandle`、`SessionStateMachine`、`SessionStateMachineRegistry`
-- [ ] 状态：`starting` / `recording` / `offline_pending` / `finalizing` / `completed` / `failed`（DB migration v9 若需新 status 值）
-- [ ] 所有 DB 迁移经 `gateway.write`；ffmpeg/STT 仅 `SessionRuntime`
+- [x] 新增 `src/media2text/core/live/session_state.py`：`SessionHandle`、`SessionStateMachine`、`SessionStateMachineRegistry`
+- [x] 状态：`starting` / `recording` / `offline_pending` / `finalizing` / `completed` / `failed`（DB migration v9 若需新 status 值）
+- [x] 所有 DB 迁移经 `gateway.write`；ffmpeg/STT 仅 `SessionRuntime`
 
 ### Task 2 — Recovery（修 #78 + 7/3）
 
-- [ ] `recover_all()` on daemon start：`offline_since_at` + dead ffmpeg → enqueue `finalize` priority 0（**不等** 2h）
-- [ ] 删除 `mark_stale_recordings_failed` 对 `obs_ffmpeg_alive==0` 的 skip
-- [ ] `recover_orphan_sessions` 委托 registry / 或合并进 `recover_all`
+- [x] `recover_all()` on daemon start：`offline_since_at` + dead ffmpeg → enqueue `finalize` priority 0（**不等** 2h）
+- [x] 删除 `mark_stale_recordings_failed` 对 `obs_ffmpeg_alive==0` 的 skip
+- [x] `recover_orphan_sessions` 委托 registry / 或合并进 `recover_all`
 
 ### Task 3 — poll_observation（与现有 core 并存）
 
-- [ ] `SessionStateMachine.poll_observation`：`write_obs` + still_live 检测接口
-- [ ] `LiveRecordingCore.poll_active_recordings` 可委托 registry（双路径过渡 OK）
+- [x] `SessionStateMachine.poll_observation`：`write_obs` + still_live 检测接口
+- [x] `LiveRecordingCore.poll_active_recordings` 可委托 registry（双路径过渡 OK）
 
 ### Task 4 — 测试
 
-- [ ] `tests/unit/test_session_state_machine.py`：状态迁移 offline_pending → finalizing
-- [ ] `tests/unit/test_session_recovery_offline_finalize.py`：**CRITICAL** 7/3 回归（offline + dead ffmpeg → finalize task）
+- [x] `tests/unit/test_session_state_machine.py`：状态迁移 offline_pending → finalizing
+- [x] `tests/unit/test_session_recovery_offline_finalize.py`：**CRITICAL** 7/3 回归（offline + dead ffmpeg → finalize task）
 
 ## 验证命令
 

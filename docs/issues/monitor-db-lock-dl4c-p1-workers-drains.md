@@ -21,19 +21,19 @@ P0 路径（scheduler + session repos）经 gateway 后，将 **post_process / s
 
 ### Task 1 — Worker pools
 
-- [ ] `PostProcessExecutor` / `SegmentProcessExecutor`：job 内 read 短连接或 gateway.read；mutate 经 gateway.write
-- [ ] `segment_watcher` / `segment_manifest` 裸 commit 改 gateway
-- [ ] `MonitorExecutor` worker mark_done/fail 经 gateway（若 MH-4c 未覆盖）
+- [x] `PostProcessExecutor` / `SegmentProcessExecutor`：job 内 read 短连接或 gateway.read；mutate 经 gateway.write
+- [x] `segment_watcher` / `segment_manifest` 裸 commit 改 gateway
+- [x] `MonitorExecutor` worker mark_done/fail 经 gateway（若 MH-4c 未覆盖）
 
 ### Task 2 — Drains
 
-- [ ] `notify/drain.py`、`state_event_drain.py`：删除内部 `open_db`+`with_db_lock_retry` 双轨，改 `gateway.write(drain_once)`
+- [x] `notify/drain.py`、`state_event_drain.py`：删除内部 `open_db`+`with_db_lock_retry` 双轨，改 `gateway.write(drain_once)`
 
 ### Task 3 — 测试
 
-- [ ] `tests/unit/test_post_process_summarize_db.py` 仍 PASS
-- [ ] `tests/unit/test_state_event_drain.py`、`tests/unit/test_api_state_event_drain.py` 仍 PASS
-- [ ] 新增或扩展 segment gateway 单测
+- [x] `tests/unit/test_post_process_summarize_db.py` 仍 PASS
+- [x] `tests/unit/test_state_event_drain.py`、`tests/unit/test_api_state_event_drain.py` 仍 PASS
+- [x] 新增或扩展 segment gateway 单测
 
 ## 验证命令
 

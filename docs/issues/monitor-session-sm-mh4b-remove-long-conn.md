@@ -21,19 +21,19 @@ Epic：**Monitor DB Write Path Phase 2**
 
 ### Task 1 — 删除长连接
 
-- [ ] `MonitorWatcher` 无 `self._conn`；VOD/archive/dynamic tick 用 `gateway.read` / `gateway.write`
-- [ ] `DouyinLiveWatcher` / `BilibiliLiveWatcher` 无 `_conn`；`core_for_conn` 改为 factory 无 conn 绑定
-- [ ] grep 无 `watcher._conn` 生产路径（测试 mock 除外）
+- [x] `MonitorWatcher` 无 `self._conn`；VOD/archive/dynamic tick 用 `gateway.read` / `gateway.write`
+- [x] `DouyinLiveWatcher` / `BilibiliLiveWatcher` 无 `_conn`；`core_for_conn` 改为 factory 无 conn 绑定
+- [x] grep 无 `watcher._conn` 生产路径（测试 mock 除外）
 
 ### Task 2 — LiveObserveService
 
-- [ ] 新增 `LiveObserveService`（或等价）：`poll_active_recordings(registry, gateway)` 替代 `run_poll_active` 长 conn 路径
-- [ ] `run_live_probe_tick` Phase1/3 仅用 gateway + registry
+- [x] 新增 `LiveObserveService`（或等价）：`poll_active_recordings(registry, gateway)` 替代 `run_poll_active` 长 conn 路径
+- [x] `run_live_probe_tick` Phase1/3 仅用 gateway + registry
 
 ### Task 3 — 测试
 
-- [ ] `tests/unit/test_live_observe_no_long_conn.py`：poll 期间无持久 `open_db` 连接（spy）
-- [ ] `tests/unit/test_probe_live_parallel.py` 仍 PASS
+- [x] `tests/unit/test_live_observe_no_long_conn.py`：poll 期间无持久 `open_db` 连接（spy）
+- [x] `tests/unit/test_probe_live_parallel.py` 仍 PASS
 
 ## 验证命令
 

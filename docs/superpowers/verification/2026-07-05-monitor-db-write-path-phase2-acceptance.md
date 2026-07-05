@@ -1,9 +1,18 @@
 # Monitor DB Write Path Phase 2 Epic 验收（DL-4a–E2E-1）
 
-**日期:** 2026-07-05  
+**日期:** 2026-07-05（Epic 合并）；**orchestrator 补账:** 2026-07-06  
 **事故:** 2026-07-03 `task_scheduler_db_locked` ×47；进程内多线程裸 `commit()`  
 **Epic manifest:** `monitor-db-write-path-phase2-2026-07-05`  
 **Issues:** [#367](https://github.com/oychao1988/media2text/issues/367)–[#375](https://github.com/oychao1988/media2text/issues/375)
+
+## 编排留痕（2026-07-06）
+
+| 项 | 状态 |
+|----|------|
+| `docs/issues/*.md` AC 勾选 | ✅ #367–#375 全部 `[x]` |
+| README PR 列 | ✅ #376–#384 |
+| issue-reviewer retro PASS | ✅ PR #376–#384 评论 |
+| `epic_verify` 全量 | ✅ 2026-07-06 本地 exit 0（~5min，已修 #375 递归） |
 
 ## 自动化
 
@@ -15,7 +24,7 @@
 | DL-4d P2 audit + Hermes | PASS | `scripts/audit_db_writes.py` + `issue_verify --issue 374` |
 | E2E-1 压测 smoke | PASS | `tests/stress/test_db_lock_stress.py`（`-m "not db_stress"`） |
 | E2E-1 压测 sustained | PASS / 手工 | `pytest -m db_stress`（60s gate；CI 可选 nightly） |
-| Epic verify | PASS | `python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05` exit 0 |
+| Epic verify | PASS | `python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05` exit 0（2026-07-06） |
 
 ## Success Criteria（spec §2）
 

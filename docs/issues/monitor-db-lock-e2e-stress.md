@@ -21,19 +21,19 @@ Phase 2 全部 Issue 合并后，需压测证明 embedded monitor **30min 无 su
 
 ### Task 1 — 压测脚本
 
-- [ ] 新增 `scripts/db_lock_stress.py` 或 `tests/stress/test_db_lock_stress.py`（`pytest -m db_stress`）
-- [ ] Mock 11 creators parallel probe + scheduler 60s：`task_scheduler_db_locked` count == 0
-- [ ] `live_tick` max gap < 2 × `live_poll_interval_sec`
+- [x] 新增 `scripts/db_lock_stress.py` 或 `tests/stress/test_db_lock_stress.py`（`pytest -m db_stress`）
+- [x] Mock 11 creators parallel probe + scheduler 60s：`task_scheduler_db_locked` count == 0
+- [x] `live_tick` max gap < 2 × `live_poll_interval_sec`
 
 ### Task 2 — Epic acceptance
 
-- [ ] 新增 `docs/superpowers/verification/2026-07-05-monitor-db-write-path-phase2-acceptance.md`
-- [ ] 更新 `docs/issues/epic-manifests/monitor-db-write-path-phase2-2026-07-05.yaml` acceptance_doc 路径
-- [ ] `python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05` exit 0
+- [x] 新增 `docs/superpowers/verification/2026-07-05-monitor-db-write-path-phase2-acceptance.md`
+- [x] 更新 `docs/issues/epic-manifests/monitor-db-write-path-phase2-2026-07-05.yaml` acceptance_doc 路径
+- [x] `python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05` exit 0（见 Epic manifest；勿写入下方 `issue_verify` 块以防递归）
 
 ### Task 3 — 7/3 回归文档
 
-- [ ] acceptance 表含 W4 僵尸 recovery 单测引用 + 7/3 事故 N/A 说明
+- [x] acceptance 表含 W4 僵尸 recovery 单测引用 + 7/3 事故 N/A 说明
 
 ## 验证命令
 
@@ -42,8 +42,13 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/unit/test_session_recovery_offline_finalize.py tests/stress/test_db_lock_stress.py -v -m "not db_stress"
 pytest tests/stress/test_db_lock_stress.py -v -m db_stress
-python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05
 pytest tests/unit/test_probe_live_parallel.py tests/unit/test_task_scheduler.py tests/unit/test_db_write_gateway.py tests/unit/test_session_state_machine.py -v --tb=short -q
+```
+
+Epic 关单（`docs/issues/epic-manifests/monitor-db-write-path-phase2-2026-07-05.yaml`，单独执行）：
+
+```bash
+python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05
 ```
 
 ## 非目标范围
