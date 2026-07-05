@@ -15,6 +15,7 @@ from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
 from media2text.core.workspace import open_db
 
@@ -70,6 +71,55 @@ class LiveWatcher:
             return DouyinAdapterV1(client, session_path=session)
         return DouyinAdapterV1(httpx.Client(), session_path=None)
 
+    def run_poll_active(
+        self,
+        *,
+        conn,
+        creator_id: str | None = None,
+        deadline: float | None = None,
+    ) -> dict:
+        def _poll() -> dict:
+            work_conn = conn
+            core = self.core_for_conn(work_conn)
+            sessions = LiveSessionRepo(work_conn)
+            if deadline is not None and time.monotonic() >= deadline:
+                return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
+            core.poll_active_recordings()
+            return {"active": len(sessions.list_active())}
+
+        return with_db_lock_retry(_poll)
+
+    def run_probe_observe(
+        self,
+        *,
+        creator_id: str | None = None,
+        deadline: float | None = None,
+    ) -> dict:
+        core = self.core_for_conn(self._conn)
+        errors, auth_required, platform_changed = core.probe_live(
+            creator_id=creator_id,
+            deadline=deadline,
+        )
+        return {
+            "probe": True,
+            "started": 0,
+            "errors": errors,
+            "auth_required": auth_required,
+            "platform_changed": platform_changed,
+        }
+
+    def run_finalize(self, *, conn) -> dict:
+        def _finalize() -> dict:
+            stale = StateWriter(conn, cfg=self._cfg).mark_stale_recordings_failed()
+            if stale:
+                log.warning("live_stale_sessions_cleared", count=stale)
+            return {
+                "active": len(LiveSessionRepo(conn).list_active()),
+                "stale_cleared": stale,
+            }
+
+        return with_db_lock_retry(_finalize)
+
     def run_once(
         self,
         *,
@@ -78,36 +128,17 @@ class LiveWatcher:
         deadline: float | None = None,
     ) -> dict:
         work_conn = conn or self._conn
-        core = self.core_for_conn(work_conn)
-        sessions = LiveSessionRepo(work_conn)
-        if deadline is not None and time.monotonic() >= deadline:
-            return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
-
-        core.poll_active_recordings()
-
-        if deadline is not None and time.monotonic() >= deadline:
-            return {
-                "probe": True,
-                "active": len(sessions.list_active()),
-                "errors": [],
-                "auth_required": False,
-                "platform_changed": False,
-            }
-
-        errors, auth_required, platform_changed = core.probe_live(
-            creator_id=creator_id,
-            deadline=deadline,
+        poll = self.run_poll_active(
+            conn=work_conn, creator_id=creator_id, deadline=deadline
         )
-        stale = StateWriter(work_conn, cfg=self._cfg).mark_stale_recordings_failed()
-        if stale:
-            log.warning("live_stale_sessions_cleared", count=stale)
+        if poll.get("skipped"):
+            return poll
+        observe = self.run_probe_observe(creator_id=creator_id, deadline=deadline)
+        finalize = self.run_finalize(conn=work_conn)
         return {
-            "probe": True,
-            "started": 0,
-            "active": len(sessions.list_active()),
-            "errors": errors,
-            "auth_required": auth_required,
-            "platform_changed": platform_changed,
+            **poll,
+            **observe,
+            **finalize,
         }
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:

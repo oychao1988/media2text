@@ -22,6 +22,11 @@ async def run_notify_drain_loop(
     *,
     supervisor: MonitorSupervisor | None = None,
 ) -> None:
+    try:
+        await asyncio.wait_for(stop.wait(), timeout=30.0)
+        return
+    except TimeoutError:
+        pass
     while not stop.is_set():
         try:
             drain_once(cfg)

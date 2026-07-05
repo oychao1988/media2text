@@ -21,13 +21,13 @@ def test_live_tick_not_blocked_by_finalize_drain(tmp_path, monkeypatch) -> None:
     order: list[str] = []
     tick_cb = MagicMock(side_effect=lambda: order.append("tick"))
 
-    def slow_run_once(**_kwargs) -> dict:
+    def slow_probe(*_args, **_kwargs) -> dict:
         order.append("run_once")
-        return {}
+        return {"active_recordings": 0}
 
-    with (
-        patch.object(watcher._douyin_live, "run_once", side_effect=slow_run_once),
-        patch.object(watcher._bilibili_live, "run_once", return_value={}),
+    with patch(
+        "media2text.core.live.scheduler.run_live_probe_tick",
+        side_effect=slow_probe,
     ):
         live_loop = LiveTickLoop(
             watcher,
@@ -57,13 +57,15 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
     stop = threading.Event()
     run_counts: list[int] = []
 
-    def count_run_once(**_kwargs) -> dict:
+    def count_probe(*_args, **_kwargs) -> dict:
         run_counts.append(1)
-        return {}
+        return {"active_recordings": 0}
 
     with (
-        patch.object(watcher._douyin_live, "run_once", side_effect=count_run_once),
-        patch.object(watcher._bilibili_live, "run_once", return_value={}),
+        patch(
+            "media2text.core.live.scheduler.run_live_probe_tick",
+            side_effect=count_probe,
+        ),
         patch.object(watcher, "_run_vod_tick", side_effect=lambda **_: time.sleep(30)),
     ):
         live_loop = LiveTickLoop(

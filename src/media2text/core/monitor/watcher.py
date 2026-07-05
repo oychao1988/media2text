@@ -155,10 +155,29 @@ class MonitorWatcher:
                 log.warning("monitor_scheduler_stop_failed", error=str(exc))
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
+        from media2text.core.runtime.monitor_startup import assert_monitor_slot_available
+
+        blocked = assert_monitor_slot_available(self._cfg)
+        if blocked is not None:
+            log.error(
+                "monitor_watch_already_running",
+                managed_by=blocked.get("managed_by"),
+                pid=blocked.get("pid"),
+            )
+            raise LockError(blocked["error"])
         lock = self._ws / ".monitor-watch.lock"
+        from media2text.core.storage.write_gateway import (
+            ensure_write_gateway_started,
+            shutdown_write_gateway,
+        )
+
         try:
             with workspace_lock(lock):
-                self._run_daemon_locked(creator_id=creator_id)
+                ensure_write_gateway_started(self._cfg)
+                try:
+                    self._run_daemon_locked(creator_id=creator_id)
+                finally:
+                    shutdown_write_gateway()
         except LockError:
             log.error("monitor_watch_lock_held")
             raise

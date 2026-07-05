@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -11,11 +12,14 @@ from media2text.api.services.work_queue import recover_stale_work
 from media2text.core.config import AppConfig
 from media2text.core.runtime.monitor_lock import (
     clear_invalid_monitor_lock,
+    embedded_heartbeat_stale_sec,
+    is_embedded_monitor_pid,
     is_monitor_watch_pid,
     monitor_effectively_running,
     read_lock_pid,
     read_lock_record,
 )
+from media2text.core.runtime.heartbeat import read_heartbeat, _age_sec
 from media2text.core.runtime.status import _live_poll_interval_sec
 from media2text.core.runtime.supervisor import MonitorSupervisor
 
@@ -59,6 +63,7 @@ def maybe_self_heal_monitor(
         return {"ok": True, "healed": False, "skipped": "hourly_limit", "reason": reason}
 
     if reason == "heartbeat_stale":
+        sup_status = supervisor.status_dict(cfg)
         record = read_lock_record(lock_path)
         lock_pid = record.pid if record is not None else read_lock_pid(lock_path)
         if (
@@ -75,6 +80,38 @@ def maybe_self_heal_monitor(
                 "pid": lock_pid,
                 "reason": reason,
             }
+        if sup_status.get("thread_alive") or (
+            lock_pid == os.getpid() and is_embedded_monitor_pid(lock_pid)
+        ):
+            heartbeat = read_heartbeat(ws)
+            last_tick = heartbeat.get("last_tick_at") if heartbeat else None
+            tick_age = _age_sec(last_tick)
+            stale_limit = embedded_heartbeat_stale_sec(cfg, live_poll)
+            if tick_age is not None and tick_age < stale_limit:
+                return {
+                    "ok": True,
+                    "healed": False,
+                    "skipped": "probe_in_progress",
+                    "reason": reason,
+                    "tick_age_sec": tick_age,
+                }
+            from media2text.core.runtime.monitor_startup import clear_orphan_embedded_lock
+
+            clear_orphan_embedded_lock(lock_path, supervisor)
+            result = supervisor.takeover(cfg)
+            if result.get("ok"):
+                recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
+                _last_heal_at = now
+                _heal_timestamps.append(now)
+                log.info("monitor_self_heal_ok", reason=reason, action="restart_stuck_embedded")
+                return {
+                    "ok": True,
+                    "healed": True,
+                    "reason": reason,
+                    "takeover": result,
+                }
+            log.warning("monitor_self_heal_failed", reason=reason, detail=result)
+            return {"ok": False, "healed": False, "reason": reason, "takeover": result}
 
     sup_status = supervisor.status_dict(cfg)
     if sup_status.get("thread_alive") and reason == "embedded_thread_dead":

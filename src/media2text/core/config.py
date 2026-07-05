@@ -45,6 +45,13 @@ class PlatformsConfig(BaseModel):
         return self
 
 
+class MonitorWriteGatewayConfig(BaseModel):
+    queue_maxsize: int = 1024
+    write_timeout_sec: float = 60.0
+    read_timeout_sec: float = 30.0
+    shutdown_drain_sec: float = 5.0
+
+
 class MonitorConfig(BaseModel):
     live_poll_interval_sec: int = 60
     vod_poll_interval_sec: int = 300
@@ -62,6 +69,8 @@ class MonitorConfig(BaseModel):
     probe_parallelism: int = 4
     probe_http_timeout_sec: int = 5
     probe_guard_strict: bool = False
+    write_guard_strict: bool = False
+    write_gateway: MonitorWriteGatewayConfig = Field(default_factory=MonitorWriteGatewayConfig)
 
 
 class StreamingSttConfig(BaseModel):
@@ -471,7 +480,7 @@ class DesktopAgentConfig(BaseModel):
 class DesktopConfig(BaseModel):
     api_port: int = 8765
     theme: str = "light"
-    auto_start_monitor: bool = False
+    auto_start_monitor: bool = True
     monitor_self_heal: bool = True
     monitor_self_heal_cooldown_sec: int = 120
     monitor_self_heal_max_per_hour: int = 3
@@ -493,21 +502,53 @@ class NotifyConfig(BaseModel):
     feishu: NotifyFeishuConfig = Field(default_factory=NotifyFeishuConfig)
 
 
+def _find_project_root_from(start: Path) -> Path | None:
+    for path in (start, *start.parents):
+        if (path / "pyproject.toml").is_file():
+            return path
+    return None
+
+
 def _project_root() -> Path:
+    """Repo root for `.env` / `config.yaml`; works for editable and site-packages installs."""
+    file_root = _find_project_root_from(Path(__file__).resolve().parents[3])
+    if file_root is not None:
+        return file_root
+    env_root = os.environ.get("M2T_PROJECT_ROOT", "").strip()
+    if env_root:
+        candidate = Path(env_root).resolve()
+        if (candidate / "pyproject.toml").is_file():
+            return candidate
+    cwd_root = _find_project_root_from(Path.cwd())
+    if cwd_root is not None:
+        return cwd_root
+    config_env = os.environ.get("MEDIA2TEXT_CONFIG", "").strip()
+    if config_env:
+        config_path = Path(config_env).expanduser()
+        if config_path.is_file():
+            from_config = _find_project_root_from(config_path.parent)
+            if from_config is not None:
+                return from_config
+            return config_path.parent.resolve()
     return Path(__file__).resolve().parents[3]
 
 
 def load_dotenv_file() -> Path | None:
-    """Load `.env` from project root into os.environ (does not override existing vars)."""
-    env_path = _project_root() / ".env"
-    if not env_path.is_file():
-        return None
+    """Load `.env` into os.environ (does not override existing vars)."""
+    candidates: list[Path] = []
+    override = os.environ.get("M2T_DOTENV_PATH", "").strip()
+    if override:
+        candidates.append(Path(override).expanduser())
+    candidates.append(_project_root() / ".env")
     try:
         from dotenv import load_dotenv
     except ImportError:
         return None
-    load_dotenv(env_path, override=False)
-    return env_path
+    for env_path in candidates:
+        if env_path.is_file():
+            load_dotenv(env_path, override=False)
+            return env_path
+    return None
 
 
 class AppConfig(BaseSettings):

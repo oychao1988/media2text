@@ -179,3 +179,38 @@ def test_self_heal_skips_takeover_when_external_alive_but_stale(
     assert result["pid"] == 4242
     recover.assert_called_once()
     takeover.assert_not_called()
+
+
+def test_maybe_self_heal_restarts_when_embedded_thread_alive_but_stale(
+    tmp_path, monkeypatch
+) -> None:
+    msh._last_heal_at = 0.0
+    msh._heal_timestamps.clear()
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        desktop=DesktopConfig(auto_start_monitor=True, monitor_self_heal=True),
+    )
+    sup = MagicMock()
+    sup.status_dict.return_value = {"managed_by": "embedded", "thread_alive": True}
+    sup.takeover.return_value = {"ok": True, "start": {"ok": True, "managed_by": "embedded"}}
+    with (
+        patch(
+            "media2text.api.services.monitor_self_heal.monitor_effectively_running",
+            return_value=(False, "heartbeat_stale"),
+        ),
+        patch(
+            "media2text.api.services.monitor_self_heal.embedded_heartbeat_stale_sec",
+            return_value=90.0,
+        ),
+        patch(
+            "media2text.api.services.monitor_self_heal.read_heartbeat",
+            return_value={"last_tick_at": "2020-01-01T00:00:00+00:00"},
+        ),
+        patch(
+            "media2text.api.services.monitor_self_heal.recover_stale_work",
+        ),
+        patch.object(sup, "takeover") as takeover,
+    ):
+        result = maybe_self_heal_monitor(cfg, sup, force=True)
+    assert result["healed"] is True
+    takeover.assert_called_once()

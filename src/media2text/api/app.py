@@ -47,6 +47,12 @@ async def lifespan(app: FastAPI):
     from media2text.core.logging import enable_monitor_log_sink
 
     enable_monitor_log_sink(cfg.ensure_workspace())
+    from media2text.core.storage.write_gateway import (
+        ensure_write_gateway_started,
+        shutdown_write_gateway,
+    )
+
+    ensure_write_gateway_started(cfg)
     supervisor = MonitorSupervisor()
     app.state.supervisor = supervisor
     # Mounted ``/api`` sub-app does not inherit parent ``app.state``.
@@ -54,36 +60,9 @@ async def lifespan(app: FastAPI):
     if api_app is not None:
         api_app.state.supervisor = supervisor
     if cfg.desktop.auto_start_monitor:
-        import os
+        from media2text.core.runtime.monitor_startup import prepare_embedded_monitor_startup
 
-        from media2text.api.services.work_queue import recover_stale_work
-        from media2text.core.runtime.monitor_lock import (
-            clear_invalid_monitor_lock,
-            is_embedded_monitor_pid,
-            is_monitor_watch_pid,
-            read_lock_pid,
-        )
-
-        lock_path = cfg.ensure_workspace() / ".monitor-watch.lock"
-        clear_invalid_monitor_lock(lock_path)
-        pid = read_lock_pid(lock_path)
-        if pid and is_embedded_monitor_pid(pid) and pid != os.getpid():
-            log.info("monitor_auto_start_deferred_embedded", pid=pid)
-        elif pid and is_monitor_watch_pid(pid):
-            result = supervisor.takeover(cfg)
-            if result.get("ok"):
-                recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
-                log.info("monitor_auto_start_takeover", detail=result)
-            else:
-                log.warning("monitor_auto_start_takeover_failed", detail=result)
-        else:
-            if pid:
-                clear_invalid_monitor_lock(lock_path)
-            result = supervisor.start(cfg)
-            if result.get("ok"):
-                recover_stale_work(cfg, older_than_sec=cfg.monitor.stale_running_sec)
-            elif not result.get("ok"):
-                log.warning("monitor_auto_start_failed", detail=result)
+        prepare_embedded_monitor_startup(cfg, supervisor)
     stop = asyncio.Event()
     drain_task = asyncio.create_task(run_drain_loop(cfg, stop, supervisor=supervisor))
     notify_drain_task = asyncio.create_task(
@@ -94,6 +73,7 @@ async def lifespan(app: FastAPI):
     stop.set()
     supervisor.stop(cfg)
     await asyncio.gather(drain_task, notify_drain_task, health_task)
+    shutdown_write_gateway()
 
 
 def create_app() -> FastAPI:

@@ -9,6 +9,7 @@ from media2text.core.live.state_writer import StateWriter
 from media2text.core.notify import NotifyService
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import LiveSnapshotRepo
+from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.workspace import open_db
 
 _snapshot_write_lock = threading.Lock()
@@ -42,16 +43,19 @@ def persist_live_probe_result(
     opens one connection under a process-wide lock, writes, and closes.
     """
     with _snapshot_write_lock:
-        conn = open_db(cfg)
-        try:
-            state = StateWriter(conn, cfg=cfg, notify=NotifyService(cfg))
-            if error is not None:
-                return state.mark_snapshot_probe_failed(creator_id, error=error)
-            if live_info is None:
-                return False
-            return state.update_snapshot(creator_id, live_info)
-        finally:
-            conn.close()
+        def _persist() -> bool:
+            conn = open_db(cfg)
+            try:
+                state = StateWriter(conn, cfg=cfg, notify=NotifyService(cfg))
+                if error is not None:
+                    return state.mark_snapshot_probe_failed(creator_id, error=error)
+                if live_info is None:
+                    return False
+                return state.update_snapshot(creator_id, live_info)
+            finally:
+                conn.close()
+
+        return with_db_lock_retry(_persist)
 
 
 def clear_snapshot_write_lock_for_tests() -> None:

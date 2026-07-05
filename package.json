@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@9.15.0",
   "scripts": {
-    "dev:desktop": "pnpm --filter m2t-desktop tauri dev"
+    "dev:desktop": "pnpm --filter m2t-desktop tauri dev",
+    "build:dmg": "bash scripts/build-desktop-dmg.sh"
   }
 }

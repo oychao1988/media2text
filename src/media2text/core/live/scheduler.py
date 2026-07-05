@@ -81,19 +81,14 @@ class LiveTickLoop:
                     self._cfg.ensure_workspace(),
                     last_tick_at=datetime.now(timezone.utc).isoformat(),
                 )
-            conn = open_db(self._cfg)
-            try:
-                run_live_probe_tick(
-                    self._cfg,
-                    conn,
-                    douyin=self._watcher._douyin_live,
-                    bilibili=self._watcher._bilibili_live,
-                    creator_id=self._creator_id,
-                )
-                active = len(LiveSessionRepo(conn).list_active())
-                log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
-            finally:
-                conn.close()
+            result = run_live_probe_tick(
+                self._cfg,
+                douyin=self._watcher._douyin_live,
+                bilibili=self._watcher._bilibili_live,
+                creator_id=self._creator_id,
+            )
+            active = int(result.get("active_recordings") or 0)
+            log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
             if self._on_tick is not None:
                 self._on_tick()
             else:

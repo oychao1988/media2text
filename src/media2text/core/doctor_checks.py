@@ -9,6 +9,7 @@ from pathlib import Path
 from media2text.core.archive.health import is_index_stale, monitor_lock_pid, monitor_lock_valid
 from media2text.core.compliance import is_compliance_accepted
 from media2text.core.config import AppConfig
+from media2text.core.desktop_runtime import ensure_ffmpeg_config, resolve_ffmpeg_path
 from media2text.core.playwright_env import smoke_launch_chromium
 from media2text.core.platform.bilibili.auth import session_exists as bilibili_session_exists
 from media2text.core.platform.douyin.auth import session_exists as douyin_session_exists
@@ -61,6 +62,8 @@ def _distill_llm_available(cfg: AppConfig) -> tuple[bool, str | None]:
 
 def build_doctor_report(cfg: AppConfig, conn) -> dict:
     """Build doctor payload (checks + summary flags) without exiting."""
+    if os.environ.get("M2T_DESKTOP_MANAGED") == "1":
+        ensure_ffmpeg_config(cfg)
     ws = cfg.ensure_workspace()
     has_douyin = any(c.platform == "douyin" for c in CreatorRepo(conn).list_all())
     has_bilibili = any(c.platform == "bilibili" for c in CreatorRepo(conn).list_all())
@@ -69,7 +72,12 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
     bilibili_session_ok = bilibili_session_exists(ws)
 
     checks: list[dict] = [
-        {"name": "ffmpeg", "ok": bool(shutil.which(cfg.live.ffmpeg_path)), "auto_repairable": True},
+        {
+            "name": "ffmpeg",
+            "ok": resolve_ffmpeg_path(cfg) is not None,
+            "auto_repairable": True,
+            "hint": "macOS: brew install ffmpeg，或使用内置 ffmpeg（重新安装最新 DMG）",
+        },
         {
             "name": "playwright",
             "ok": _playwright_import_ok(),
@@ -233,6 +241,8 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
     if cfg.live.is_streaming_pipeline():
         ok = ok and any(c["ok"] for c in checks if c["name"] == "streaming_stt_deepgram")
 
+    from media2text.core.storage.write_gateway import write_gateway_status
+
     return {
         "ok": ok,
         "checks": checks,
@@ -241,4 +251,5 @@ def build_doctor_report(cfg: AppConfig, conn) -> dict:
         "index_stale": is_index_stale(conn, ws),
         "monitor_lock_pid": lock_pid,
         "monitor_lock_valid": lock_valid,
+        "write_gateway": write_gateway_status(cfg),
     }

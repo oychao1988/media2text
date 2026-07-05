@@ -1,0 +1,37 @@
+# Epic verification — Monitor DB write path phase 2 (2026-07-05)
+# Run: python scripts/epic_verify.py monitor-db-write-path-phase2-2026-07-05
+name: monitor-db-write-path-phase2-2026-07-05
+acceptance_doc: docs/superpowers/verification/2026-07-05-monitor-db-write-path-phase2-acceptance.md
+readme_section: Monitor DB Write Path Phase 2（2026-07-05）
+issues: [367, 368, 369, 370, 371, 372, 373, 374, 375]
+
+steps:
+  - name: issue-dl4a
+    run: python scripts/issue_verify.py --issue 367
+
+  - name: issue-dl4b
+    run: python scripts/issue_verify.py --issue 368
+
+  - name: issue-mh4a
+    run: python scripts/issue_verify.py --issue 369
+
+  - name: issue-mh4b
+    run: python scripts/issue_verify.py --issue 370
+
+  - name: issue-mh4c
+    run: python scripts/issue_verify.py --issue 371
+
+  - name: issue-dl4c
+    run: python scripts/issue_verify.py --issue 372
+
+  - name: issue-mh4d
+    run: python scripts/issue_verify.py --issue 373
+
+  - name: issue-dl4d
+    run: python scripts/issue_verify.py --issue 374
+
+  - name: issue-e2e1
+    run: python scripts/issue_verify.py --issue 375
+
+  - name: phase2-regression
+    run: pytest tests/unit/test_db_write_gateway.py tests/unit/test_task_scheduler.py tests/unit/test_session_state_machine.py tests/unit/test_session_recovery_offline_finalize.py -v --tb=short -q

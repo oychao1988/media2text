@@ -134,6 +134,25 @@ def clear_invalid_monitor_lock(lock_path: Path) -> bool:
     return False
 
 
+def embedded_heartbeat_stale_sec(cfg, live_poll_sec: int) -> float:
+    """Embedded monitor may hold heartbeat during a full live-probe round (Playwright)."""
+    from media2text.core.live.probe import probe_budget_sec
+    from media2text.core.storage.repos import CreatorRepo
+    from media2text.core.workspace import open_db
+
+    conn = open_db(cfg)
+    try:
+        n = sum(
+            1
+            for c in CreatorRepo(conn).list_monitored()
+            if c.platform in ("douyin", "bilibili")
+        )
+    finally:
+        conn.close()
+    probe_budget = probe_budget_sec(cfg, max(1, n))
+    return max(heartbeat_stale_sec(live_poll_sec), probe_budget + live_poll_sec)
+
+
 def monitor_effectively_running(
     workspace: Path,
     cfg,
@@ -141,11 +160,14 @@ def monitor_effectively_running(
     supervisor_status: dict[str, Any] | None,
     live_poll_sec: int,
 ) -> tuple[bool, str | None]:
-    del cfg  # reserved for future per-workspace rules
     sup = supervisor_status or {}
     lock_path = workspace / ".monitor-watch.lock"
     lock_pid = read_lock_pid(lock_path)
-    stale_sec = heartbeat_stale_sec(live_poll_sec)
+    stale_sec = (
+        embedded_heartbeat_stale_sec(cfg, live_poll_sec)
+        if sup.get("thread_alive")
+        else heartbeat_stale_sec(live_poll_sec)
+    )
 
     if sup.get("thread_alive"):
         if lock_pid != os.getpid():

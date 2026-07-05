@@ -44,6 +44,39 @@ def test_supervisor_start_stop_idempotent(tmp_path, monkeypatch) -> None:
         assert again["stopped"] is False
 
 
+def test_supervisor_embedded_lock_blocks_start(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = _cfg(tmp_path)
+    ws = cfg.ensure_workspace()
+    embedded_pid = 525252
+    (ws / ".monitor-watch.lock").write_text(
+        json.dumps({"pid": embedded_pid, "mode": "embedded"}),
+        encoding="utf-8",
+    )
+    sup = MonitorSupervisor()
+
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock._pid_alive",
+        lambda pid: pid == embedded_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor.is_embedded_monitor_pid",
+        lambda pid: pid == embedded_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.monitor_lock.is_embedded_monitor_pid",
+        lambda pid: pid == embedded_pid,
+    )
+    monkeypatch.setattr(
+        "media2text.core.runtime.supervisor.is_monitor_watch_pid",
+        lambda pid: False,
+    )
+    result = sup.start(cfg)
+    assert result["ok"] is False
+    assert result["already_running_embedded"] is True
+    assert result["pid"] == embedded_pid
+
+
 def test_supervisor_external_lock_blocks_start(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = _cfg(tmp_path)

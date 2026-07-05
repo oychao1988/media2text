@@ -157,11 +157,17 @@ def compute_health(
     snapshots_stale: int,
     failed_recent_24h: int,
     threshold_failed: int = 10,
+    thread_alive: bool = False,
+    embedded_stale_sec: float | None = None,
 ) -> tuple[HealthState, list[str]]:
     if not running:
         return "stopped", ["monitor not running"]
     reasons: list[str] = []
-    stale_tick_sec = heartbeat_stale_sec(live_poll_sec)
+    stale_tick_sec = (
+        embedded_stale_sec
+        if thread_alive and embedded_stale_sec is not None
+        else heartbeat_stale_sec(live_poll_sec)
+    )
     if tick_age_sec is None or tick_age_sec > stale_tick_sec:
         reasons.append("live tick stale")
     if snapshots_stale > 0:
@@ -199,22 +205,25 @@ def build_runtime_status(
         lock_pid = read_lock_pid(ws / ".monitor-watch.lock")
 
         managed_by: ManagedBy = sup.get("managed_by", "none")
-        if running:
-            if sup.get("thread_alive"):
-                managed_by = "embedded"
-            else:
-                managed_by = "external"
+        if sup.get("thread_alive"):
+            managed_by = "embedded"
+        elif running:
+            managed_by = "external"
         elif lock_pid and not is_monitor_watch_pid(lock_pid):
             managed_by = "none"
 
         last_tick_at = sup.get("last_tick_at")
-        if last_tick_at is None and managed_by == "external":
-            heartbeat = read_heartbeat(ws)
-            if heartbeat:
-                last_tick_at = heartbeat.get("last_tick_at")
+        heartbeat = read_heartbeat(ws)
+        if heartbeat and heartbeat.get("last_tick_at"):
+            last_tick_at = heartbeat.get("last_tick_at")
+        elif last_tick_at is None and managed_by == "external" and heartbeat:
+            last_tick_at = heartbeat.get("last_tick_at")
 
         tick_age_sec = _age_sec(last_tick_at) if last_tick_at else None
         failed_recent = queues["monitor_tasks"]["failed_recent_24h"]
+        from media2text.core.runtime.monitor_lock import embedded_heartbeat_stale_sec
+
+        embedded_stale = embedded_heartbeat_stale_sec(cfg, live_poll_sec)
         health, health_reasons = compute_health(
             running=running,
             tick_age_sec=tick_age_sec,
@@ -222,21 +231,15 @@ def build_runtime_status(
             snapshots_stale=snapshots_stale,
             failed_recent_24h=failed_recent,
             threshold_failed=cfg.desktop.runtime_failed_recent_threshold,
+            thread_alive=bool(sup.get("thread_alive")),
+            embedded_stale_sec=embedded_stale,
         )
-        if (
-            not running
-            and sup.get("thread_alive")
-            and lock_reason == "heartbeat_stale"
-        ):
-            health = "degraded"
-            if "live tick stale" not in health_reasons:
-                health_reasons = ["live tick stale"]
 
         pid = sup.get("pid") if managed_by == "embedded" else lock_pid
         if managed_by == "embedded" and pid is None:
             pid = os.getpid()
 
-        lock_valid = lock_reason is None and running
+        lock_valid = lock_reason is None and (running or bool(sup.get("thread_alive")))
 
         return {
             "ok": True,
@@ -244,8 +247,8 @@ def build_runtime_status(
             "health_reasons": health_reasons,
             "managed_by": managed_by,
             "daemon": {
-                "running": running,
-                "pid": pid if running else None,
+                "running": running or bool(sup.get("thread_alive")),
+                "pid": (pid or os.getpid()) if (running or sup.get("thread_alive")) else None,
                 "lock_pid": lock_pid,
                 "lock_valid": lock_valid,
                 "lock_reason": lock_reason,

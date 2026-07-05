@@ -1,0 +1,304 @@
+workspace: ./data
+
+platforms:
+  douyin:
+    poll_interval_sec: 60
+    live_poll_interval_sec: 0   # 0 = use live.live_poll_interval_sec → monitor.live_poll_interval_sec
+    download_concurrency: 3
+    max_sync_pages: 0
+  bilibili:
+    live_poll_interval_sec: 0
+    archive_poll_interval_sec: 300
+    dynamic_poll_interval_sec: 120
+    max_sync_pages: 0
+    download_concurrency: 3
+
+monitor:
+  live_poll_interval_sec: 60
+  vod_poll_interval_sec: 300
+  max_creators_per_vod_tick: 2  # 0 = no limit; v2 default 2 to avoid long Playwright VOD sync blocking SlowTick
+  profile_stale_days: 7
+  # Playwright sync/download workers; keep at 1 unless you accept multi-Chromium OOM risk
+  executor_max_parallel: 1
+  stale_running_sec: 3600
+  task_max_retries: 3  # monitor_tasks auto-retry before DLQ (status=failed)
+  # Execution Engine v2 (Local Pipeline Refactor)
+  scheduler_interval_sec: 1
+  # false = legacy path without TaskReconciler (startup warning); keep true in production
+  reconciler_enabled: true
+  live_worker_max_parallel: 1
+  live_lane_min_claim_per_tick: 1
+  probe_tick_budget_sec: 0  # 0 => 2 * live_poll_interval_sec
+  probe_parallelism: 4  # parallel live probes (I/O only); snapshot writes serialized (DL-1)
+  probe_http_timeout_sec: 5
+  probe_guard_strict: false  # dev: true raises on probe-tick side effects
+
+live:
+  auto_record: true               # false = poll only updates snapshots; manual start via desktop API
+  # streaming: parallel FLV/HLS record + Deepgram WS STT (recommended for new installs).
+  # legacy: read-only compat for old recordings; remux MP4 + post-process transcribe/upload.
+  pipeline_mode: streaming
+  remux_on_complete: false          # streaming default; legacy uses true when unset
+  streaming_stt:
+    enabled: true                   # false: record FLV only, no Deepgram WS (even if pipeline_mode=streaming)
+    engine: deepgram
+    flush_interval_sec: 30
+    reconnect: true
+    # Throttle for notify.events.transcribe_partial (default off)
+    partial_notify_interval_sec: 120
+    partial_notify_min_finals: 3
+  # After a live recording remuxes to .mp4, refresh agent-manifest.json for that creator.
+  # When true and transcribe.engine is configured (whisper / openai / deepgram), transcribe
+  # runs in the post-process drain (monitor daemon or `media2text post-process run`), not inline.
+  # Must stay false when pipeline_mode=streaming (STT runs during the live).
+  transcribe_on_complete: false
+  live_poll_interval_sec: 10       # LiveTick only; falls back to monitor.live_poll_interval_sec
+  offline_confirm_sec: 45          # wall-clock seconds before finalize after first offline
+  offline_confirm_polls: 3         # deprecated; logic uses offline_confirm_sec
+  ffmpeg_exit_recheck: true
+  max_reconnect_attempts: 2
+  min_recording_sec_before_offline_end: 45
+  post_process_poll_interval_sec: 10
+  post_process_max_parallel: 0         # 0 = auto: min(2, max(1, cpu_count // 2))
+  post_process_stale_running_sec: 600  # running 超过此秒数视为 stale；已完结 session 标 failed 而非复活 pending
+  scan_concurrency: 4                   # parallel get_live_room for creators without active session
+  offline_trust_recording_signals: true # profile offline 时仍信任 ffmpeg/reflow，直到 FLV stall 或 confirm
+  offline_flv_stall_polls: 3           # 与上项配合：profile 已 offline 且 FLV 连续 N 次 obs poll 不增长 → 不再信任 reflow/ffmpeg
+  ffmpeg_path: ffmpeg
+  ffmpeg_stop_timeout_sec: 30
+  temp_format: flv
+  # Session Media unified path (SMU): streaming + hls + segment_pipeline — see
+  # docs/superpowers/specs/2026-06-11-session-media-unified-refactor-design.md
+  encode:
+    # PoC gate (SMU-R0 / S6): run scripts/benchmark_live_compress.py before
+    # switching to compress. Record results in:
+    # docs/superpowers/verification/2026-06-09-live-compress-benchmark.md
+    mode: copy                     # copy | compress — keep copy until S6 s6_pass on your hardware
+    video_codec: auto              # auto → hevc_videotoolbox → h264_videotoolbox → libx264
+    video_bitrate: 2M
+    audio_bitrate: 128k
+  # Deprecated alias — maps to live.encode when enabled=true (SMU-R1)
+  compress:
+    enabled: false
+    encoder: videotoolbox
+    video_bitrate: 2M
+    audio_bitrate: 128k
+  media:
+    format: hls                    # flv | hls — hls requires pipeline_mode=streaming
+    segment_duration_sec: 600
+  segment_pipeline:
+    enabled: true
+    max_parallel: 2
+    max_attempts: 5
+    watch_interval_sec: 1.0
+    stable_mtime_sec: 2.0
+    upload:
+      enabled: true
+      delete_local_after_upload: true
+
+# m2t-desktop sidecar (FastAPI) — UI-only keys; daemon uses live/monitor above
+desktop:
+  api_port: 8765
+  theme: light                    # light | dark; synced with localStorage m2t-desktop-theme
+  auto_start_monitor: true        # serve 启动时：已有监控（终端或另一 Desktop）则跳过；无监控则启内嵌
+  monitor_self_heal: true          # 假锁/心跳过期时自愈；external 存活时不 takeover
+  monitor_self_heal_cooldown_sec: 120
+  monitor_self_heal_max_per_hour: 3
+  monitor_self_heal_check_every_sec: 30
+  external_drain_interval_sec: 5   # managed_by=external 时 serve outbox drain 间隔（秒）；embedded 仍 ~1.5s
+  runtime_ws_interval_sec: 30     # WS runtime.health heartbeat (PR2)
+  runtime_http_fallback_sec: 60   # HTTP poll when WS down (PR2)
+  runtime_failed_recent_threshold: 10
+  chat:
+    default_model: auto
+    max_context_chars: 24000
+  agent:
+    max_tool_output_chars: 16000
+    session_search_default_limit: 8
+    llm_timeout_sec: 120        # agent LLM HTTP timeout; avoids infinite「思考中」
+    allow_toolsets:
+      - m2t-core
+      - m2t-terminal
+      - m2t-delegation
+    distill:
+      on_creator_add: false
+      defer_until_min_chars: 2000
+      bootstrap_web_research: true
+      evolve_web_research: false
+      web_search_provider: tavily
+      tavily_api_key_env: TAVILY_API_KEY
+      web_research_channels: 6
+      web_research_max_parallel: 2
+      local_scan:
+        enabled: true
+        include_manifest: true
+        max_files: 50
+        globs:
+          - live/**/*.summary.md
+          - live/**/*.transcript.md
+          - videos/**/*.summary.md
+          - videos/**/*.transcript.md
+          - dynamics/**/content.md
+        user_sources_dir: .agent/sources
+
+terminal:
+  backend: local
+  cwd: ./data
+  default_shell: bash
+  timeout_sec: 60
+
+security:
+  command_approval: prompt   # prompt | allowlist | off
+  allowlist: []
+
+delegation:
+  max_concurrent_children: 2
+  max_spawn_depth: 2
+  orchestrator_enabled: false
+
+# Hermes agent kernel (§14) — memory/compression used from M3+
+memory:
+  max_chars: 2200
+  user_max_chars: 1375
+  soul_max_chars: 4000
+  memory_enabled: true
+  user_profile_enabled: true
+  soul_enabled: true
+  nudge_interval: 10
+skills:
+  creation_nudge_interval: 10
+  agent_skills_subdir: skills
+curator:
+  enabled: false
+  interval_hours: 168
+  min_idle_hours: 2
+  backup_keep: 5
+compression:
+  enabled: true
+  preflight_ratio: 0.5
+  auto_ratio: 0.85
+  protect_last_n: 20
+agent:
+  max_turns: 25
+  review_enabled: true
+  review_max_iterations: 16
+auxiliary:
+  review:
+    provider: auto
+    model: auto
+    timeout: 300
+  curator:
+    provider: auto
+    model: auto
+    timeout: 300
+
+# 个人阿里云盘：直播录制完成后自动备份（阶段 B，默认关闭）
+aliyundrive:
+  enabled: false
+  token_path: sessions/aliyundrive.token.json
+  parent_file_id: root
+  root_folder: media2text
+  creator_key: nickname
+  min_free_bytes: 5368709120
+  upload_on_live_complete: true
+  upload_transcripts: true
+  delete_local_after_upload: true
+  on_insufficient_space: rolling_cleanup
+  rolling_cleanup:
+    max_delete_per_round: 20
+    purge_recycle_bin: true   # DB 候选不足时从回收站永久删最旧视频（.mp4/.flv/.m4s/init.mp4）
+  upload_retries: 2
+
+# 监控事件提醒：提示音 + 飞书群机器人 webhook（二选一或同时开启）
+notify:
+  enabled: false
+  sound: true
+  # R4: daemon 路径 enqueue notify_events；CLI daemon / API sidecar drain 交付
+  outbox_only: true
+  # sound_path: /System/Library/Sounds/Glass.aiff
+  events:
+    live_started: true
+    live_start_failed: true
+    live_ended: true
+    new_aweme: true          # 抖音新作品
+    new_archive: true        # B 站投稿新 bvid
+    new_dynamic: true        # B 站动态新条目
+    recording_completed: true
+    transcribe_completed: true
+    transcribe_partial: false   # streaming 直播字幕片段（默认关，避免刷屏）
+    summarize_completed: true
+    upload_completed: true
+    upload_failed: true
+    upload_skipped: true
+    upload_cleanup: true
+  feishu:
+    enabled: true
+    # 推荐用环境变量，勿提交真实 URL：export NOTIFY_FEISHU_WEBHOOK_URL='https://open.feishu.cn/...'
+    webhook_url: ""
+    webhook_url_env: NOTIFY_FEISHU_WEBHOOK_URL
+
+transcribe:
+  # whisper: local faster-whisper (pip install -e ".[transcribe]")
+  # openai: OpenAI Audio API (pip install -e ".[transcribe-cloud]", set OPENAI_API_KEY)
+  # deepgram: Deepgram REST (pip install -e ".[transcribe-deepgram]", export DEEPGRAM_API_KEY)
+  engine: whisper
+  language: zh
+  whisper:
+    model: medium
+    device: auto
+    # CPU: int8 is much faster than float32; use float16 on CUDA when supported
+    compute_type: int8
+    vad_filter: true
+    extract_audio: true
+  openai:
+    api_key_env: OPENAI_API_KEY
+    model: whisper-1
+    # base_url: https://api.openai.com/v1
+  deepgram:
+    api_key_env: DEEPGRAM_API_KEY
+    model: nova-3
+    extract_audio: true
+    smart_format: true
+    punctuate: true
+    utterances: true
+    diarize: false
+    timeout_sec: 600
+
+summarize:
+  enabled: false
+  engine: openai
+  on_transcribe_complete: false
+  default_profile: auto
+  merge_gap_minutes: 60
+  merge_date_tz: UTC
+  parse_sections: true
+  max_files_per_run: 0
+  llm:
+    # default_provider / default_model: summarize.llm.providers[].name + model id
+    # default_provider: nvidia
+    # default_model: deepseek-ai/deepseek-v4-pro
+    temperature: 0.2
+    top_p: 0.95
+    max_output_tokens: 4096
+    thinking: false
+    log_token_usage: true
+    providers:
+      - name: nvidia
+        base_url: https://integrate.api.nvidia.com/v1
+        api_key_envs: [NVIDIA_API_KEY]
+        models: [deepseek-ai/deepseek-v4-pro]
+      # - name: openai
+      #   base_url: https://api.openai.com/v1
+      #   api_key_envs: [OPENAI_API_KEY]
+      #   models: [gpt-4o-mini]
+      # - name: ollama
+      #   base_url: http://127.0.0.1:11434/v1
+      #   api_key_envs: [OLLAMA_API_KEY]   # 本地可 export OLLAMA_API_KEY=ollama
+      #   models: [qwen2.5:7b]
+  chunk:
+    max_chars: 24000
+    minutes: 30
+  merge:
+    auto_merge_after_parts: false
+    merge_cross_midnight: false   # true: 23:50 + 00:10 等跨日断流可 suggested_groups
+    per_part: true                # false: run/backfill 跳过分段摘要，仅 merge 产出

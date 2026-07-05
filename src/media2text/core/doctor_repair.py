@@ -9,6 +9,11 @@ import os
 from typing import Any
 
 from media2text.core.config import AppConfig
+from media2text.core.desktop_runtime import (
+    ensure_ffmpeg_config,
+    pip_install_target_writable,
+    resolve_ffmpeg_path,
+)
 from media2text.core.doctor_checks import (
     _playwright_browser_ok,
     _playwright_import_ok,
@@ -49,6 +54,11 @@ def _run_cmd(
 
 
 def _pip_install(spec: str) -> tuple[bool, str]:
+    if not pip_install_target_writable():
+        return (
+            False,
+            "内置 Python 环境不可写（请勿从 DMG 卷直接运行；拖到「应用程序」后重开，或使用最新安装包）",
+        )
     return _run_cmd(
         [sys.executable, "-m", "pip", "install", spec],
         timeout=300,
@@ -66,7 +76,8 @@ def _playwright_install_chromium() -> tuple[bool, str]:
 
 
 def _try_install_ffmpeg(cfg: AppConfig) -> tuple[bool, str]:
-    if shutil.which(cfg.live.ffmpeg_path) or shutil.which("ffmpeg"):
+    ensure_ffmpeg_config(cfg)
+    if resolve_ffmpeg_path(cfg):
         return True, "already present"
     if sys.platform == "darwin" and shutil.which("brew"):
         return _run_cmd(["brew", "install", "ffmpeg"], timeout=900)
@@ -104,7 +115,7 @@ def repair_environment(cfg: AppConfig, conn) -> dict[str, Any]:
             }
         )
 
-    if not shutil.which(cfg.live.ffmpeg_path):
+    if resolve_ffmpeg_path(cfg) is None:
         ok, msg = _try_install_ffmpeg(cfg)
         actions.append(
             {"name": "ffmpeg", "action": "install ffmpeg", "ok": ok, "message": msg}
