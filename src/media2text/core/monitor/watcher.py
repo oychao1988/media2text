@@ -72,6 +72,11 @@ class MonitorWatcher:
         self._douyin_live = DouyinLiveWatcher(cfg, runtime=self._session_runtime)
         self._bilibili_live = BilibiliLiveWatcher(cfg, runtime=self._session_runtime)
         self._notify = NotifyService(cfg)
+        self._session_registry = None
+
+    @property
+    def session_registry(self):
+        return self._session_registry
 
     def core_for_platform(self, conn, platform: str) -> LiveRecordingCore:
         if platform == "douyin":
@@ -131,9 +136,10 @@ class MonitorWatcher:
         except Exception as exc:  # noqa: BLE001
             log.warning("bootstrap_streaming_stt_failed", error=str(exc))
         try:
-            from media2text.core.live.session_recovery import recover_orphan_sessions
+            from media2text.core.live.session_state import build_registry
 
-            orphan_recovered = recover_orphan_sessions(self._cfg, self._conn)
+            self._session_registry = build_registry(self)
+            orphan_recovered = self._session_registry.recover_all()
             if orphan_recovered:
                 log.info("recover_orphan_sessions_on_daemon_start", recovered=orphan_recovered)
         except Exception as exc:  # noqa: BLE001
