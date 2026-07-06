@@ -13,7 +13,6 @@ from media2text.api.routes import (
     agent_profiles,
     agent_stream,
     auth,
-    chat,
     config,
     creators,
     daemon,
@@ -95,7 +94,6 @@ def create_app() -> FastAPI:
     api.include_router(agent.router)
     api.include_router(agent_profiles.router)
     api.include_router(agent_stream.router)
-    api.include_router(chat.router)
     api.include_router(events.router)
     app.state.api_app = api
     app.mount("/api", api)
