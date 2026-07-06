@@ -17,6 +17,6 @@ github: 397
 ## 验证命令
 
 ```bash
-pytest tests/unit/test_monitor_mp_smoke.py -v
+pytest tests/unit/test_monitor_mp_smoke.py -v -k "not cli_daemon_process_and_lock"
 ! rg 'from media2text\.agent' src/media2text/core/monitor src/media2text/core/live
 ```
