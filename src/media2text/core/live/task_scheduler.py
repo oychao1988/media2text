@@ -62,7 +62,8 @@ class TaskSchedulerLoop:
 
     def tick_once(self, conn) -> None:
         if self._cfg.monitor.reconciler_enabled:
-            reconcile_live(self._cfg, conn)
+            if not self._cfg.live.inline_decisions:
+                reconcile_live(self._cfg, conn)
             reconcile_content(self._cfg, conn)
 
         min_claim = max(1, self._cfg.monitor.live_lane_min_claim_per_tick)

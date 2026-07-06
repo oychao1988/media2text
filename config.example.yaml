@@ -59,6 +59,7 @@ live:
   # Must stay false when pipeline_mode=streaming (STT runs during the live).
   transcribe_on_complete: false
   live_poll_interval_sec: 10       # LiveTick only; falls back to monitor.live_poll_interval_sec
+  inline_decisions: false        # true: prepare/finalize inline in LiveTick (skip reconcile_live)
   offline_confirm_sec: 45          # wall-clock seconds before finalize after first offline
   ffmpeg_exit_recheck: true
   max_reconnect_attempts: 2

@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from media2text.core.config import AppConfig
+from media2text.core.config import AppConfig, LiveConfig
 from media2text.core.live.task_reconciler import reconcile_live
 from media2text.core.storage.repos import (
     CreatorRepo,
@@ -20,7 +20,7 @@ def _setup_creator(conn, *, sec_uid: str) -> str:
 
 def test_scheduler_reconcile_prepare_when_live_no_session(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(workspace=tmp_path / "data", live=LiveConfig(inline_decisions=False))
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)

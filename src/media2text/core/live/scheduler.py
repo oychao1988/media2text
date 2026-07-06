@@ -20,6 +20,7 @@ from media2text.core.live.segment_process_pool import (
 )
 from media2text.core.live.segment_watcher import SegmentWatcher, set_segment_watcher
 from media2text.core.live.probe import run_live_probe_tick
+from media2text.core.live.loop import run_live_inline_decisions
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.errors import ReconcilerDisabledError
 from media2text.core.monitor.intervals import (
@@ -88,6 +89,8 @@ class LiveTickLoop:
                 creator_id=self._creator_id,
                 session_registry=self._watcher.session_registry,
             )
+            if self._cfg.live.inline_decisions:
+                run_live_inline_decisions(self._cfg, self._watcher)
             active = int(result.get("active_recordings") or 0)
             log.info("live_tick", active_recordings=active, live_poll_sec=live_poll)
             if self._on_tick is not None:
@@ -279,6 +282,8 @@ class MonitorScheduler:
             creator_id=creator_id,
             session_registry=self._watcher.session_registry,
         )
+        if self._cfg.live.inline_decisions:
+            run_live_inline_decisions(self._cfg, self._watcher)
 
         scheduler_loop = TaskSchedulerLoop(
             self._cfg,
