@@ -325,8 +325,9 @@ def test_mp_smoke_live_lane_defers_post_process_and_drains_prepare(
 
     watcher = MonitorWatcher(cfg)
     live_pool = MagicMock()
-    live_pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
     live_pool.drain_pending = MagicMock(return_value=1)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     content_pool = MagicMock()
     content_pool.drain_pending = MagicMock(return_value=0)
     post_pool = MagicMock()
@@ -337,6 +338,7 @@ def test_mp_smoke_live_lane_defers_post_process_and_drains_prepare(
         live_pool=live_pool,
         content_pool=content_pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
 

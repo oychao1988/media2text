@@ -51,12 +51,13 @@ def test_task_scheduler_drains_priority_zero_async(tmp_path, monkeypatch) -> Non
     watcher = MonitorWatcher(cfg)
     stop = threading.Event()
     pool = MagicMock()
-    submitted: list[str] = []
+    heavy_pool = MagicMock()
+    drained: list[str] = []
 
-    def capture_submit(*args, **kwargs):
-        submitted.append(kwargs.get("task_id", ""))
+    def capture_heavy_drain(*args, **kwargs):
+        drained.append("heavy")
 
-    pool.claim_and_submit_priority_zero = MagicMock(side_effect=capture_submit)
+    heavy_pool.drain = MagicMock(side_effect=capture_heavy_drain)
 
     loop = TaskSchedulerLoop(
         cfg,
@@ -64,11 +65,12 @@ def test_task_scheduler_drains_priority_zero_async(tmp_path, monkeypatch) -> Non
         live_pool=pool,
         content_pool=MagicMock(),
         post_pool=MagicMock(),
+        heavy_pool=heavy_pool,
         stop=stop,
     )
     loop.tick_once(conn)
-    assert len(submitted) >= 1
-    pool.claim_and_submit_priority_zero.assert_called()
+    assert drained == ["heavy"]
+    heavy_pool.drain.assert_called_once()
 
 
 def test_live_tick_not_blocked_by_slow_finalize(tmp_path, monkeypatch) -> None:
@@ -299,10 +301,11 @@ def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> N
     calls: list[str] = []
     watcher = MonitorWatcher(cfg)
     pool = MagicMock()
-    pool.claim_and_submit_priority_zero = MagicMock(
-        side_effect=lambda *a, **k: calls.append("drain") or 0
-    )
     pool.drain_pending = MagicMock()
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(
+        side_effect=lambda *a, **k: calls.append("heavy") or 0
+    )
     stop = threading.Event()
     loop = TaskSchedulerLoop(
         cfg,
@@ -310,6 +313,7 @@ def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> N
         live_pool=pool,
         content_pool=MagicMock(),
         post_pool=MagicMock(),
+        heavy_pool=heavy_pool,
         stop=stop,
     )
 
@@ -326,8 +330,8 @@ def test_scheduler_tick_order_reconcile_before_drain(tmp_path, monkeypatch) -> N
         lambda *a, **k: calls.append("content") or 0,
     )
     loop.tick_once(conn)
-    assert calls.index("live") < calls.index("drain")
-    assert calls.index("content") < calls.index("drain")
+    assert calls.index("live") < calls.index("heavy")
+    assert calls.index("content") < calls.index("heavy")
 
 
 def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch) -> None:
@@ -339,8 +343,6 @@ def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch)
     conn = open_db(cfg)
     order: list[str] = []
     watcher = MonitorWatcher(cfg)
-    pool = MagicMock()
-    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
 
     def track_drain(*args, **kwargs):
         min_priority = kwargs.get("min_priority", 10)
@@ -350,7 +352,10 @@ def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch)
             order.append("live")
         return 0
 
+    pool = MagicMock()
     pool.drain_pending = MagicMock(side_effect=track_drain)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     post_pool = MagicMock()
     post_pool.drain_pending = MagicMock(side_effect=lambda *a, **k: order.append("post"))
     stop = threading.Event()
@@ -360,6 +365,7 @@ def test_scheduler_tick_order_post_process_before_content(tmp_path, monkeypatch)
         live_pool=pool,
         content_pool=pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
 
@@ -401,8 +407,9 @@ def test_task_scheduler_defers_post_process_when_live_pending(
     )
     watcher = MonitorWatcher(cfg)
     pool = MagicMock()
-    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
     pool.drain_pending = MagicMock(return_value=0)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     post_pool = MagicMock()
     stop = threading.Event()
     loop = TaskSchedulerLoop(
@@ -411,6 +418,7 @@ def test_task_scheduler_defers_post_process_when_live_pending(
         live_pool=pool,
         content_pool=pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
     import media2text.core.live.task_scheduler as task_scheduler_mod
@@ -450,8 +458,9 @@ def test_scheduler_content_drain_excludes_recording_creator(
     )
     watcher = MonitorWatcher(cfg)
     pool = MagicMock()
-    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
     pool.drain_pending = MagicMock(return_value=0)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     content_pool = MagicMock()
     drain_kwargs: dict = {}
 
@@ -468,6 +477,7 @@ def test_scheduler_content_drain_excludes_recording_creator(
         live_pool=pool,
         content_pool=content_pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
     import media2text.core.live.task_scheduler as task_scheduler_mod
@@ -526,8 +536,9 @@ def test_scheduler_releases_only_recording_creator_running_content(
     )
     watcher = MonitorWatcher(cfg)
     pool = MagicMock()
-    pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
     pool.drain_pending = MagicMock(return_value=0)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     content_pool = MagicMock()
     content_pool.drain_pending = MagicMock(return_value=0)
     post_pool = MagicMock()
@@ -538,6 +549,7 @@ def test_scheduler_releases_only_recording_creator_running_content(
         live_pool=pool,
         content_pool=content_pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
     import media2text.core.live.task_scheduler as task_scheduler_mod

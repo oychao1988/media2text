@@ -44,7 +44,10 @@ def test_notify_daemon_drain_after_scheduler_gateway_tick(tmp_path, monkeypatch)
     post_pool = MagicMock()
     post_pool.drain_pending = MagicMock(return_value=0)
     stop = threading.Event()
-    loop = TaskSchedulerLoop(cfg, watcher, live_pool=pool, content_pool=MagicMock(), post_pool=post_pool, stop=stop)
+    loop = TaskSchedulerLoop(
+        cfg, watcher, live_pool=pool, content_pool=MagicMock(),
+        post_pool=post_pool, heavy_pool=MagicMock(), stop=stop,
+    )
 
     ensure_write_gateway_started(cfg)
     try:
@@ -88,7 +91,10 @@ def test_notify_daemon_drain_on_scheduler_tick(tmp_path, monkeypatch) -> None:
     post_pool = MagicMock()
     post_pool.drain_pending = MagicMock(return_value=0)
     stop = threading.Event()
-    loop = TaskSchedulerLoop(cfg, watcher, live_pool=pool, content_pool=MagicMock(), post_pool=post_pool, stop=stop)
+    loop = TaskSchedulerLoop(
+        cfg, watcher, live_pool=pool, content_pool=MagicMock(),
+        post_pool=post_pool, heavy_pool=MagicMock(), stop=stop,
+    )
 
     with (
         patch("media2text.core.live.task_reconciler.reconcile_live"),
