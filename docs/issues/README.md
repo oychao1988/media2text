@@ -324,3 +324,23 @@ Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/mo
 | E2E-1 | [#375](https://github.com/oychao1988/media2text/issues/375) | [e2e-stress](./monitor-db-lock-e2e-stress.md) | `issue-375-monitor-db-lock-e2e` | [#384](https://github.com/oychao1988/media2text/pull/384)（已合并） |
 
 **合并顺序**：#367 → #368 → #369 → #370 → #371 → #372（可与 #371 并行）→ #373 → #374（可与 #373 并行）→ **#375**（Epic 验收闸门）。
+
+### Monitor / Live 架构精简（2026-07-06）
+
+规格：[monitor-live-simplify-refactor-design.md](../superpowers/specs/2026-07-06-monitor-live-simplify-refactor-design.md) · Epic manifest：[monitor-live-simplify-2026-07-06.yaml](./epic-manifests/monitor-live-simplify-2026-07-06.yaml) · 回退 tag：`pre-monitor-live-simplify`
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| MLS-1 | TBD | [mls1-dead-code-reconciler](./monitor-live-simplify-mls1-dead-code-reconciler.md) | `issue-TBD-mls1-dead-code-reconciler` |
+| MLS-2 | TBD | [mls2-legacy-session-guard](./monitor-live-simplify-mls2-legacy-session-guard.md) | `issue-TBD-mls2-legacy-session-guard` |
+| MLS-3 | TBD | [mls3-remove-node-sidecar](./monitor-live-simplify-mls3-remove-node-sidecar.md) | `issue-TBD-mls3-remove-node-sidecar` |
+| MLS-4 | TBD | [mls4-monitor-watch-single-round](./monitor-live-simplify-mls4-monitor-watch-single-round.md) | `issue-TBD-mls4-monitor-watch-single-round` |
+| MLS-5 | TBD | [mls5-gateway-only-platform-live](./monitor-live-simplify-mls5-gateway-only-platform-live.md) | `issue-TBD-mls5-gateway-only-platform-live` |
+| MLS-6 | TBD | [mls6-agent-chat-api-migration](./monitor-live-simplify-mls6-agent-chat-api-migration.md) | `issue-TBD-mls6-agent-chat-api-migration` |
+| MLS-7 | TBD | [mls7-live-session-extract](./monitor-live-simplify-mls7-live-session-extract.md) | `issue-TBD-mls7-live-session-extract` |
+| MLS-8 | TBD | [mls8-inline-decisions](./monitor-live-simplify-mls8-inline-decisions.md) | `issue-TBD-mls8-inline-decisions` |
+| MLS-9 | TBD | [mls9-heavy-pool](./monitor-live-simplify-mls9-heavy-pool.md) | `issue-TBD-mls9-heavy-pool` |
+| MLS-10 | TBD | [mls10-repos-split](./monitor-live-simplify-mls10-repos-split.md) | `issue-TBD-mls10-repos-split` |
+| MLS-11 | TBD | [mls11-distill-decouple](./monitor-live-simplify-mls11-distill-decouple.md) | `issue-TBD-mls11-distill-decouple` |
+
+**合并顺序**：MLS-1 ∥ MLS-3 → MLS-2 → MLS-4 → MLS-5 → MLS-6 → MLS-7 → MLS-8 → MLS-9；MLS-10 / MLS-11 可并行。

@@ -1,7 +1,7 @@
 # Monitor / Live 架构精简重构
 
 **日期:** 2026-07-06  
-**状态:** Draft — 待 Eng Review  
+**状态:** Approved（Eng Review 2026-07-06）  
 **分支:** `refactor/monitor-live-simplify`  
 **回退点:** tag `pre-monitor-live-simplify`（`5e81dde`）  
 **前置:** [Live Pipeline v2](./2026-06-03-live-pipeline-v2-design.md)、[Monitor Daemon v3](./2026-06-05-monitor-daemon-observe-execute-design.md)、[WriteGateway + SessionSM](./2026-07-05-monitor-db-write-gateway-session-sm-design.md)、[HLS Segment Pipeline](./2026-06-09-live-segment-media-pipeline-design.md)  
@@ -16,16 +16,24 @@
 | D1 | **唯一推荐直播路径**：`streaming + hls + segment_pipeline + streaming_stt` | `config.example.yaml` 已推荐；doctor 对 legacy 警告 |
 | D2 | **保留** `DbWriteGateway` + `SessionRuntime` | 解决真实 DB lock 事故（2026-07-03）；不回归 MH-3 |
 | D3 | **保留** LiveTick 与重活隔离（G5） | post-process / Playwright 不得阻塞 probe |
-| D4 | **直播不再经 `monitor_tasks` 间接调度** | `prepare`/`finalize`/`reconnect`/`stt` 在 `LiveLoop` 内联状态机决策 |
+| D4 | **直播不再经 `monitor_tasks` 间接调度**（P3，`live.inline_decisions` 灰度） | `prepare`/`finalize`/`reconnect`/`stt` 在 `LiveLoop` 内联；开录决策在 LiveLoop，finalize 可 submit HeavyPool |
 | D5 | **`monitor_tasks` 仅保留 content 慢任务** | sync_catalog / download / sync_dynamic |
 | D6 | **三阶段交付**：减法 → 合并路径 → 架构收敛 | 可回退、可验收 |
-| D7 | **旧 `live_sessions` legacy 场次只读收尾**，禁止新 legacy session | 数据迁移不阻塞代码删枝 |
+| D7 | **P1 禁止新 legacy session；P3 删 `finalize_recording_legacy` 代码** | 旧场次只读收尾；避免 P1 大删测试 |
+| D8 | **SchedulerTick 保留 1s**；开录决策在 LiveLoop，不在 1s tick（Eng 1A） | G1 不因去掉 reconcile 而退化到仅 1s 粒度 |
+| D9 | **HeavyPool = finalize + segment only**；`PostProcessExecutor` 独立（Eng 2A） | G5 已验证；`live_lane_count==0` 逻辑保留 |
+| D10 | **P1 删 `reconciler_log_only`**；daemon 强制 `reconciler_enabled` 有效；配置字段暂留，测试改 mock（Eng 3A） | 避免 P1 连带改 5+ 测试删字段 |
+| D11 | **P2-5 先迁 Desktop `/api/agent/*`，再删 `/api/chat/*`**（Eng 6A） | `useM2tAgent.ts` 仍调 chat providers |
+| D12 | **P3-4 `repos.py` 拆分独立 Epic/PR**（Eng 5A） | 与 live 逻辑重构解耦，减合并冲突 |
+| D13 | **P3 必须测 double-prepare 防回归** | inline decide 与 reconcile 并存期唯一 critical gap |
 
 未选方案（备查）：
 
 - **Big-bang 重写 monitor** — 风险高，与 MH-4 刚交付冲突  
 - **删 WriteGateway 回 open_db** — 会复现 DB lock  
 - **单线程一切** — 违背 G5，post-process 会拖死 live poll  
+- **HeavyPool 含 post_process**（Eng 2B）— 可能重现 live 被 post-process 拖累  
+- **P1 连删 `reconciler_enabled` 配置字段**（Eng 3B）— 推迟到 P1 收尾或 P2  
 
 ---
 
@@ -72,15 +80,15 @@ LiveLoop → LiveSession 状态机 → ffmpeg/HLS → finalize → post_process
 │    mark vod/archive/dynamic due → reconcile_content only    │
 ├─────────────────────────────────────────────────────────────┤
 │  SchedulerTick (1s) — 变薄                                   │
-│    drain HeavyPool + ContentPool + notify                   │
+│    drain HeavyPool + PostProcessPool + ContentPool + notify │
 ├─────────────────────────────────────────────────────────────┤
 │  SegmentWatcher (1s, HLS only)                              │
 └─────────────────────────────────────────────────────────────┘
-         │                              │
-         ▼                              ▼
-   HeavyPool                      ContentPool
-   finalize / segment_upload      sync / download / dynamic
-   post_process (summarize…)      (Playwright 互斥)
+         │                    │              │
+         ▼                    ▼              ▼
+   HeavyPool           PostProcessPool   ContentPool
+   finalize/segment    transcribe/       sync/download/
+   upload only         summarize/upload  dynamic (Playwright)
 ```
 
 ### 2.2 LiveSession 状态机（合并 SessionSM + RecordingCore 核心）
@@ -136,7 +144,7 @@ LiveLoop → LiveSession 状态机 → ffmpeg/HLS → finalize → post_process
 |----|------|------|
 | P1-1 | 删 `run_poll_active_tick`（无调用方） | `pytest tests/unit/test_*probe*` |
 | P1-2 | 删 `reconciler_log_only` 配置与分支 | 单测更新 |
-| P1-3 | 强制 `reconciler_enabled=true`（删 false 分支与 `ReconcilerDisabledError` 对外语义保留一版 deprecated 日志） | `test_monitor_daemon_integration` |
+| P1-3 | 删 `reconciler_log_only`；daemon 保持 `reconciler_enabled` 硬要求；依赖 false 的单测改 mock（D10） | `test_monitor_daemon_integration` |
 | P1-4 | 删 `packages/m2t-agent-sidecar` + `start-sidecar.mjs` + bundle（保留 README 指向 Python agent） | Desktop `pnpm test` + agent turn |
 | P1-5 | `config` + runtime：**新 session 拒绝 `pipeline_mode=legacy`**；旧场次只读 finalize | `test_live_legacy_pipeline` 收窄为 migration |
 | P1-6 | 删 `offline_confirm_polls` 配置字段 | config 加载测试 |
@@ -160,8 +168,8 @@ LiveLoop → LiveSession 状态机 → ffmpeg/HLS → finalize → post_process
 |----|------|------|
 | P3-1 | 引入 `core/live/session.py`（`LiveSession`），从 `recording.py` 迁 prepare/poll/offline | 录制单测不变绿 |
 | P3-2 | `reconcile_live` 直播部分删除；`LiveLoop.decide()` 内联 | G1 指标不退化 |
-| P3-3 | 合并 `HeavyPool`（finalize + segment + post_process claim） | `live stats` |
-| P3-4 | 拆 `repos.py` → `repos/{creator,live,monitor,cloud}.py` | import 无环 |
+| P3-3 | 引入 `HeavyPool`（finalize + segment only；post_process 仍 `PostProcessExecutor`） | `live stats` + G5 |
+| P3-4 | 拆 `repos.py` → `repos/{creator,live,monitor,cloud}.py`（**独立 Epic MLS-10**） | import 无环 |
 | P3-5 | `creator_distill` 从 `SlowTickLoop` 抽出为可选 cron/CLI，断 core→agent 依赖 | monitor 单测无 agent import |
 
 ---
@@ -252,16 +260,23 @@ git branch -D refactor/monitor-live-simplify
 
 ---
 
-## 9. Issue 拆分建议
+## 9. Issue 索引
+
+见 [docs/issues/README.md](../../issues/README.md#monitor--live-架构精简-2026-07-06)（MLS-1 … MLS-11）。
 
 | Issue | Phase | 标题 |
 |-------|-------|------|
-| #TBD | P1 | monitor-live-simplify: delete dead code and legacy new-session guard |
-| #TBD | P1 | remove m2t-agent-sidecar package |
-| #TBD | P2 | unify monitor watch single-round with daemon tick |
-| #TBD | P2 | gateway-only DB writes in platform live watchers |
-| #TBD | P3 | LiveLoop inline session decisions (drop reconcile_live) |
-| #TBD | P3 | split repos.py by domain |
+| MLS-1 | P1 | 死代码 + reconciler_log_only 清理 |
+| MLS-2 | P1 | 禁止新 legacy session |
+| MLS-3 | P1 | 移除 Node m2t-agent-sidecar |
+| MLS-4 | P2 | `monitor watch` 单轮对齐 daemon tick |
+| MLS-5 | P2 | 平台 live gateway-only 写路径 |
+| MLS-6 | P2 | Desktop agent API 迁 `/api/agent/*` |
+| MLS-7 | P3 | 提取 `LiveSession` |
+| MLS-8 | P3 | `live.inline_decisions` 内联开录/下播 |
+| MLS-9 | P3 | HeavyPool（finalize + segment） |
+| MLS-10 | P3 | `repos.py` 按域拆分（可并行） |
+| MLS-11 | P3 | `creator_distill` 与 monitor 解耦 |
 
 ---
 

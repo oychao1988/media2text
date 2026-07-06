@@ -1,0 +1,25 @@
+name: monitor-live-simplify-2026-07-06
+spec: docs/superpowers/specs/2026-07-06-monitor-live-simplify-refactor-design.md
+verification: docs/superpowers/verification/2026-07-06-monitor-live-simplify-acceptance.md
+issues:
+  - mls1-dead-code-reconciler
+  - mls2-legacy-session-guard
+  - mls3-remove-node-sidecar
+  - mls4-monitor-watch-single-round
+  - mls5-gateway-only-platform-live
+  - mls6-agent-chat-api-migration
+  - mls7-live-session-extract
+  - mls8-inline-decisions
+  - mls9-heavy-pool
+  - mls10-repos-split
+  - mls11-distill-decouple
+merge_order:
+  - [mls1-dead-code-reconciler, mls3-remove-node-sidecar]
+  - mls2-legacy-session-guard
+  - mls4-monitor-watch-single-round
+  - mls5-gateway-only-platform-live
+  - mls6-agent-chat-api-migration
+  - mls7-live-session-extract
+  - mls8-inline-decisions
+  - mls9-heavy-pool
+  - [mls10-repos-split, mls11-distill-decouple]
