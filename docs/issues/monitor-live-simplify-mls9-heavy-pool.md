@@ -1,6 +1,7 @@
 ---
 epic: monitor-live-simplify-2026-07-06
 depends_on: [MLS-8]
+github: 395
 ---
 
 # MLS-9：HeavyPool（finalize + segment）
@@ -9,9 +10,9 @@ depends_on: [MLS-8]
 
 ## 验收标准
 
-- [ ] `HeavyPool` 仅 wrap finalize + segment_process submit
-- [ ] `PostProcessExecutor` 独立；`live_lane_count==0` 逻辑保留
-- [ ] G5 压测：post-process 积压不拖 LiveTick
+- [x] `HeavyPool` 仅 wrap finalize + segment_process submit
+- [x] `PostProcessExecutor` 独立；`live_lane_count==0` 逻辑保留
+- [x] G5 压测：post-process 积压不拖 LiveTick
 
 ## 验证命令
 

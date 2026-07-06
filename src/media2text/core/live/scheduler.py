@@ -11,6 +11,7 @@ import structlog
 from media2text.core.runtime.heartbeat import write_heartbeat
 
 from media2text.core.config import AppConfig
+from media2text.core.live.heavy_pool import HeavyPool
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor, resolve_post_process_workers
@@ -188,6 +189,12 @@ class MonitorScheduler:
         self._post_pool = PostProcessExecutor(max_workers=max_workers)
         seg_workers = resolve_segment_process_workers(cfg)
         self._segment_pool = SegmentProcessExecutor(max_workers=seg_workers)
+        self._heavy_pool = HeavyPool(
+            finalize_pool=MonitorExecutor(
+                max_workers=max(cfg.monitor.live_worker_max_parallel, 1),
+            ),
+            segment_pool=self._segment_pool,
+        )
         self._segment_watcher = SegmentWatcher(cfg, stop=self._stop)
         set_segment_watcher(self._segment_watcher)
         from media2text.agent.creator_distill.pool import (
@@ -196,9 +203,7 @@ class MonitorScheduler:
         )
 
         self._distill_pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
-        self._live_monitor_pool = MonitorExecutor(
-            max_workers=max(cfg.monitor.live_worker_max_parallel, 1),
-        )
+        self._live_monitor_pool = self._heavy_pool.finalize_pool
         self._content_monitor_pool = MonitorExecutor(
             max_workers=max(cfg.monitor.executor_max_parallel, 1),
         )
@@ -234,7 +239,7 @@ class MonitorScheduler:
             live_pool=self._live_monitor_pool,
             content_pool=self._content_monitor_pool,
             post_pool=self._post_pool,
-            segment_pool=self._segment_pool,
+            heavy_pool=self._heavy_pool,
             stop=self._stop,
         )
         self._segment_watcher.start()
@@ -258,10 +263,9 @@ class MonitorScheduler:
         if self._slow_loop is not None:
             self._slow_loop.join(timeout=5.0)
         self._segment_watcher.join(timeout=5.0)
-        self._live_monitor_pool.shutdown(wait=False, cancel_futures=True)
         self._content_monitor_pool.shutdown(wait=False, cancel_futures=True)
         self._post_pool.shutdown(wait=False, cancel_futures=True)
-        self._segment_pool.shutdown(wait=False, cancel_futures=True)
+        self._heavy_pool.shutdown(wait=False, cancel_futures=True)
         set_segment_watcher(None)
         self._distill_pool.shutdown(wait=False, cancel_futures=True)
 
@@ -291,7 +295,7 @@ class MonitorScheduler:
             live_pool=self._live_monitor_pool,
             content_pool=self._content_monitor_pool,
             post_pool=self._post_pool,
-            segment_pool=self._segment_pool,
+            heavy_pool=self._heavy_pool,
             stop=self._stop,
         )
         gw = get_write_gateway(self._cfg)
