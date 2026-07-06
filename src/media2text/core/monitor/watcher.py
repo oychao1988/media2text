@@ -3,12 +3,10 @@ from __future__ import annotations
 import signal
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 import structlog
 
 from media2text.core.config import AppConfig
-from media2text.core.live.monitor_executor import run_monitor_task
 from media2text.core.live.recording import LiveRecordingCore
 from media2text.core.live.task_reconciler import bootstrap_streaming_stt
 from media2text.core.live.session_runtime import SessionRuntime
@@ -16,10 +14,9 @@ from media2text.core.notify import EventKind, NotifyService
 from media2text.core.platform.bilibili.live import LiveWatcher as BilibiliLiveWatcher
 from media2text.core.platform.douyin.live import LiveWatcher as DouyinLiveWatcher
 from media2text.core.process_lock import LockError, workspace_lock
-from media2text.core.storage.repos import MonitorTaskRepo
 from media2text.core.live.scheduler import MonitorScheduler
 from media2text.core.monitor.intervals import bilibili_archive_poll_sec
-from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, shutdown_write_gateway
 
 log = structlog.get_logger()
 
@@ -37,29 +34,6 @@ def _graceful_stop_event(existing: threading.Event | None) -> threading.Event:
     signal.signal(signal.SIGTERM, _handle)
     signal.signal(signal.SIGINT, _handle)
     return stop
-
-
-def _merge_live_results(douyin: dict, bilibili: dict) -> dict:
-    auth_required = bool(douyin.get("auth_required") or bilibili.get("auth_required"))
-    platform_changed = bool(
-        douyin.get("platform_changed") or bilibili.get("platform_changed")
-    )
-    errors = list(douyin.get("errors") or []) + list(bilibili.get("errors") or [])
-    started = list(douyin.get("started") or []) + list(bilibili.get("started") or [])
-    finalized = list(douyin.get("finalized") or []) + list(bilibili.get("finalized") or [])
-    active = int(douyin.get("active") or 0) + int(bilibili.get("active") or 0)
-    payload: dict = {
-        "douyin": douyin,
-        "bilibili": bilibili,
-        "started": started,
-        "active": active,
-        "errors": errors,
-        "auth_required": auth_required,
-        "platform_changed": platform_changed,
-    }
-    if finalized:
-        payload["finalized"] = finalized
-    return payload
 
 
 class MonitorWatcher:
@@ -84,10 +58,6 @@ class MonitorWatcher:
             self._session_registry = build_registry(self)
         return self._session_registry
 
-    def _gateway(self):
-        ensure_write_gateway_started(self._cfg)
-        return get_write_gateway(self._cfg)
-
     def core_for_platform(self, conn, platform: str) -> LiveRecordingCore:
         if platform == "douyin":
             return self._douyin_live.core_for_conn(conn)
@@ -96,48 +66,12 @@ class MonitorWatcher:
         raise ValueError(f"unsupported_platform:{platform}")
 
     def run_once(self, *, creator_id: str | None = None) -> dict:
-        gw = self._gateway()
-        douyin_live = self._douyin_live.run_once(creator_id=creator_id)
-        bilibili_live = self._bilibili_live.run_once(creator_id=creator_id)
-        live_result = _merge_live_results(douyin_live, bilibili_live)
-
-        vod_result = gw.write(
-            lambda conn: self._run_vod_tick(conn=conn, creator_id=creator_id),
-            label="watcher.vod_tick",
-        )
-        archive_result = gw.write(
-            lambda conn: self._run_archive_tick(conn=conn, creator_id=creator_id),
-            label="watcher.archive_tick",
-        )
-        dynamic_result = gw.write(
-            lambda conn: self._run_dynamic_tick(conn=conn, creator_id=creator_id),
-            label="watcher.dynamic_tick",
-        )
-        gw.write(lambda _conn: self._drain_priority_zero_tasks(_conn), label="watcher.drain_p0")
-        errors = (
-            list(live_result.get("errors") or [])
-            + list(vod_result.get("errors") or [])
-            + list(archive_result.get("errors") or [])
-            + list(dynamic_result.get("errors") or [])
-        )
-        auth_required = bool(
-            live_result.get("auth_required")
-            or vod_result.get("auth_required")
-            or archive_result.get("auth_required")
-            or dynamic_result.get("auth_required")
-        )
-        platform_changed = bool(
-            live_result.get("platform_changed") or dynamic_result.get("platform_changed")
-        )
-        return {
-            "live": live_result,
-            "vod": vod_result,
-            "archive": archive_result,
-            "dynamic": dynamic_result,
-            "errors": errors,
-            "auth_required": auth_required,
-            "platform_changed": platform_changed,
-        }
+        """Single debug round: one LiveTick + one SchedulerTick (matches daemon paths)."""
+        scheduler = MonitorScheduler(self, self._cfg)
+        try:
+            return scheduler.run_single_round(creator_id=creator_id)
+        finally:
+            scheduler.stop()
 
     def _run_daemon_locked(
         self,
@@ -189,10 +123,6 @@ class MonitorWatcher:
             )
             raise LockError(blocked["error"])
         lock = self._ws / ".monitor-watch.lock"
-        from media2text.core.storage.write_gateway import (
-            ensure_write_gateway_started,
-            shutdown_write_gateway,
-        )
 
         try:
             with workspace_lock(lock):
@@ -222,6 +152,8 @@ class MonitorWatcher:
         )
 
     def _run_dynamic_tick(self, *, conn, creator_id: str | None = None) -> dict:
+        from datetime import datetime, timezone
+
         from media2text.core.storage.repos import CreatorRepo
 
         creators = CreatorRepo(conn)
@@ -252,32 +184,6 @@ class MonitorWatcher:
             "interval_sec": self._cfg.platforms.bilibili.dynamic_poll_interval_sec,
         }
 
-    def _drain_priority_zero_tasks(self, conn, *, max_rounds: int = 10) -> None:
-        """Single-shot debug: reconcile + inline drain priority=0 (finalize) only."""
-        if self._cfg.monitor.reconciler_enabled:
-            from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
-
-            reconcile_live(self._cfg, conn)
-            reconcile_content(self._cfg, conn)
-        repo = MonitorTaskRepo(conn, cfg=self._cfg)
-        for _ in range(max_rounds):
-            repo.reset_stale_running(older_than_sec=self._cfg.monitor.stale_running_sec)
-            claimed = repo.claim_pending(
-                limit=self._cfg.monitor.executor_max_parallel,
-                max_priority=0,
-                min_priority=0,
-            )
-            if not claimed:
-                break
-            for task in claimed:
-                run_monitor_task(
-                    self._cfg,
-                    conn,
-                    task_id=task.id,
-                    watcher=self,
-                    notify=self._notify,
-                )
-
     def _run_pipeline_tick(
         self,
         *,
@@ -287,6 +193,8 @@ class MonitorWatcher:
         new_content_kind: EventKind,
     ) -> dict:
         _ = new_content_kind
+        from datetime import datetime, timezone
+
         from media2text.core.storage.repos import CreatorRepo
 
         creators = CreatorRepo(conn)

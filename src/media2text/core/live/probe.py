@@ -6,8 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from media2text.core.live.live_observe import LiveObserveService
 from media2text.core.live.probe_guard import ProbeExecutionGuard
-from media2text.core.storage.db import with_db_lock_retry
-from media2text.core.storage.write_gateway import ensure_write_gateway_started, gateway_write, get_write_gateway
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -54,7 +53,6 @@ def run_live_probe_tick(
     douyin: DouyinLiveWatcher,
     bilibili: BilibiliLiveWatcher,
     creator_id: str | None = None,
-    conn=None,
     session_registry=None,
 ) -> dict[str, Any]:
     """Live probe tick with short DB connections (DL-1).
@@ -62,20 +60,9 @@ def run_live_probe_tick(
     Phase 1: poll active recordings (short conn).
     Phase 2: parallel live observe — no tick conn held during Playwright/HTTP.
     Phase 3: stale cleanup + active count (short conn).
-
-    ``conn`` is deprecated; kept for unit tests that pass a shared connection.
     """
     ProbeExecutionGuard.enter_probe_tick()
     try:
-        if conn is not None:
-            return _run_live_probe_tick_legacy(
-                cfg,
-                conn,
-                douyin=douyin,
-                bilibili=bilibili,
-                creator_id=creator_id,
-            )
-
         conn = open_db(cfg)
         try:
             n_targets = _count_live_probe_targets(cfg, conn, creator_id=creator_id)
@@ -95,22 +82,14 @@ def run_live_probe_tick(
             dy_poll = poll
             bi_poll = poll
         else:
-            conn = open_db(cfg)
-            try:
-                dy_poll = douyin.run_poll_active(
-                    conn=conn, creator_id=creator_id, deadline=deadline
-                )
-                if time.monotonic() >= deadline:
-                    return {
-                        "douyin": dy_poll,
-                        "bilibili": {"skipped": "budget_exhausted"},
-                        "active_recordings": dy_poll.get("active", 0),
-                    }
-                bi_poll = bilibili.run_poll_active(
-                    conn=conn, creator_id=creator_id, deadline=deadline
-                )
-            finally:
-                conn.close()
+            dy_poll = douyin.run_poll_active(creator_id=creator_id, deadline=deadline)
+            if time.monotonic() >= deadline:
+                return {
+                    "douyin": dy_poll,
+                    "bilibili": {"skipped": "budget_exhausted"},
+                    "active_recordings": dy_poll.get("active", 0),
+                }
+            bi_poll = bilibili.run_poll_active(creator_id=creator_id, deadline=deadline)
 
         dy = douyin.run_probe_observe(creator_id=creator_id, deadline=deadline)
         if time.monotonic() >= deadline:
@@ -127,23 +106,9 @@ def run_live_probe_tick(
             bi_fin = fin
             active = fin.get("active", 0)
         else:
-            conn = open_db(cfg)
-            try:
-                dy_fin: dict[str, Any] = {}
-                bi_fin: dict[str, Any] = {}
-                active = 0
-
-                def _finalize(wconn) -> None:
-                    nonlocal dy_fin, bi_fin, active
-                    dy_fin = douyin.run_finalize(conn=wconn)
-                    bi_fin = bilibili.run_finalize(conn=wconn)
-                    from media2text.core.storage.repos import LiveSessionRepo
-
-                    active = len(LiveSessionRepo(wconn, cfg=cfg).list_active())
-
-                gateway_write(cfg, _finalize, label="probe.finalize")
-            finally:
-                conn.close()
+            dy_fin = douyin.run_finalize()
+            bi_fin = bilibili.run_finalize()
+            active = dy_fin.get("active", 0)
 
         return {
             "douyin": {**dy_poll, **dy, **dy_fin},
@@ -152,45 +117,3 @@ def run_live_probe_tick(
         }
     finally:
         ProbeExecutionGuard.exit_probe_tick(strict=cfg.monitor.probe_guard_strict)
-
-
-def _run_live_probe_tick_legacy(
-    cfg: AppConfig,
-    conn,
-    *,
-    douyin: DouyinLiveWatcher,
-    bilibili: BilibiliLiveWatcher,
-    creator_id: str | None = None,
-) -> dict[str, Any]:
-    n_targets = _count_live_probe_targets(cfg, conn, creator_id=creator_id)
-    deadline = time.monotonic() + probe_budget_sec(cfg, n_targets)
-    dy = douyin.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
-    if time.monotonic() >= deadline:
-        return {"douyin": dy, "bilibili": {"skipped": "budget_exhausted"}}
-    bi = bilibili.run_once(conn=conn, creator_id=creator_id, deadline=deadline)
-    from media2text.core.storage.repos import LiveSessionRepo
-
-    return {
-        "douyin": dy,
-        "bilibili": bi,
-        "active_recordings": len(LiveSessionRepo(conn).list_active()),
-    }
-
-
-def run_poll_active_tick(
-    cfg: AppConfig,
-    conn,
-    *,
-    douyin: DouyinLiveWatcher,
-    bilibili: BilibiliLiveWatcher,
-    creator_id: str | None = None,
-    deadline: float | None = None,
-) -> None:
-    """Poll active recordings for both platforms under write lock."""
-
-    def _poll() -> None:
-        douyin.run_poll_active(conn=conn, creator_id=creator_id, deadline=deadline)
-        bilibili.run_poll_active(conn=conn, creator_id=creator_id, deadline=deadline)
-
-    ensure_write_gateway_started(cfg)
-    with_db_lock_retry(_poll)

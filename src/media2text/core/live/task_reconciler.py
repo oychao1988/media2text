@@ -105,6 +105,8 @@ def bootstrap_streaming_stt(cfg: AppConfig, watcher) -> int:
 
 def reconcile_live(cfg: AppConfig, conn, *, log_only: bool = False) -> int:
     """RR-01..05: ensure monitor_tasks from snapshots + session obs state."""
+    if cfg.live.inline_decisions:
+        return 0
     ensured = 0
     creators = CreatorRepo(conn).list_monitored()
     snapshots = _load_snapshots(conn)

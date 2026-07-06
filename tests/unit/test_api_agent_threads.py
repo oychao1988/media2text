@@ -9,6 +9,14 @@ from media2text.core.workspace import open_db
 pytestmark = pytest.mark.desktop
 
 
+def test_agent_providers(api_client) -> None:
+    r = api_client.get("/api/agent/providers")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["ok"] is True
+    assert isinstance(body["providers"], list)
+
+
 def _seed_creator(workspace, *, sec_uid: str = "sec_agent") -> str:
     cfg = AppConfig.model_validate({"workspace": str(workspace)})
     conn = open_db(cfg)

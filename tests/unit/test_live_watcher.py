@@ -1,16 +1,29 @@
 import sys
 from unittest.mock import ANY, MagicMock, patch
 
+import pytest
+
 from media2text.core.config import AppConfig, LiveConfig, TranscribeConfig
 from media2text.core.platform.douyin.live import LiveWatcher
 from media2text.core.platform.douyin.models import LiveRoomInfo
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, shutdown_write_gateway
 from media2text.core.workspace import open_db
 
 
-def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> None:
+@pytest.fixture(autouse=True)
+def _reset_db_write_gateway() -> None:
+    yield
+    import media2text.core.storage.write_gateway as wg_mod
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
+
+
+def test_run_probe_observe_only_does_not_start_recording(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
+    ensure_write_gateway_started(cfg)
     watcher = LiveWatcher(cfg)
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
@@ -19,6 +32,7 @@ def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> 
         profile_url="https://www.douyin.com/user/MS4wLjABAAAAtest",
         monitor_enabled=True,
     )
+    conn.close()
 
     live = LiveRoomInfo(
         room_id="123",
@@ -26,20 +40,25 @@ def test_run_once_probe_only_does_not_start_recording(tmp_path, monkeypatch) -> 
         stream_flv_url="https://example.com/live.flv",
     )
     with patch.object(watcher._adapter, "get_live_room", return_value=live):
-        result = watcher.run_once(creator_id=cid)
+        result = watcher.run_probe_observe(creator_id=cid)
 
     assert result.get("probe") is True
     assert result.get("started") == 0
-    assert LiveSessionRepo(conn).get_active_for_creator(cid) is None
+    conn = open_db(cfg)
+    try:
+        assert LiveSessionRepo(conn).get_active_for_creator(cid) is None
+    finally:
+        conn.close()
 
 
-def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> None:
+def test_poll_observe_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> None:
     """Dead ffmpeg: poll writes obs; stale must not mark failed (Reconciler owns exit)."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
         live=LiveConfig(min_recording_sec_before_offline_end=0),
     )
+    ensure_write_gateway_started(cfg)
     watcher = LiveWatcher(cfg)
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
@@ -60,6 +79,7 @@ def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> Non
         temp_path=str(flv),
         ffmpeg_pid=999999,
     )
+    conn.close()
 
     offline = LiveRoomInfo(room_id="99", is_live=False, stream_flv_url=None)
     with (
@@ -69,15 +89,20 @@ def test_run_once_obs_when_ffmpeg_dead_skips_stale(tmp_path, monkeypatch) -> Non
             return_value=False,
         ),
     ):
-        watcher.run_once(creator_id=cid)
+        watcher.run_poll_active()
+        watcher.run_probe_observe(creator_id=cid)
 
-    row = conn.execute(
-        "SELECT status, obs_ffmpeg_alive, error FROM live_sessions WHERE id = ?",
-        (sid,),
-    ).fetchone()
-    assert row["status"] == "recording"
-    assert row["obs_ffmpeg_alive"] == 0
-    assert row["error"] is None
+    conn = open_db(cfg)
+    try:
+        row = conn.execute(
+            "SELECT status, obs_ffmpeg_alive, error FROM live_sessions WHERE id = ?",
+            (sid,),
+        ).fetchone()
+        assert row["status"] == "recording"
+        assert row["obs_ffmpeg_alive"] == 0
+        assert row["error"] is None
+    finally:
+        conn.close()
 
 
 def test_get_active_for_creator_keeps_dead_pid_for_poll(tmp_path, monkeypatch) -> None:

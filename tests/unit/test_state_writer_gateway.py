@@ -95,6 +95,7 @@ def test_scheduler_write_batch_single_commit(tmp_path, monkeypatch: pytest.Monke
         live_pool=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
         content_pool=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
         post_pool=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
+        heavy_pool=__import__("unittest.mock", fromlist=["MagicMock"]).MagicMock(),
         stop=threading.Event(),
     )
     loop.tick_once(open_db(cfg))

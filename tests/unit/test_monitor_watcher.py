@@ -3,34 +3,40 @@ import threading
 from unittest.mock import MagicMock, patch
 
 from media2text.core.config import AppConfig, LiveConfig, MonitorConfig
+from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.watcher import MonitorWatcher, _graceful_stop_event
 
 
-def test_run_once_calls_reconcile_without_watcher_kwarg(tmp_path, monkeypatch) -> None:
-    """MH-4 run_once must not pass watcher= to reconcile_* (signature mismatch)."""
+def test_monitor_watch_single_round_matches_daemon_tick(tmp_path, monkeypatch) -> None:
+    """Non-daemon run_once must use run_live_probe_tick + TaskSchedulerLoop.tick_once."""
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
         monitor=MonitorConfig(reconciler_enabled=True),
     )
     watcher = MonitorWatcher(cfg)
-    empty = {"errors": [], "auth_required": False, "platform_changed": False}
+    probe_kwargs: list[dict] = []
+    scheduler_ticks: list[object] = []
+
+    def track_probe(*_args, **kwargs) -> dict:
+        probe_kwargs.append(kwargs)
+        return {"active_recordings": 0, "douyin": {}, "bilibili": {}}
+
+    def track_scheduler_tick(_self, conn) -> None:
+        scheduler_ticks.append(conn)
+
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={"active": 0, **empty}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0, **empty}),
-        patch.object(watcher, "_run_vod_tick", return_value=empty),
-        patch.object(watcher, "_run_archive_tick", return_value=empty),
-        patch.object(watcher, "_run_dynamic_tick", return_value=empty),
-        patch("media2text.core.live.task_reconciler.reconcile_live") as reconcile_live,
-        patch("media2text.core.live.task_reconciler.reconcile_content") as reconcile_content,
+        patch("media2text.core.live.scheduler.run_live_probe_tick", side_effect=track_probe),
+        patch.object(TaskSchedulerLoop, "tick_once", track_scheduler_tick),
+        patch("media2text.core.notify.drain.drain_once"),
     ):
         result = watcher.run_once()
 
-    reconcile_live.assert_called_once()
-    assert reconcile_live.call_args.args[0] is cfg
-    reconcile_content.assert_called_once()
-    assert reconcile_content.call_args.args[0] is cfg
-    assert result["errors"] == []
+    assert len(probe_kwargs) == 1
+    assert probe_kwargs[0]["session_registry"] is watcher.session_registry
+    assert len(scheduler_ticks) == 1
+    assert result["scheduler_tick"] == "once"
+    assert result["live"]["active_recordings"] == 0
 
 
 def test_run_daemon_delegates_to_scheduler(tmp_path, monkeypatch) -> None:

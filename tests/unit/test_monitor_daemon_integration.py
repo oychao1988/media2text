@@ -18,6 +18,16 @@ from media2text.core.storage.repos import (
 from media2text.core.workspace import open_db
 
 
+@pytest.fixture(autouse=True)
+def _reset_db_write_gateway() -> None:
+    yield
+    import media2text.core.storage.write_gateway as wg_mod
+    from media2text.core.storage.write_gateway import shutdown_write_gateway
+
+    shutdown_write_gateway()
+    wg_mod._gateway = None
+
+
 def test_scheduler_refuses_start_when_reconciler_disabled(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
@@ -28,19 +38,6 @@ def test_scheduler_refuses_start_when_reconciler_disabled(tmp_path, monkeypatch)
     scheduler = MonitorScheduler(watcher, cfg)
     with pytest.raises(ReconcilerDisabledError, match="reconciler_enabled=true"):
         scheduler.start()
-
-
-def test_reconciler_log_only_still_starts(tmp_path, monkeypatch) -> None:
-    monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(
-        workspace=tmp_path / "data",
-        monitor=MonitorConfig(reconciler_enabled=True, reconciler_log_only=True),
-        live=LiveConfig(live_poll_interval_sec=60),
-    )
-    watcher = MonitorWatcher(cfg)
-    scheduler = MonitorScheduler(watcher, cfg)
-    scheduler.start()
-    scheduler.stop()
 
 
 def test_daemon_integration_prepare_enqueued_and_live_pool_drains(
@@ -75,8 +72,7 @@ def test_daemon_integration_prepare_enqueued_and_live_pool_drains(
     stop = threading.Event()
 
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={"active": 0}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0}),
+        patch("media2text.core.live.scheduler.run_live_probe_tick", return_value={"active_recordings": 0, "douyin": {}, "bilibili": {}}),
         patch(
             "media2text.core.live.monitor_executor.MonitorExecutor.submit",
             track_submit,
@@ -153,8 +149,10 @@ def test_daemon_integration_content_drains_while_other_creator_recording(
     stop = threading.Event()
 
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={"active": 1}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0}),
+        patch(
+            "media2text.core.live.scheduler.run_live_probe_tick",
+            return_value={"active_recordings": 1, "douyin": {}, "bilibili": {}},
+        ),
         patch(
             "media2text.core.live.monitor_executor.MonitorExecutor.submit",
             track_submit,

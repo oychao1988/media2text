@@ -13,9 +13,8 @@ from media2text.core.platform.bilibili.adapter import BilibiliAdapterV1, FIXTURE
 from media2text.core.platform.bilibili.auth import session_path
 from media2text.core.platform.bilibili.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
-from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import CreatorRepo, LiveSessionRepo
-from media2text.core.storage.write_gateway import ensure_write_gateway_started
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, gateway_write
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -58,15 +57,13 @@ class LiveWatcher:
     def run_poll_active(
         self,
         *,
-        conn,
         creator_id: str | None = None,
         deadline: float | None = None,
     ) -> dict:
-        def _poll() -> dict:
-            work_conn = conn
-            core = self.core_for_conn(work_conn)
-            creators = CreatorRepo(work_conn, cfg=self._cfg)
-            sessions = LiveSessionRepo(work_conn, cfg=self._cfg)
+        def _poll(conn) -> dict:
+            core = self.core_for_conn(conn)
+            creators = CreatorRepo(conn, cfg=self._cfg)
+            sessions = LiveSessionRepo(conn, cfg=self._cfg)
             targets = [c for c in creators.list_monitored() if c.platform == PLATFORM]
             if creator_id:
                 row = creators.get(creator_id)
@@ -86,7 +83,7 @@ class LiveWatcher:
             }
 
         ensure_write_gateway_started(self._cfg)
-        return with_db_lock_retry(_poll)
+        return gateway_write(self._cfg, _poll, label="bilibili.poll_active")
 
     def run_probe_observe(
         self,
@@ -121,8 +118,8 @@ class LiveWatcher:
             if close:
                 work_conn.close()
 
-    def run_finalize(self, *, conn) -> dict:
-        def _finalize() -> dict:
+    def run_finalize(self) -> dict:
+        def _finalize(conn) -> dict:
             stale = StateWriter(conn, cfg=self._cfg).mark_stale_recordings_failed()
             if stale:
                 log.warning("bilibili_live_stale_sessions_cleared", count=stale)
@@ -133,31 +130,7 @@ class LiveWatcher:
             }
 
         ensure_write_gateway_started(self._cfg)
-        return with_db_lock_retry(_finalize)
-
-    def run_once(
-        self,
-        *,
-        creator_id: str | None = None,
-        conn=None,
-        deadline: float | None = None,
-    ) -> dict:
-        work_conn = conn or open_db(self._cfg)
-        close = conn is None
-        try:
-            poll = self.run_poll_active(
-                conn=work_conn, creator_id=creator_id, deadline=deadline
-            )
-            if poll.get("skipped"):
-                return poll
-            observe = self.run_probe_observe(
-                creator_id=creator_id, deadline=deadline, conn=work_conn
-            )
-            finalize = self.run_finalize(conn=work_conn)
-            return {**poll, **observe, **finalize}
-        finally:
-            if close:
-                work_conn.close()
+        return gateway_write(self._cfg, _finalize, label="bilibili.finalize")
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         bcfg = self._cfg.platforms.bilibili
@@ -171,7 +144,10 @@ class LiveWatcher:
             with workspace_lock(lock):
                 log.info("bilibili_live_watch_daemon_started", poll=poll)
                 while True:
-                    self.run_once(creator_id=creator_id)
+                    poll_result = self.run_poll_active(creator_id=creator_id)
+                    if not poll_result.get("skipped"):
+                        self.run_probe_observe(creator_id=creator_id)
+                        self.run_finalize()
                     time.sleep(poll)
         except LockError:
             log.error("bilibili_live_watch_lock_held")

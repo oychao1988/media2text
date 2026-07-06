@@ -324,3 +324,24 @@ Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/mo
 | E2E-1 | [#375](https://github.com/oychao1988/media2text/issues/375) | [e2e-stress](./monitor-db-lock-e2e-stress.md) | `issue-375-monitor-db-lock-e2e` | [#384](https://github.com/oychao1988/media2text/pull/384)（已合并） |
 
 **合并顺序**：#367 → #368 → #369 → #370 → #371 → #372（可与 #371 并行）→ #373 → #374（可与 #373 并行）→ **#375**（Epic 验收闸门）。
+
+### Monitor / Live 架构精简（2026-07-06）
+
+规格：[monitor-live-simplify-refactor-design.md](../superpowers/specs/2026-07-06-monitor-live-simplify-refactor-design.md) · Epic manifest：[monitor-live-simplify-2026-07-06.yaml](./epic-manifests/monitor-live-simplify-2026-07-06.yaml) · 回退 tag：`pre-monitor-live-simplify`
+
+| 顺序 | GitHub | 文件 | 分支 |
+|------|--------|------|------|
+| MLS-1 | [#387](https://github.com/oychao1988/media2text/issues/387) | [mls1-dead-code-reconciler](./monitor-live-simplify-mls1-dead-code-reconciler.md) | `issue-387-mls1-dead-code-reconciler` |
+| MLS-2 | [#388](https://github.com/oychao1988/media2text/issues/388) | [mls2-legacy-session-guard](./monitor-live-simplify-mls2-legacy-session-guard.md) | `issue-388-mls2-legacy-session-guard` |
+| MLS-3 | [#389](https://github.com/oychao1988/media2text/issues/389) | [mls3-remove-node-sidecar](./monitor-live-simplify-mls3-remove-node-sidecar.md) | `issue-389-mls3-remove-node-sidecar` |
+| MLS-4 | [#390](https://github.com/oychao1988/media2text/issues/390) | [mls4-monitor-watch-single-round](./monitor-live-simplify-mls4-monitor-watch-single-round.md) | `issue-390-mls4-monitor-watch-single-round` |
+| MLS-5 | [#391](https://github.com/oychao1988/media2text/issues/391) | [mls5-gateway-only-platform-live](./monitor-live-simplify-mls5-gateway-only-platform-live.md) | `issue-391-mls5-gateway-only-platform-live` |
+| MLS-6 | [#392](https://github.com/oychao1988/media2text/issues/392) | [mls6-agent-chat-api-migration](./monitor-live-simplify-mls6-agent-chat-api-migration.md) | `issue-392-mls6-agent-chat-api-migration` |
+| MLS-7 | [#393](https://github.com/oychao1988/media2text/issues/393) | [mls7-live-session-extract](./monitor-live-simplify-mls7-live-session-extract.md) | `issue-393-mls7-live-session-extract` |
+| MLS-8 | [#394](https://github.com/oychao1988/media2text/issues/394) | [mls8-inline-decisions](./monitor-live-simplify-mls8-inline-decisions.md) | `issue-394-mls8-inline-decisions` |
+| MLS-9 | [#395](https://github.com/oychao1988/media2text/issues/395) | [mls9-heavy-pool](./monitor-live-simplify-mls9-heavy-pool.md) | `issue-395-mls9-heavy-pool` |
+| MLS-10 | [#396](https://github.com/oychao1988/media2text/issues/396) | [mls10-repos-split](./monitor-live-simplify-mls10-repos-split.md) | `issue-396-mls10-repos-split` |
+| MLS-11 | [#397](https://github.com/oychao1988/media2text/issues/397) | [mls11-distill-decouple](./monitor-live-simplify-mls11-distill-decouple.md) | `issue-397-mls11-distill-decouple` |
+| MLS-12 | [#410](https://github.com/oychao1988/media2text/issues/410) | [mls12-stale-unit-tests](./monitor-live-simplify-mls12-stale-unit-tests.md) | `issue-410-mls12-stale-unit-tests` |
+
+**合并顺序**：MLS-1 ∥ MLS-3 → MLS-2 → MLS-4 → MLS-5 → MLS-6 → MLS-7 → MLS-8 → MLS-9；MLS-10 / MLS-11 可并行 → **Epic 验收**：[acceptance](../superpowers/verification/2026-07-06-monitor-live-simplify-acceptance.md) · `python scripts/epic_verify.py monitor-live-simplify-2026-07-06` · **跟进**：[mls12-stale-unit-tests](./monitor-live-simplify-mls12-stale-unit-tests.md)（S4 Gap #410）

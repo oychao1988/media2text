@@ -73,7 +73,7 @@ def test_mp_smoke_cli_daemon_process_and_lock(tmp_path) -> None:
         text=True,
     )
     try:
-        deadline = time.monotonic() + 8.0
+        deadline = time.monotonic() + (20.0 if os.environ.get("CI") else 8.0)
         lock = data / ".monitor-watch.lock"
         while time.monotonic() < deadline:
             if proc.poll() is not None:
@@ -283,6 +283,7 @@ async def test_mp_smoke_lifespan_auto_starts_embedded_without_cli(tmp_path, monk
 
     sup = MagicMock()
     sup._is_embedded_running.return_value = False
+    sup.status_dict.return_value = {"thread_alive": False}
     sup.start.return_value = {"ok": True, "managed_by": "embedded"}
     sup.stop.return_value = {"ok": True, "stopped": True}
 
@@ -325,8 +326,9 @@ def test_mp_smoke_live_lane_defers_post_process_and_drains_prepare(
 
     watcher = MonitorWatcher(cfg)
     live_pool = MagicMock()
-    live_pool.claim_and_submit_priority_zero = MagicMock(return_value=0)
     live_pool.drain_pending = MagicMock(return_value=1)
+    heavy_pool = MagicMock()
+    heavy_pool.drain = MagicMock(return_value=0)
     content_pool = MagicMock()
     content_pool.drain_pending = MagicMock(return_value=0)
     post_pool = MagicMock()
@@ -337,6 +339,7 @@ def test_mp_smoke_live_lane_defers_post_process_and_drains_prepare(
         live_pool=live_pool,
         content_pool=content_pool,
         post_pool=post_pool,
+        heavy_pool=heavy_pool,
         stop=stop,
     )
 

@@ -1,10 +1,11 @@
-# Deprecated — Hermes M2
+# Removed — MLS-3 (#389)
 
-The Node `m2t-agent-sidecar` package is **deprecated** as of Hermes M2 (#182).
+The Node `m2t-agent-sidecar` package was **removed** in Monitor/Live simplify MLS-3.
 
-Agent turns and streaming now run in the Python API sidecar:
+Agent turns and streaming run in the Python API sidecar (`media2text serve`):
 
 - `POST /api/agent/threads/{id}/turn`
 - `WS /api/agent/stream?threadId=...`
 
-Tauri no longer spawns a Node agent process. This package is retained temporarily for reference and may be removed in a later milestone.
+Tauri only spawns the Python sidecar. See Hermes M2 (#182) and
+[2026-07-06 monitor/live simplify spec](../../docs/superpowers/specs/2026-07-06-monitor-live-simplify-refactor-design.md).

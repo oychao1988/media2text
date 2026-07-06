@@ -1,0 +1,76 @@
+# Epic verification — Monitor / Live Simplify Refactor
+# Run: python scripts/epic_verify.py monitor-live-simplify-2026-07-06
+name: monitor-live-simplify-2026-07-06
+spec: docs/superpowers/specs/2026-07-06-monitor-live-simplify-refactor-design.md
+verification: docs/superpowers/verification/2026-07-06-monitor-live-simplify-acceptance.md
+issues:
+  - mls1-dead-code-reconciler
+  - mls2-legacy-session-guard
+  - mls3-remove-node-sidecar
+  - mls4-monitor-watch-single-round
+  - mls5-gateway-only-platform-live
+  - mls6-agent-chat-api-migration
+  - mls7-live-session-extract
+  - mls8-inline-decisions
+  - mls9-heavy-pool
+  - mls10-repos-split
+  - mls11-distill-decouple
+merge_order:
+  - [mls1-dead-code-reconciler, mls3-remove-node-sidecar]
+  - mls2-legacy-session-guard
+  - mls4-monitor-watch-single-round
+  - mls5-gateway-only-platform-live
+  - mls6-agent-chat-api-migration
+  - mls7-live-session-extract
+  - mls8-inline-decisions
+  - mls9-heavy-pool
+  - [mls10-repos-split, mls11-distill-decouple]
+
+steps:
+  - name: doctor
+    run: media2text doctor --json
+
+  - name: mls-core-pytest
+    run: pytest tests/unit/test_task_scheduler.py tests/unit/test_probe_guard.py tests/unit/test_live_loop_inline_prepare.py tests/unit/test_heavy_pool.py tests/unit/test_g1_recording_latency.py tests/unit/test_live_scheduler.py::test_live_tick_not_blocked_by_finalize_drain -v --tb=short -q
+
+  - name: db-lock-smoke
+    run: pytest tests/stress/test_db_lock_stress.py::test_db_lock_stress_smoke -v --tb=short -q
+
+  - name: no-agent-import-live-monitor
+    run: '! rg "from media2text\\.agent" src/media2text/core/monitor src/media2text/core/live'
+
+  - name: repos-ruff
+    run: ruff check src/media2text/core/storage/
+
+  - name: issue-387
+    run: python scripts/issue_verify.py --issue 387
+
+  - name: issue-388
+    run: python scripts/issue_verify.py --issue 388
+
+  - name: issue-389
+    run: python scripts/issue_verify.py --issue 389
+
+  - name: issue-390
+    run: python scripts/issue_verify.py --issue 390
+
+  - name: issue-391
+    run: python scripts/issue_verify.py --issue 391
+
+  - name: issue-392
+    run: python scripts/issue_verify.py --issue 392
+
+  - name: issue-393
+    run: python scripts/issue_verify.py --issue 393
+
+  - name: issue-394
+    run: python scripts/issue_verify.py --issue 394
+
+  - name: issue-395
+    run: python scripts/issue_verify.py --issue 395
+
+  - name: issue-397
+    run: python scripts/issue_verify.py --issue 397
+
+  - name: repos-split-smoke
+    run: pytest tests/unit/test_monitor_task_repo.py tests/unit/test_post_process_repo.py tests/unit/test_api_agent_threads.py -v --tb=short -q

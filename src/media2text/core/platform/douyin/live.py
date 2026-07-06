@@ -15,9 +15,8 @@ from media2text.core.platform.douyin.adapter import DouyinAdapterV1
 from media2text.core.platform.douyin.auth import session_path
 from media2text.core.platform.douyin.httpx_client import client_from_storage
 from media2text.core.process_lock import LockError, workspace_lock
-from media2text.core.storage.db import with_db_lock_retry
 from media2text.core.storage.repos import LiveSessionRepo
-from media2text.core.storage.write_gateway import ensure_write_gateway_started
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, gateway_write
 from media2text.core.workspace import open_db
 
 log = structlog.get_logger()
@@ -69,21 +68,19 @@ class LiveWatcher:
     def run_poll_active(
         self,
         *,
-        conn,
         creator_id: str | None = None,
         deadline: float | None = None,
     ) -> dict:
-        def _poll() -> dict:
-            work_conn = conn
-            core = self.core_for_conn(work_conn)
-            sessions = LiveSessionRepo(work_conn, cfg=self._cfg)
+        def _poll(conn) -> dict:
+            core = self.core_for_conn(conn)
+            sessions = LiveSessionRepo(conn, cfg=self._cfg)
             if deadline is not None and time.monotonic() >= deadline:
                 return {"skipped": "budget_exhausted", "active": len(sessions.list_active())}
             core.poll_active_recordings()
             return {"active": len(sessions.list_active())}
 
         ensure_write_gateway_started(self._cfg)
-        return with_db_lock_retry(_poll)
+        return gateway_write(self._cfg, _poll, label="douyin.poll_active")
 
     def run_probe_observe(
         self,
@@ -111,8 +108,8 @@ class LiveWatcher:
             if close:
                 work_conn.close()
 
-    def run_finalize(self, *, conn) -> dict:
-        def _finalize() -> dict:
+    def run_finalize(self) -> dict:
+        def _finalize(conn) -> dict:
             stale = StateWriter(conn, cfg=self._cfg).mark_stale_recordings_failed()
             if stale:
                 log.warning("live_stale_sessions_cleared", count=stale)
@@ -122,35 +119,7 @@ class LiveWatcher:
             }
 
         ensure_write_gateway_started(self._cfg)
-        return with_db_lock_retry(_finalize)
-
-    def run_once(
-        self,
-        *,
-        creator_id: str | None = None,
-        conn=None,
-        deadline: float | None = None,
-    ) -> dict:
-        work_conn = conn or open_db(self._cfg)
-        close = conn is None
-        try:
-            poll = self.run_poll_active(
-                conn=work_conn, creator_id=creator_id, deadline=deadline
-            )
-            if poll.get("skipped"):
-                return poll
-            observe = self.run_probe_observe(
-                creator_id=creator_id, deadline=deadline, conn=work_conn
-            )
-            finalize = self.run_finalize(conn=work_conn)
-            return {
-                **poll,
-                **observe,
-                **finalize,
-            }
-        finally:
-            if close:
-                work_conn.close()
+        return gateway_write(self._cfg, _finalize, label="douyin.finalize")
 
     def run_daemon(self, *, creator_id: str | None = None) -> None:
         poll = live_poll_interval_sec(self._cfg)
@@ -159,7 +128,10 @@ class LiveWatcher:
             with workspace_lock(lock):
                 log.info("live_watch_daemon_started", poll=poll)
                 while True:
-                    self.run_once(creator_id=creator_id)
+                    poll_result = self.run_poll_active(creator_id=creator_id)
+                    if not poll_result.get("skipped"):
+                        self.run_probe_observe(creator_id=creator_id)
+                        self.run_finalize()
                     time.sleep(poll)
         except LockError:
             log.error("live_watch_lock_held")

@@ -58,7 +58,3 @@ def persist_live_probe_result(
         return state.update_snapshot(creator_id, live_info)
 
     return gw.write(_persist, label="live_snapshot.persist_probe")
-
-
-def clear_snapshot_write_lock_for_tests() -> None:
-    """No-op: legacy snapshot lock removed (DL-4b)."""

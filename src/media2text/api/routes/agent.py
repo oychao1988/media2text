@@ -4,12 +4,13 @@ import logging
 import uuid
 from typing import Any
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from media2text.agent.ai_agent import AIAgent
 from media2text.agent.hermes_state import MessageRow, SessionDB, parse_binding
 from media2text.agent.turn_registry import turn_registry
+from media2text.api.config_dto import _llm_providers_dto
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.services.agent_stream_hub import agent_stream_hub
 from media2text.core.config import AppConfig
@@ -175,6 +176,11 @@ def _supervisor(request: Request) -> MonitorSupervisor | None:
         if api_app is not None:
             sup = getattr(api_app.state, "supervisor", None)
     return sup
+
+
+@router.get("/providers")
+def list_providers(cfg: AppConfig = Depends(get_cfg)) -> dict:
+    return {"ok": True, "providers": _llm_providers_dto(cfg)}
 
 
 @router.get("/threads")
@@ -373,10 +379,3 @@ def resolve_approval(approval_id: str, body: ApprovalBody) -> dict:
     if not ok:
         raise HTTPException(status_code=404, detail="approval not found or already resolved")
     return {"ok": True, "approvalId": approval_id, "approved": body.approved}
-
-
-def mark_deprecated(response: Response | None) -> None:
-    if response is None:
-        return
-    response.headers["Deprecation"] = "true"
-    response.headers["Link"] = '</api/agent/threads>; rel="successor-version"'

@@ -53,16 +53,20 @@ def test_probe_never_enqueues(tmp_path, monkeypatch) -> None:
     )
 
     douyin = MagicMock()
-    douyin.run_once.return_value = {"active": 0}
+    douyin.run_poll_active.return_value = {"active": 0}
+    douyin.run_probe_observe.return_value = {"probe": True}
+    douyin.run_finalize.return_value = {"active": 0}
     bilibili = MagicMock()
-    bilibili.run_once.return_value = {"active": 0}
+    bilibili.run_poll_active.return_value = {"active": 0}
+    bilibili.run_probe_observe.return_value = {"probe": True}
+    bilibili.run_finalize.return_value = {"active": 0}
 
     def fail_enqueue(*args, **kwargs):
         raise AssertionError("enqueue in probe")
 
     monkeypatch.setattr(MonitorTaskRepo, "enqueue", fail_enqueue)
 
-    run_live_probe_tick(cfg, douyin=douyin, bilibili=bilibili, conn=conn)
+    run_live_probe_tick(cfg, douyin=douyin, bilibili=bilibili)
     ProbeExecutionGuard.exit_probe_tick(strict=True)
 
 

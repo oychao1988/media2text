@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING
 import structlog
 
 from media2text.core.config import AppConfig
+from media2text.core.live.heavy_pool import HeavyPool
 from media2text.core.live.monitor_executor import MonitorExecutor
 from media2text.core.notify.drain import drain_once
 from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.live.post_process_pool import PostProcessExecutor
-from media2text.core.live.segment_process_pool import SegmentProcessExecutor
 from media2text.core.live.task_reconciler import reconcile_content, reconcile_live
 from media2text.core.storage.repos import LiveSessionRepo, MonitorTaskRepo
 from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
@@ -36,7 +36,7 @@ class TaskSchedulerLoop:
         content_pool: MonitorExecutor,
         post_pool: PostProcessExecutor,
         *,
-        segment_pool: SegmentProcessExecutor | None = None,
+        heavy_pool: HeavyPool,
         stop: threading.Event,
     ) -> None:
         self._cfg = cfg
@@ -44,7 +44,7 @@ class TaskSchedulerLoop:
         self._live_pool = live_pool
         self._content_pool = content_pool
         self._post_pool = post_pool
-        self._segment_pool = segment_pool
+        self._heavy_pool = heavy_pool
         self._stop = stop
         self._thread: threading.Thread | None = None
 
@@ -62,20 +62,15 @@ class TaskSchedulerLoop:
 
     def tick_once(self, conn) -> None:
         if self._cfg.monitor.reconciler_enabled:
-            reconcile_live(self._cfg, conn)
+            if not self._cfg.live.inline_decisions:
+                reconcile_live(self._cfg, conn)
             reconcile_content(self._cfg, conn)
-        elif self._cfg.monitor.reconciler_log_only:
-            n_live = reconcile_live(self._cfg, conn, log_only=True)
-            n_content = reconcile_content(self._cfg, conn, log_only=True)
-            log.info("reconcile_shadow", live=n_live, content=n_content)
 
-        min_claim = max(1, self._cfg.monitor.live_lane_min_claim_per_tick)
-        self._live_pool.claim_and_submit_priority_zero(
+        self._heavy_pool.drain(
             self._cfg,
             conn,
             notify=self._watcher._notify,
             watcher=self._watcher,
-            limit=min_claim,
         )
         self._live_pool.drain_pending(
             self._cfg,
@@ -86,13 +81,6 @@ class TaskSchedulerLoop:
             min_priority=1,
             max_priority=9,
         )
-        if self._segment_pool is not None and self._cfg.live.segment_pipeline.enabled:
-            self._segment_pool.drain_pending(
-                self._cfg,
-                conn,
-                notify=self._watcher._notify,
-                limit=self._cfg.live.segment_pipeline.max_parallel,
-            )
         from media2text.core.live.live_lane import live_lane_priority_count
 
         live_lane_count = live_lane_priority_count(conn, self._cfg)

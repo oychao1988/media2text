@@ -14,8 +14,8 @@ def watch(
     daemon: bool = typer.Option(
         False,
         "--daemon",
-        help="Run continuously (recommended). Without --daemon: single debug round "
-        "(probe + mark due + reconcile + inline finalize drain only); production use --daemon.",
+        help="Run continuously (recommended). Without --daemon: one LiveTick + "
+        "SchedulerTick round (same paths as daemon; no SlowTick).",
     ),
     creator_id: str | None = typer.Option(None, "--creator"),
     json_out: bool = typer.Option(False, "--json"),

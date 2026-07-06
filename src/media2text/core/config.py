@@ -62,7 +62,6 @@ class MonitorConfig(BaseModel):
     task_max_retries: int = 3
     scheduler_interval_sec: int = 1
     reconciler_enabled: bool = True
-    reconciler_log_only: bool = False
     live_worker_max_parallel: int = 1
     live_lane_min_claim_per_tick: int = 1
     probe_tick_budget_sec: int = 0
@@ -132,7 +131,6 @@ class LiveConfig(BaseModel):
     temp_format: str = "flv"
     live_poll_interval_sec: int = 10
     offline_confirm_sec: int = 45
-    offline_confirm_polls: int = 3  # deprecated; logic uses offline_confirm_sec
     ffmpeg_exit_recheck: bool = True
     max_reconnect_attempts: int = 2
     min_recording_sec_before_offline_end: int = 45
@@ -146,6 +144,8 @@ class LiveConfig(BaseModel):
     # Consecutive obs polls with profile offline and FLV not growing before ending
     # recording trust (guards zombie ffmpeg after stream ends).
     offline_flv_stall_polls: int = 3
+    # When true, LiveTick runs prepare/finalize/reconnect inline (no reconcile_live tasks).
+    inline_decisions: bool = False
 
     def effective_pipeline_mode(self) -> str:
         mode = (self.pipeline_mode or "legacy").strip().lower()
