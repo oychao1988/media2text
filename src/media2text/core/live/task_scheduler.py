@@ -64,10 +64,6 @@ class TaskSchedulerLoop:
         if self._cfg.monitor.reconciler_enabled:
             reconcile_live(self._cfg, conn)
             reconcile_content(self._cfg, conn)
-        elif self._cfg.monitor.reconciler_log_only:
-            n_live = reconcile_live(self._cfg, conn, log_only=True)
-            n_content = reconcile_content(self._cfg, conn, log_only=True)
-            log.info("reconcile_shadow", live=n_live, content=n_content)
 
         min_claim = max(1, self._cfg.monitor.live_lane_min_claim_per_tick)
         self._live_pool.claim_and_submit_priority_zero(
