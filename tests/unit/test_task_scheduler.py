@@ -29,7 +29,6 @@ def test_monitor_scheduler_config_defaults() -> None:
     assert cfg.monitor.live_lane_min_claim_per_tick == 1
     assert cfg.monitor.probe_parallelism == 4
     assert cfg.monitor.reconciler_enabled is True
-    assert cfg.monitor.reconciler_log_only is False
     assert cfg.monitor.live_worker_max_parallel == 1
 
 
@@ -224,10 +223,9 @@ def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
         workspace=tmp_path / "data",
         monitor=MonitorConfig(probe_tick_budget_sec=1),
     )
-    conn = open_db(cfg)
     watcher = MonitorWatcher(cfg)
 
-    def slow_douyin_run_once(**kwargs):
+    def slow_douyin_poll(**kwargs):
         deadline = kwargs.get("deadline")
         end = deadline if deadline is not None else time.monotonic() + 2
         while time.monotonic() < end:
@@ -235,15 +233,18 @@ def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
         return {"active": 0}
 
     with (
-        patch.object(watcher._douyin_live, "run_once", side_effect=slow_douyin_run_once),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"skipped": "budget_exhausted"}),
+        patch.object(watcher._douyin_live, "run_poll_active", side_effect=slow_douyin_poll),
+        patch.object(watcher._douyin_live, "run_probe_observe", return_value={}),
+        patch.object(watcher._douyin_live, "run_finalize", return_value={}),
+        patch.object(watcher._bilibili_live, "run_poll_active", return_value={"skipped": "budget_exhausted"}),
+        patch.object(watcher._bilibili_live, "run_probe_observe", return_value={}),
+        patch.object(watcher._bilibili_live, "run_finalize", return_value={}),
     ):
         t0 = time.monotonic()
         run_live_probe_tick(
             cfg,
             douyin=watcher._douyin_live,
             bilibili=watcher._bilibili_live,
-            conn=conn,
         )
         elapsed = time.monotonic() - t0
 
