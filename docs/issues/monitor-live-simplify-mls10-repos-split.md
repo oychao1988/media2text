@@ -1,6 +1,7 @@
 ---
 epic: monitor-live-simplify-2026-07-06
 depends_on: []
+github: 396
 ---
 
 # MLS-10：`repos.py` 按域拆分
@@ -9,9 +10,9 @@ depends_on: []
 
 ## 验收标准
 
-- [ ] `storage/repos/` 包；单文件 <800 行
-- [ ] `DesktopChatRepo` 迁至 `agent/` 或 `storage/chat.py`
-- [ ] 全量 `pytest tests/unit` 绿
+- [x] `storage/repos/` 包；单文件 <800 行
+- [x] `DesktopChatRepo` 迁至 `agent/` 或 `storage/chat.py`
+- [x] 全量 `pytest tests/unit` 绿
 
 ## 验证命令
 
