@@ -13,7 +13,6 @@ import structlog
 from media2text.core.live.probe_guard import ProbeExecutionGuard
 
 from media2text.core.config import AppConfig
-from media2text.core.desktop.auto_record import effective_auto_record
 from media2text.core.errors import (
     AlreadyRecording,
     AuthRequired,
@@ -23,6 +22,7 @@ from media2text.core.errors import (
     RecordingError,
 )
 from media2text.core.live.probe import probe_workers
+from media2text.core.live import session as live_session
 from media2text.core.ffmpeg import (
     record_stream_copy,
     stop_pid,
@@ -311,28 +311,9 @@ class LiveRecordingCore:
         Not wrapped by MonitorExecutor playwright_exclusive; see MH-3 notes on
         _run_prepare_live_recording for nested Playwright in stream resolve.
         """
-        if self._sessions.get_active_for_creator(creator_id):
-            return {"skipped": "already_recording", "creator_id": creator_id}
-        creator = self._creators.get(creator_id)
-        if not creator:
-            raise ValueError(f"creator_not_found:{creator_id}")
-        if creator.platform != self._platform:
-            raise ValueError(f"platform_mismatch:{creator.platform}")
-        if not effective_auto_record(creator, self._cfg):
-            return {"skipped": "auto_record_disabled", "creator_id": creator_id}
-
-        if live_info is None:
-            live_info, err = self._fetch_live_info(creator)
-            if err is not None:
-                _kind, payload = err
-                return {"ok": False, "kind": _kind, **payload}
-        if live_info is not None:
-            self._state.update_snapshot(creator_id, live_info)
-        if live_info is None or not live_info.is_live or not live_info.room_id:
-            return {"skipped": "not_live", "creator_id": creator_id}
-
-        meta = self.maybe_start_recording(creator, live_info)
-        return {"started": meta}
+        return live_session.prepare_live_recording(
+            self, creator_id, live_info=live_info
+        )
 
     def run_start_streaming_stt(self, session_id: str) -> dict:
         """LW-02: start STT sidecar on an active streaming recording."""
@@ -861,91 +842,13 @@ class LiveRecordingCore:
 
     def poll_active_session(self, row, creator, *, state: StateWriter) -> None:
         """LP-02: obs + offline semantics; inline stall recovery when CDN URL expires."""
-        if row.status != "recording" or row.ffmpeg_pid is None:
-            return
-
-        pid = row.ffmpeg_pid
-        ffmpeg_alive = self._process_alive(pid)
-
-        stt_alive = None
-        if self._use_streaming_pipeline(row.id) and row.id not in self._streaming_legacy_finalize:
-            stt = self._stt_sessions.get(row.id)
-            stt_alive = stt.is_alive() if stt else False
-
-        try:
-            still_live = self._recording_still_live(creator, row)
-        except Exception as exc:  # noqa: BLE001
-            log.warning(
-                "live_status_check_failed",
-                creator_id=creator.id,
-                error=str(exc),
-            )
-            state.write_obs(
-                row.id,
-                ffmpeg_alive=ffmpeg_alive,
-                stt_alive=stt_alive,
-                still_live=None,
-            )
-            return
-
-        state.write_obs(
-            row.id,
-            ffmpeg_alive=ffmpeg_alive,
-            stt_alive=stt_alive,
-            still_live=still_live,
-        )
-
-        if still_live:
-            stream_reconnected = self._maybe_recover_stalled_stream(
-                row,
-                creator,
-                ffmpeg_alive=ffmpeg_alive,
-                stt_alive=stt_alive,
-            )
-            if not stream_reconnected:
-                self._maybe_recover_stalled_hls(
-                    row,
-                    creator,
-                    ffmpeg_alive=ffmpeg_alive,
-                    stt_alive=stt_alive,
-                )
-
-        try:
-            profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-            state.update_snapshot(creator.id, profile)
-        except Exception:  # noqa: BLE001
-            pass
-
-        min_offline = self._cfg.live.min_recording_sec_before_offline_end
-
-        if still_live:
-            if row.offline_since_at:
-                state.clear_offline_since(row.id, creator_id=creator.id)
-            return
-
-        if self._recording_age_sec(row.started_at) < min_offline:
-            return
-
-        now = datetime.now(timezone.utc)
-        if row.offline_since_at is None:
-            state.set_offline_since(row.id, now.isoformat(), creator_id=creator.id)
+        live_session.poll_active_session(self, row, creator, state=state)
 
     def poll_active_recordings(
         self, *, skip_session_ids: set[str] | None = None
     ) -> list[dict]:
         """LP-02 delegate: obs-only per active session (finalize via registry/Reconciler)."""
-        skip = skip_session_ids or set()
-        state = self._state
-        for row in self._sessions.list_active():
-            if row.id in skip:
-                continue
-            if row.status != "recording" or row.ffmpeg_pid is None:
-                continue
-            creator = self._creators.get(row.creator_id)
-            if not creator or creator.platform != self._platform:
-                continue
-            self.poll_active_session(row, creator, state=state)
-        return []
+        return live_session.poll_active_recordings(self, skip_session_ids=skip_session_ids)
 
     def _transcript_anchor(self, session_id: str, temp_path: str | None) -> Path:
         anchor = self._streaming_transcript_anchor.get(session_id)
@@ -1667,146 +1570,27 @@ class LiveRecordingCore:
         return {"session_id": session_id, "temp_path": str(temp_path), "pid": proc.pid}
 
     def _recording_still_live(self, creator, row) -> bool:
-        try:
-            profile = self._adapter.get_live_room(sec_uid=creator.sec_uid)
-        except Exception:
-            if self._cfg.live.offline_trust_recording_signals:
-                return self._infer_live_from_recording(row, creator, platform_offline=False)
-            raise
-
-        if profile.is_live:
-            return True
-        if not self._cfg.live.offline_trust_recording_signals:
-            return False
-        return self._infer_live_from_recording(row, creator, platform_offline=True)
+        return live_session.recording_still_live(self, creator, row)
 
     @staticmethod
     def _is_hls_session(row) -> bool:
-        temp_path = row.temp_path or ""
-        if temp_path.endswith(".m3u8"):
-            return True
-        session_dir = getattr(row, "session_dir", None)
-        if not session_dir:
-            return False
-        base = Path(session_dir)
-        return (base / "master.m3u8").is_file() or (base / "parts").is_dir()
+        return live_session.is_hls_session(row)
 
     def _infer_live_from_recording(
         self, row, creator, *, platform_offline: bool = False
     ) -> bool:
-        pid = row.ffmpeg_pid
-        if pid is None or not self._process_alive(pid):
-            self._flv_stall_polls.pop(row.id, None)
-            return False
-        temp_path = row.temp_path
-        if temp_path and self._flv_file_growing(row.id, temp_path):
-            if platform_offline and self._is_hls_session(row):
-                log.debug(
-                    "live_offline_hls_tail_ignored_for_growth",
-                    session_id=row.id,
-                    creator_id=row.creator_id,
-                )
-            else:
-                self._flv_stall_polls.pop(row.id, None)
-                log.debug(
-                    "live_offline_ignored_flv_growing",
-                    session_id=row.id,
-                    creator_id=row.creator_id,
-                )
-                return True
-        stall = self._flv_stall_polls.get(row.id, 0) + 1
-        self._flv_stall_polls[row.id] = stall
-        stall_limit = max(1, self._cfg.live.offline_flv_stall_polls)
-        if stall >= stall_limit:
-            log.info(
-                "live_offline_flv_stalled",
-                session_id=row.id,
-                creator_id=row.creator_id,
-                stall_polls=stall,
-            )
-            return False
-        reflow_getter = getattr(self._adapter, "get_room_reflow", None)
-        room_id = row.room_id
-        if room_id and callable(reflow_getter):
-            try:
-                reflow = reflow_getter(room_id=room_id, sec_uid=creator.sec_uid)
-                if isinstance(reflow, LiveRoomInfo) and reflow.is_live:
-                    log.debug(
-                        "live_offline_ignored_reflow_live",
-                        session_id=row.id,
-                        room_id=room_id,
-                    )
-                    return True
-            except Exception as exc:  # noqa: BLE001
-                log.debug(
-                    "live_reflow_check_failed",
-                    session_id=row.id,
-                    room_id=room_id,
-                    error=str(exc),
-                )
-        return False
-
-    def _flv_file_growing(self, session_id: str, temp_path: str) -> bool:
-        row = self._sessions.get(session_id)
-        if row and row.session_dir:
-            return self._hls_media_growing(session_id, Path(row.session_dir))
-        path = Path(temp_path)
-        if not path.is_file():
-            return False
-        size = path.stat().st_size
-        prev = self._flv_size_snapshots.get(session_id)
-        self._flv_size_snapshots[session_id] = size
-        if prev is None:
-            return size > 4096
-        return size > prev
-
-    def _hls_media_growing(self, session_id: str, session_dir: Path) -> bool:
-        parts_dir = session_dir / "parts"
-        if not parts_dir.is_dir():
-            master = session_dir / "master.m3u8"
-            if master.is_file():
-                size = master.stat().st_size
-                prev = self._flv_size_snapshots.get(session_id)
-                self._flv_size_snapshots[session_id] = size
-                return prev is None or size > prev
-            return False
-        segments = sorted(parts_dir.glob("seg-*.m4s"))
-        if not segments:
-            return False
-        latest = segments[-1]
-        size = latest.stat().st_size
-        key = f"{session_id}:{latest.name}"
-        prev = self._flv_size_snapshots.get(key)
-        self._flv_size_snapshots[key] = size
-        if prev is None:
-            return size > 0
-        return size > prev
-
-    def _emit_live_ended(self, creator, row) -> None:
-        label = creator_label(creator)
-        self._notify.emit(
-            NotifyEvent(
-                kind=EventKind.LIVE_ENDED,
-                title=label,
-                body=(
-                    f"检测到下播，等待 {self._cfg.live.offline_confirm_sec}s 确认后停录\n"
-                    f"session: {row.id[:8]}…"
-                ),
-            )
+        return live_session.infer_live_from_recording(
+            self, row, creator, platform_offline=platform_offline
         )
 
-    def _parse_iso(self, value: str) -> datetime | None:
-        try:
-            return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        except ValueError:
-            return None
+    def _flv_file_growing(self, session_id: str, temp_path: str) -> bool:
+        return live_session.flv_file_growing(self, session_id, temp_path)
+
+    def _hls_media_growing(self, session_id: str, session_dir: Path) -> bool:
+        return live_session.hls_media_growing(self, session_id, session_dir)
 
     def _recording_age_sec(self, started_at: str) -> float:
-        try:
-            started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
-        except ValueError:
-            return self._cfg.live.min_recording_sec_before_offline_end
-        return (datetime.now(timezone.utc) - started).total_seconds()
+        return live_session.recording_age_sec(self, started_at)
 
     def _process_alive(self, pid: int) -> bool:
         try:

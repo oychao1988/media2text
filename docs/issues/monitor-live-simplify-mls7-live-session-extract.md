@@ -1,5 +1,6 @@
 ---
 epic: monitor-live-simplify-2026-07-06
+github: 393
 depends_on: [MLS-4, MLS-5]
 ---
 
@@ -9,8 +10,8 @@ depends_on: [MLS-4, MLS-5]
 
 ## 验收标准
 
-- [ ] 新增 `core/live/session.py`；迁 prepare/poll/offline 核心
-- [ ] `recording.py` 行数显著下降；现有录制单测绿
+- [x] 新增 `core/live/session.py`；迁 prepare/poll/offline 核心
+- [x] `recording.py` 行数显著下降；现有录制单测绿
 
 ## 验证命令
 
