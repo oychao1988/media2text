@@ -31,6 +31,7 @@ from media2text.core.monitor.intervals import (
     vod_poll_interval_sec,
 )
 from media2text.core.workspace import open_db
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 
 if TYPE_CHECKING:
     from media2text.core.monitor.watcher import MonitorWatcher
@@ -260,6 +261,64 @@ class MonitorScheduler:
         self._segment_pool.shutdown(wait=False, cancel_futures=True)
         set_segment_watcher(None)
         self._distill_pool.shutdown(wait=False, cancel_futures=True)
+
+    def run_single_round(self, *, creator_id: str | None = None) -> dict:
+        """One LiveTick + one SchedulerTick (daemon-equivalent, no SlowTick)."""
+        if not self._cfg.monitor.reconciler_enabled:
+            raise ReconcilerDisabledError()
+        ensure_write_gateway_started(self._cfg)
+        try:
+            self._watcher.ensure_session_registry()
+        except Exception as exc:  # noqa: BLE001
+            log.warning("single_round_session_registry_failed", error=str(exc))
+
+        live_result = run_live_probe_tick(
+            self._cfg,
+            douyin=self._watcher._douyin_live,
+            bilibili=self._watcher._bilibili_live,
+            creator_id=creator_id,
+            session_registry=self._watcher.session_registry,
+        )
+
+        scheduler_loop = TaskSchedulerLoop(
+            self._cfg,
+            self._watcher,
+            live_pool=self._live_monitor_pool,
+            content_pool=self._content_monitor_pool,
+            post_pool=self._post_pool,
+            segment_pool=self._segment_pool,
+            stop=self._stop,
+        )
+        gw = get_write_gateway(self._cfg)
+        gw.write_batch(lambda conn: scheduler_loop.tick_once(conn), label="scheduler_tick")
+        try:
+            from media2text.core.notify.drain import drain_once
+
+            drain_once(self._cfg, limit=20)
+        except Exception:  # noqa: BLE001
+            log.exception("notify_drain_single_round_failed")
+        self._wait_worker_pools_idle()
+
+        return {
+            "live": live_result,
+            "active_recordings": int(live_result.get("active_recordings") or 0),
+            "scheduler_tick": "once",
+        }
+
+    def _wait_worker_pools_idle(self, timeout_sec: float = 60.0) -> None:
+        deadline = time.monotonic() + timeout_sec
+        pools = (self._live_monitor_pool, self._content_monitor_pool)
+        while time.monotonic() < deadline:
+            idle = True
+            for pool in pools:
+                with pool._inflight_lock:
+                    if pool._inflight_count > 0:
+                        idle = False
+                        break
+            if idle:
+                return
+            time.sleep(0.05)
+        log.warning("single_round_worker_pools_idle_timeout", timeout_sec=timeout_sec)
 
     def join(self, timeout: float | None = None) -> None:
         if self._live_loop is not None:
