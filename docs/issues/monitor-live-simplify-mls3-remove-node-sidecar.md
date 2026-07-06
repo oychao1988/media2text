@@ -29,7 +29,7 @@ Tauri 仅 spawn `python_sidecar`；`packages/m2t-agent-sidecar` 与 bundle 为�
 source .venv/bin/activate
 pytest tests/unit/test_api_agent_m2_smoke.py tests/unit/test_api_agent_stream.py tests/unit/test_api_agent_threads.py -v -m desktop
 pnpm --filter m2t-desktop test
-python scripts/agent_m2_verify.py --skip-live
+python scripts/agent_m2_verify.py --static-only
 ```
 
 ## 非目标范围

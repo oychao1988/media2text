@@ -97,9 +97,32 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--live-port", type=int, default=9876)
     parser.add_argument("--skip-live", action="store_true")
+    parser.add_argument(
+        "--static-only",
+        action="store_true",
+        help="Only run H8 static check (no issue #182 / pnpm / cargo)",
+    )
     args = parser.parse_args()
 
     results: list[dict] = []
+
+    if args.static_only:
+        results.append(static_h8_no_node_agent_spawn())
+        REPORT.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "issue": "static-only",
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "all_pass": all(r["pass"] for r in results),
+            "results": results,
+        }
+        REPORT.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
+        )
+        print(f"Report: {REPORT}")
+        for r in results:
+            status = "PASS" if r["pass"] else "FAIL"
+            print(f"  [{status}] {r['name']}")
+        return 0 if payload["all_pass"] else 1
 
     steps = [
         (["python", "scripts/issue_verify.py", "--issue", "182"], "issue_verify #182"),
