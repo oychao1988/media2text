@@ -46,9 +46,9 @@ python scripts/issue_verify.py --issue 396  # 见 S4 Gap：全量 unit 有遗留
 python scripts/epic_verify.py monitor-live-simplify-2026-07-06
 ```
 
-## S4 Gap（合入 main 前建议跟进）
+## S4 Gap（跟进 Issue MLS-12）
 
-31 个 `tests/unit` 失败主要为 **MLS 前即存在的陈旧 mock**（如 `run_once`、`_emit_pipeline_notifications`）及 **legacy finalize/ffmpeg 夹具**，非 MLS issue 闸门回归。MLS 域相关子集绿：
+31 个 `tests/unit` 失败主要为 **MLS 前即存在的陈旧 mock**（如 `run_once`、`_emit_pipeline_notifications`）及 **legacy finalize/ffmpeg 夹具**，非 MLS issue 闸门回归。跟进：[mls12-stale-unit-tests](./monitor-live-simplify-mls12-stale-unit-tests.md) · [#410](https://github.com/oychao1988/media2text/issues/410)。
 
 ```bash
 pytest tests/unit/test_task_scheduler.py tests/unit/test_probe_guard.py \

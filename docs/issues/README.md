@@ -342,5 +342,6 @@ Epic manifest：[monitor-db-lock-write-path-2026-06-30.yaml](./epic-manifests/mo
 | MLS-9 | [#395](https://github.com/oychao1988/media2text/issues/395) | [mls9-heavy-pool](./monitor-live-simplify-mls9-heavy-pool.md) | `issue-395-mls9-heavy-pool` |
 | MLS-10 | [#396](https://github.com/oychao1988/media2text/issues/396) | [mls10-repos-split](./monitor-live-simplify-mls10-repos-split.md) | `issue-396-mls10-repos-split` |
 | MLS-11 | [#397](https://github.com/oychao1988/media2text/issues/397) | [mls11-distill-decouple](./monitor-live-simplify-mls11-distill-decouple.md) | `issue-397-mls11-distill-decouple` |
+| MLS-12 | [#410](https://github.com/oychao1988/media2text/issues/410) | [mls12-stale-unit-tests](./monitor-live-simplify-mls12-stale-unit-tests.md) | `issue-410-mls12-stale-unit-tests` |
 
-**合并顺序**：MLS-1 ∥ MLS-3 → MLS-2 → MLS-4 → MLS-5 → MLS-6 → MLS-7 → MLS-8 → MLS-9；MLS-10 / MLS-11 可并行 → **Epic 验收**：[acceptance](../superpowers/verification/2026-07-06-monitor-live-simplify-acceptance.md) · `python scripts/epic_verify.py monitor-live-simplify-2026-07-06`
+**合并顺序**：MLS-1 ∥ MLS-3 → MLS-2 → MLS-4 → MLS-5 → MLS-6 → MLS-7 → MLS-8 → MLS-9；MLS-10 / MLS-11 可并行 → **Epic 验收**：[acceptance](../superpowers/verification/2026-07-06-monitor-live-simplify-acceptance.md) · `python scripts/epic_verify.py monitor-live-simplify-2026-07-06` · **跟进**：[mls12-stale-unit-tests](./monitor-live-simplify-mls12-stale-unit-tests.md)（S4 Gap #410）
