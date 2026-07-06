@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from media2text.core.config import AppConfig
 from media2text.core.storage.repos import CreatorRepo
 
-# CreatorAgentJobPool.drain_pending cadence in SlowTickLoop (independent of content due).
+# Distill job drain cadence when using `media2text agent distill drain` (not embedded in monitor).
 DISTILL_DRAIN_INTERVAL_SEC = 300.0
 
 

@@ -176,28 +176,15 @@ def run_post_process_job(
                     )
                 if meta.get("summarized") or meta.get("summary_path"):
                     refresh_manifest(wconn, sec_uid=creator.sec_uid, workspace=ws)
-                    from media2text.agent.creator_distill.deferred import maybe_promote_bootstrap
-                    from media2text.agent.creator_distill.enqueue import maybe_enqueue_evolve
+                    from media2text.core.live.distill_enqueue import maybe_enqueue_evolve_job
 
-                    maybe_promote_bootstrap(cfg, wconn, creator_id=creator.id)
-                    evolve_job = maybe_enqueue_evolve(
+                    maybe_enqueue_evolve_job(
                         cfg,
                         wconn,
                         creator_id=creator.id,
                         source_id=job.session_id,
                         trigger="summarize_completed",
                     )
-                    if evolve_job:
-                        from media2text.agent.creator_distill.pool import (
-                            CreatorAgentJobPool,
-                            resolve_distill_workers,
-                        )
-
-                        pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
-                        try:
-                            pool.submit_evolve(cfg, job_id=evolve_job)
-                        finally:
-                            pool.shutdown(wait=False)
                     label = creator_label(creator)
                     notify.emit(
                         NotifyEvent(

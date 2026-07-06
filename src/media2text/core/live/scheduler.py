@@ -25,7 +25,6 @@ from media2text.core.live.loop import run_live_inline_decisions
 from media2text.core.live.task_scheduler import TaskSchedulerLoop
 from media2text.core.monitor.errors import ReconcilerDisabledError
 from media2text.core.monitor.intervals import (
-    DISTILL_DRAIN_INTERVAL_SEC,
     bilibili_archive_poll_sec,
     bilibili_dynamic_poll_sec,
     compute_slow_tick_sleep_sec,
@@ -111,18 +110,15 @@ class SlowTickLoop:
         self,
         watcher: MonitorWatcher,
         cfg: AppConfig,
-        distill_pool,
         *,
         creator_id: str | None,
         stop: threading.Event,
     ) -> None:
         self._watcher = watcher
         self._cfg = cfg
-        self._distill_pool = distill_pool
         self._creator_id = creator_id
         self._stop = stop
         self._thread: threading.Thread | None = None
-        self._last_distill = 0.0
 
     def start(self) -> None:
         self._thread = threading.Thread(
@@ -146,20 +142,6 @@ class SlowTickLoop:
                 self._watcher._run_dynamic_tick(conn=conn, creator_id=self._creator_id)
             finally:
                 conn.close()
-            now_distill = time.time()
-            if now_distill - self._last_distill >= DISTILL_DRAIN_INTERVAL_SEC:
-                from media2text.agent.creator_distill.pool import resolve_distill_workers
-
-                conn = open_db(self._cfg)
-                try:
-                    self._distill_pool.drain_pending(
-                        self._cfg,
-                        conn,
-                        limit=resolve_distill_workers(self._cfg),
-                    )
-                finally:
-                    conn.close()
-                self._last_distill = now_distill
             sleep_conn = open_db(self._cfg)
             try:
                 sleep_sec = compute_slow_tick_sleep_sec(
@@ -197,12 +179,6 @@ class MonitorScheduler:
         )
         self._segment_watcher = SegmentWatcher(cfg, stop=self._stop)
         set_segment_watcher(self._segment_watcher)
-        from media2text.agent.creator_distill.pool import (
-            CreatorAgentJobPool,
-            resolve_distill_workers,
-        )
-
-        self._distill_pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
         self._live_monitor_pool = self._heavy_pool.finalize_pool
         self._content_monitor_pool = MonitorExecutor(
             max_workers=max(cfg.monitor.executor_max_parallel, 1),
@@ -246,7 +222,6 @@ class MonitorScheduler:
         self._slow_loop = SlowTickLoop(
             self._watcher,
             self._cfg,
-            self._distill_pool,
             creator_id=creator_id,
             stop=self._stop,
         )
@@ -267,7 +242,6 @@ class MonitorScheduler:
         self._post_pool.shutdown(wait=False, cancel_futures=True)
         self._heavy_pool.shutdown(wait=False, cancel_futures=True)
         set_segment_watcher(None)
-        self._distill_pool.shutdown(wait=False, cancel_futures=True)
 
     def run_single_round(self, *, creator_id: str | None = None) -> dict:
         """One LiveTick + one SchedulerTick (daemon-equivalent, no SlowTick)."""
