@@ -60,7 +60,7 @@ describe('useM2tAgent (M2 WS + turn)', () => {
     mockSockets.length = 0;
     vi.stubGlobal('WebSocket', MockWebSocket);
     apiGet.mockImplementation(async (path: string) => {
-      if (path === '/api/chat/providers') {
+      if (path === '/api/agent/providers') {
         return { providers: [{ name: 'nvidia', models: ['test'], configured: true }] };
       }
       if (path === '/api/agent/threads') {

@@ -9,8 +9,7 @@ from media2text.core.process_lock import LockError, acquire_workspace_lock, rele
 
 app_cli = typer.Typer(
     help=(
-        "Desktop API sidecar (loopback only). "
-        "Agent REST lives at /api/agent/*; /api/chat/* is a deprecated alias."
+        "Desktop API sidecar (loopback only). Agent REST lives at /api/agent/*."
     )
 )
 

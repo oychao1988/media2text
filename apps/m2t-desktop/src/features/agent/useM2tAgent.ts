@@ -91,7 +91,7 @@ export function useM2tAgent(opts: {
     let cancelled = false;
     void (async () => {
       try {
-        const prov = await apiGet<{ providers: ChatProvider[] }>('/api/chat/providers', true);
+        const prov = await apiGet<{ providers: ChatProvider[] }>('/api/agent/providers', true);
         if (!cancelled) setProviders(prov.providers ?? []);
       } catch {
         if (!cancelled) setProviders([]);
