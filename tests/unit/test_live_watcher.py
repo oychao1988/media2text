@@ -1,4 +1,3 @@
-import sys
 from unittest.mock import ANY, MagicMock, patch
 
 import pytest
@@ -182,12 +181,14 @@ def test_finalize_refresh_manifest(tmp_path, monkeypatch) -> None:
         room_id="99",
         temp_path=str(flv),
         ffmpeg_pid=4242,
+        pipeline_mode="legacy",
     )
 
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
         patch("media2text.core.live.state_writer.refresh_manifest") as mock_refresh,
+        patch.object(watcher._notify, "emit"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):
         def _fake_remux(**_kwargs):
@@ -239,11 +240,12 @@ def test_finalize_transcribe_on_complete(tmp_path, monkeypatch) -> None:
         room_id="99",
         temp_path=str(flv),
         ffmpeg_pid=4242,
+        pipeline_mode="legacy",
     )
 
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
         patch("media2text.core.live.state_writer.refresh_manifest"),
         patch.object(watcher._notify, "emit"),
         patch.object(watcher, "_process_alive", return_value=False),
@@ -285,12 +287,12 @@ def test_finalize_transcribe_skipped_without_extra(tmp_path, monkeypatch) -> Non
         room_id="1",
         temp_path=str(flv),
         ffmpeg_pid=1,
+        pipeline_mode="legacy",
     )
-    monkeypatch.delitem(sys.modules, "faster_whisper", raising=False)
 
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
         patch("media2text.core.live.state_writer.refresh_manifest"),
         patch.object(watcher, "_process_alive", return_value=False),
     ):

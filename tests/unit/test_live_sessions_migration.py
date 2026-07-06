@@ -13,8 +13,8 @@ def test_live_sessions_v3_columns(tmp_path) -> None:
 def test_live_sessions_v4_pipeline_mode_backfill(tmp_path) -> None:
     db_path = tmp_path / "data" / "media2text.db"
     conn = connect(db_path)
-    cols = {row[1] for row in conn.execute("PRAGMA table_info(live_sessions)").fetchall()}
-    assert "pipeline_mode" in cols
+    conn.execute("ALTER TABLE live_sessions DROP COLUMN pipeline_mode")
+    conn.commit()
 
     conn.execute(
         """
@@ -26,8 +26,8 @@ def test_live_sessions_v4_pipeline_mode_backfill(tmp_path) -> None:
     conn.execute(
         """
         INSERT INTO live_sessions
-          (id, creator_id, room_id, started_at, temp_path, status, pipeline_mode)
-        VALUES ('legacy-row', 'c1', '1', '2026-01-01T00:00:00+00:00', '/x.flv', 'completed', NULL)
+          (id, creator_id, room_id, started_at, temp_path, status)
+        VALUES ('legacy-row', 'c1', '1', '2026-01-01T00:00:00+00:00', '/x.flv', 'completed')
         """
     )
     conn.commit()

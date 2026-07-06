@@ -89,7 +89,6 @@ def test_live_tick_runs_while_slow_tick_blocks(tmp_path, monkeypatch) -> None:
         slow_loop = SlowTickLoop(
             watcher,
             cfg,
-            MagicMock(),
             creator_id=None,
             stop=stop,
         )
@@ -137,7 +136,7 @@ def test_slow_tick_waits_until_next_due(tmp_path, monkeypatch) -> None:
 
     stop.wait = record_wait  # type: ignore[method-assign]
 
-    slow = SlowTickLoop(watcher, cfg, MagicMock(), creator_id=None, stop=stop)
+    slow = SlowTickLoop(watcher, cfg, creator_id=None, stop=stop)
     with (
         patch.object(watcher, "_run_vod_tick", return_value={}),
         patch.object(watcher, "_run_archive_tick", return_value={}),

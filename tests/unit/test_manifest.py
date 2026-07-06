@@ -27,7 +27,7 @@ def test_refresh_manifest_live_transcript_path(tmp_path, monkeypatch) -> None:
     sid = LiveSessionRepo(conn).create(
         creator_id=cid,
         room_id="1",
-        temp_path=str(live_dir / "x.flv"),
+        temp_path=str(mp4),
         ffmpeg_pid=1,
     )
     LiveSessionRepo(conn).update_status(
@@ -41,4 +41,4 @@ def test_refresh_manifest_live_transcript_path(tmp_path, monkeypatch) -> None:
     payload = json.loads(out.read_text(encoding="utf-8"))
     live_item = next(i for i in payload["items"] if i["type"] == "live")
     assert live_item["media_path"] == str(mp4)
-    assert live_item["transcript_path"] == str(transcript)
+    assert (ws / live_item["transcript_path"]).resolve() == transcript.resolve()

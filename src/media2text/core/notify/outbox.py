@@ -33,6 +33,10 @@ class NotifyDaemonGuard:
         return bool(getattr(_daemon_ctx, "active", False))
 
     @staticmethod
+    def reset() -> None:
+        _daemon_ctx.active = False
+
+    @staticmethod
     @contextmanager
     def daemon_thread() -> Iterator[None]:
         NotifyDaemonGuard.enter()

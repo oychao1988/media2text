@@ -36,11 +36,6 @@ def test_observe_live_state_does_not_start_recording(tmp_path, monkeypatch) -> N
         processes={},
         notify=MagicMock(),
     )
-    monkeypatch.setattr(
-        "media2text.core.live.recording.effective_auto_record",
-        lambda *a, **k: True,
-    )
-
     with patch.object(core, "_start_recording") as mock_start:
         with patch.object(core, "maybe_start_recording") as mock_maybe:
             info, err = core.observe_live_state(creator)

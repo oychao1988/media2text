@@ -56,7 +56,7 @@ def test_hls_finalize_uploads_sidecars_not_whole_mp4(tmp_path, monkeypatch) -> N
         return {"upload_completed": True}
 
     monkeypatch.setattr(
-        "media2text.core.live.recording.upload_hls_session_sidecars",
+        "media2text.core.live.session_finalize.upload_hls_session_sidecars",
         fake_sidecars,
     )
     monkeypatch.setattr(

@@ -94,8 +94,14 @@ def test_poll_active_recordings_delegates_when_reconciler_enabled(
     core._sessions = LiveSessionRepo(conn)
     core._creators = CreatorRepo(conn)
     core._platform = "douyin"
-    core.poll_active_session = MagicMock()
-    finalized = LiveRecordingCore.poll_active_recordings.__get__(core, LiveRecordingCore)()
+    core._state = MagicMock()
+    with patch(
+        "media2text.core.live.session.poll_active_session",
+        autospec=True,
+    ) as mock_poll:
+        finalized = LiveRecordingCore.poll_active_recordings.__get__(
+            core, LiveRecordingCore
+        )()
     assert finalized == []
-    assert core.poll_active_session.called
+    assert mock_poll.called
     enqueue.assert_not_called()

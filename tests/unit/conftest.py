@@ -5,7 +5,14 @@ from media2text.api.app import create_app
 from media2text.api.deps import get_cfg, get_db
 from media2text.api.services.health import clear_health_cache
 from media2text.core.config import AppConfig
+from media2text.core.notify.outbox import NotifyDaemonGuard
 from media2text.core.workspace import open_db
+
+
+@pytest.fixture(autouse=True)
+def _reset_notify_daemon_guard() -> None:
+    yield
+    NotifyDaemonGuard.reset()
 
 
 @pytest.fixture

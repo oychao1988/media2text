@@ -34,10 +34,6 @@ def test_observe_live_state_upserts_snapshot(tmp_path, monkeypatch) -> None:
         processes={},
         notify=notify,
     )
-    monkeypatch.setattr(
-        "media2text.core.live.recording.effective_auto_record",
-        lambda *a, **k: False,
-    )
     creator = CreatorRepo(conn).get(cid)
     assert creator is not None
     with patch.object(core, "_start_recording") as mock_start:
