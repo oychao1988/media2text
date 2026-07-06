@@ -111,7 +111,10 @@ def test_ffmpeg_exit_restarts_when_still_live(tmp_path, monkeypatch) -> None:
 
 def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(pipeline_mode="legacy"),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -145,9 +148,9 @@ def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:
     )
 
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.manifest.refresh_manifest"),
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.state_writer.refresh_manifest"),
         patch.object(core, "_process_alive", return_value=False),
     ):
         def _fake_remux(**kwargs):
@@ -165,7 +168,10 @@ def test_finalize_enqueues_post_process_job(tmp_path, monkeypatch) -> None:
 
 def test_start_recording_stream_resolve_event(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(pipeline_mode="streaming"),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
