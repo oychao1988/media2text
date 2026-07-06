@@ -283,6 +283,7 @@ async def test_mp_smoke_lifespan_auto_starts_embedded_without_cli(tmp_path, monk
 
     sup = MagicMock()
     sup._is_embedded_running.return_value = False
+    sup.status_dict.return_value = {"thread_alive": False}
     sup.start.return_value = {"ok": True, "managed_by": "embedded"}
     sup.stop.return_value = {"ok": True, "stopped": True}
 

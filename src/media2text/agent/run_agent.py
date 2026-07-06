@@ -24,7 +24,9 @@ from media2text.core.workspace import open_db
 
 agent_app = typer.Typer(no_args_is_help=True, help="Desktop agent debug commands")
 curator_app = typer.Typer(no_args_is_help=True, help="Skill curator maintenance")
+distill_app = typer.Typer(no_args_is_help=True, help="Creator distill job drain")
 agent_app.add_typer(curator_app, name="curator")
+agent_app.add_typer(distill_app, name="distill")
 
 
 @agent_app.command("echo")
@@ -108,3 +110,27 @@ def curator_rollback(
         return
     path = rollback_backup(profile, backup)
     typer.echo(json.dumps({"ok": True, "restored_to": str(path)}, ensure_ascii=False))
+
+
+@distill_app.command("drain")
+def distill_drain(
+    limit: int = typer.Option(0, "--limit", "-n", help="Max jobs to claim (0 = config default)"),
+    json_out: bool = typer.Option(False, "--json", help="Emit JSON result"),
+) -> None:
+    """Drain pending creator_agent_jobs (bootstrap / evolve); replaces SlowTick embed."""
+    from media2text.agent.creator_distill.pool import CreatorAgentJobPool, resolve_distill_workers
+
+    cfg = AppConfig.load()
+    conn = open_db(cfg)
+    pool = CreatorAgentJobPool(max_workers=resolve_distill_workers(cfg))
+    try:
+        max_jobs = limit if limit > 0 else resolve_distill_workers(cfg)
+        claimed = pool.drain_pending(cfg, conn, limit=max_jobs)
+        result = {"ok": True, "claimed": claimed}
+        if json_out:
+            typer.echo(json.dumps(result, ensure_ascii=False))
+        else:
+            typer.echo(f"claimed {claimed} creator distill job(s)")
+    finally:
+        pool.shutdown(wait=True)
+        conn.close()
