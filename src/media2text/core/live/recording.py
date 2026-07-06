@@ -1417,6 +1417,17 @@ class LiveRecordingCore:
         live_info: LiveRoomInfo,
     ) -> dict:
         ProbeExecutionGuard.record_violation("_start_recording")
+        if self._cfg.live.effective_pipeline_mode() == "legacy":
+            log.error(
+                "legacy_pipeline_new_session_rejected",
+                creator_id=creator_id,
+                room_id=room_id,
+                hint="set live.pipeline_mode=streaming (legacy is read-only for existing sessions)",
+            )
+            raise RecordingError(
+                "New live recordings require live.pipeline_mode=streaming; "
+                "legacy mode only finalizes existing sessions"
+            )
         live_dir = self._ws / "creators" / sec_uid / "live"
         live_dir.mkdir(parents=True, exist_ok=True)
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")

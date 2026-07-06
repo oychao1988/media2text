@@ -1,7 +1,7 @@
 """Legacy pipeline_mode regression (streaming STT spec S5).
 
-Concentrates legacy finalize + post_process transcribe paths so streaming
-changes are less likely to break v2 behavior silently.
+Tests **existing** legacy sessions (pre-created in DB) through finalize and
+post_process only — not new session creation via `_start_recording` (MLS-2).
 """
 
 from unittest.mock import MagicMock, patch
@@ -62,10 +62,10 @@ def test_legacy_single_flv_remux_to_mp4(tmp_path, monkeypatch) -> None:
 
     core = _legacy_core(tmp_path, conn)
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.concat_to_mp4") as mock_concat,
-        patch("media2text.core.live.recording.log") as mock_log,
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.session_finalize.concat_to_mp4") as mock_concat,
+        patch("media2text.core.live.session_finalize.log") as mock_log,
         patch("media2text.core.manifest.refresh_manifest"),
     ):
         meta = core._finalize_recording(sid, str(flv), 4242)
@@ -119,9 +119,9 @@ def test_legacy_multi_segment_concat_to_mp4(tmp_path, monkeypatch) -> None:
 
     core = _legacy_core(tmp_path, conn)
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.concat_to_mp4") as mock_concat,
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.session_finalize.concat_to_mp4") as mock_concat,
         patch("media2text.core.manifest.refresh_manifest"),
     ):
         meta = core._finalize_recording(sid, str(seg1), 5252)
