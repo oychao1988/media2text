@@ -123,7 +123,6 @@ def test_max_dynamic_images_per_item_truncates(tmp_path, monkeypatch) -> None:
 
 def test_slow_tick_includes_dynamic_tick(tmp_path, monkeypatch) -> None:
     import threading
-    from unittest.mock import patch
 
     from media2text.core.live.scheduler import SlowTickLoop
 
