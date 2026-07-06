@@ -28,8 +28,6 @@ def test_monitor_watch_single_round_matches_daemon_tick(tmp_path, monkeypatch) -
     with (
         patch("media2text.core.live.scheduler.run_live_probe_tick", side_effect=track_probe),
         patch.object(TaskSchedulerLoop, "tick_once", track_scheduler_tick),
-        patch.object(watcher._douyin_live, "run_once") as dy_run_once,
-        patch.object(watcher._bilibili_live, "run_once") as bi_run_once,
         patch("media2text.core.notify.drain.drain_once"),
     ):
         result = watcher.run_once()
@@ -37,8 +35,6 @@ def test_monitor_watch_single_round_matches_daemon_tick(tmp_path, monkeypatch) -
     assert len(probe_kwargs) == 1
     assert probe_kwargs[0]["session_registry"] is watcher.session_registry
     assert len(scheduler_ticks) == 1
-    dy_run_once.assert_not_called()
-    bi_run_once.assert_not_called()
     assert result["scheduler_tick"] == "once"
     assert result["live"]["active_recordings"] == 0
 

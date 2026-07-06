@@ -111,7 +111,8 @@ def test_bilibili_live_skips_douyin_creator(tmp_path, monkeypatch) -> None:
         platform="douyin",
         monitor_enabled=True,
     )
-    result = watcher.run_once()
+    conn.close()
+    result = watcher.run_probe_observe()
     assert result["checked"] == 0
     assert result["started"] == 0
 
