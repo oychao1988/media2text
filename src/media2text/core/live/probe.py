@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING, Any
 
 from media2text.core.live.live_observe import LiveObserveService
 from media2text.core.live.probe_guard import ProbeExecutionGuard
-from media2text.core.storage.write_gateway import ensure_write_gateway_started, gateway_write, get_write_gateway
+from media2text.core.storage.write_gateway import ensure_write_gateway_started, get_write_gateway
 from media2text.core.workspace import open_db
 
 if TYPE_CHECKING:
@@ -82,22 +82,14 @@ def run_live_probe_tick(
             dy_poll = poll
             bi_poll = poll
         else:
-            conn = open_db(cfg)
-            try:
-                dy_poll = douyin.run_poll_active(
-                    conn=conn, creator_id=creator_id, deadline=deadline
-                )
-                if time.monotonic() >= deadline:
-                    return {
-                        "douyin": dy_poll,
-                        "bilibili": {"skipped": "budget_exhausted"},
-                        "active_recordings": dy_poll.get("active", 0),
-                    }
-                bi_poll = bilibili.run_poll_active(
-                    conn=conn, creator_id=creator_id, deadline=deadline
-                )
-            finally:
-                conn.close()
+            dy_poll = douyin.run_poll_active(creator_id=creator_id, deadline=deadline)
+            if time.monotonic() >= deadline:
+                return {
+                    "douyin": dy_poll,
+                    "bilibili": {"skipped": "budget_exhausted"},
+                    "active_recordings": dy_poll.get("active", 0),
+                }
+            bi_poll = bilibili.run_poll_active(creator_id=creator_id, deadline=deadline)
 
         dy = douyin.run_probe_observe(creator_id=creator_id, deadline=deadline)
         if time.monotonic() >= deadline:
@@ -114,23 +106,9 @@ def run_live_probe_tick(
             bi_fin = fin
             active = fin.get("active", 0)
         else:
-            conn = open_db(cfg)
-            try:
-                dy_fin: dict[str, Any] = {}
-                bi_fin: dict[str, Any] = {}
-                active = 0
-
-                def _finalize(wconn) -> None:
-                    nonlocal dy_fin, bi_fin, active
-                    dy_fin = douyin.run_finalize(conn=wconn)
-                    bi_fin = bilibili.run_finalize(conn=wconn)
-                    from media2text.core.storage.repos import LiveSessionRepo
-
-                    active = len(LiveSessionRepo(wconn, cfg=cfg).list_active())
-
-                gateway_write(cfg, _finalize, label="probe.finalize")
-            finally:
-                conn.close()
+            dy_fin = douyin.run_finalize()
+            bi_fin = bilibili.run_finalize()
+            active = dy_fin.get("active", 0)
 
         return {
             "douyin": {**dy_poll, **dy, **dy_fin},

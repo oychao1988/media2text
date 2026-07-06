@@ -72,8 +72,7 @@ def test_daemon_integration_prepare_enqueued_and_live_pool_drains(
     stop = threading.Event()
 
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={"active": 0}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0}),
+        patch("media2text.core.live.scheduler.run_live_probe_tick", return_value={"active_recordings": 0, "douyin": {}, "bilibili": {}}),
         patch(
             "media2text.core.live.monitor_executor.MonitorExecutor.submit",
             track_submit,
@@ -150,8 +149,10 @@ def test_daemon_integration_content_drains_while_other_creator_recording(
     stop = threading.Event()
 
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value={"active": 1}),
-        patch.object(watcher._bilibili_live, "run_once", return_value={"active": 0}),
+        patch(
+            "media2text.core.live.scheduler.run_live_probe_tick",
+            return_value={"active_recordings": 1, "douyin": {}, "bilibili": {}},
+        ),
         patch(
             "media2text.core.live.monitor_executor.MonitorExecutor.submit",
             track_submit,

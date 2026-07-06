@@ -1,5 +1,6 @@
 ---
 epic: monitor-live-simplify-2026-07-06
+github: 391
 depends_on: [MLS-1]
 ---
 
@@ -9,9 +10,9 @@ depends_on: [MLS-1]
 
 ## 验收标准
 
-- [ ] `douyin/live.py`、`bilibili/live.py` 去掉 `with_db_lock_retry`；poll/finalize 经 `WriteGateway`
-- [ ] 删除 `run_once`；调用方改 `run_probe_observe` + registry
-- [ ] `test_db_lock_stress` / `tests/stress/test_db_lock_stress.py` 通过
+- [x] `douyin/live.py`、`bilibili/live.py` 去掉 `with_db_lock_retry`；poll/finalize 经 `WriteGateway`
+- [x] 删除 `run_once`；调用方改 `run_probe_observe` + registry
+- [x] `test_db_lock_stress` / `tests/stress/test_db_lock_stress.py` 通过
 
 ## 验证命令
 
