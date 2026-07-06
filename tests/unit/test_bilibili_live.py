@@ -61,42 +61,70 @@ def test_bilibili_parse_auth_required() -> None:
         check_api_code(payload)
 
 
-def test_bilibili_live_run_once_starts_recording(tmp_path, monkeypatch) -> None:
+def test_bilibili_live_probe_observe_starts_recording(tmp_path, monkeypatch) -> None:
+    """MLS-5: gateway probe updates snapshot; reconcile + prepare starts recording."""
+    from media2text.core.live.monitor_executor import run_monitor_task
+    from media2text.core.live.task_reconciler import reconcile_live
+    from media2text.core.monitor.watcher import MonitorWatcher
+    from media2text.core.storage.repos import LiveSnapshotRepo, MonitorTaskRepo
+    from media2text.core.storage.write_gateway import ensure_write_gateway_started
+
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
-    watcher = LiveWatcher(cfg)
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(pipeline_mode="streaming"),
+    )
+    ensure_write_gateway_started(cfg)
+    live_watcher = LiveWatcher(cfg)
     conn = open_db(cfg)
     repo = CreatorRepo(conn)
-    sessions = LiveSessionRepo(conn)
     cid = repo.add(
         sec_uid="12345",
         profile_url="https://space.bilibili.com/12345",
         platform="bilibili",
         monitor_enabled=True,
     )
-    core = watcher.core_for_conn(conn)
+    conn.close()
 
     mock_proc = MagicMock()
     mock_proc.pid = os.getpid()
     mock_proc.poll.return_value = None
     mock_proc.stderr = None
 
-    with (
-        patch(
-            "media2text.core.live.recording.record_stream_copy",
-            return_value=mock_proc,
-        ),
-        patch("media2text.core.live.recording.time.sleep"),
-        patch.object(watcher, "_process_alive", return_value=True),
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4"),
-    ):
-        meta = core.start_recording_for_creator(cid)
+    probe = live_watcher.run_probe_observe(creator_id=cid)
+    assert probe.get("probe") is True
+    assert probe.get("checked") >= 1
 
-    assert meta.get("session_id")
-    active = sessions.get_active_for_creator(cid)
-    assert active is not None
-    assert active.status == "recording"
+    conn = open_db(cfg)
+    try:
+        snap = LiveSnapshotRepo(conn).get(cid)
+        assert snap is not None
+        assert snap.is_live == 1
+
+        reconcile_live(cfg, conn)
+        assert MonitorTaskRepo(conn).has_active_dedupe(f"prepare:{cid}")
+
+        claimed = MonitorTaskRepo(conn).claim_pending(limit=1, min_priority=1, max_priority=1)
+        assert len(claimed) == 1
+        task_id = claimed[0].id
+
+        mon_watcher = MonitorWatcher(cfg)
+        with (
+            patch(
+                "media2text.core.live.recording.record_stream_copy",
+                return_value=mock_proc,
+            ),
+            patch("media2text.core.live.recording.time.sleep"),
+            patch("media2text.core.live.recording.stop_process"),
+        ):
+            result = run_monitor_task(cfg, conn, task_id=task_id, watcher=mon_watcher)
+
+        assert result.get("ok") is True
+        active = LiveSessionRepo(conn).get_active_for_creator(cid)
+        assert active is not None
+        assert active.status == "recording"
+    finally:
+        conn.close()
 
 
 def test_bilibili_live_skips_douyin_creator(tmp_path, monkeypatch) -> None:

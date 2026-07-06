@@ -92,7 +92,7 @@ def test_profile_offline_still_finalizes_when_no_signals(tmp_path, monkeypatch) 
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_flv_file_growing", return_value=False),
+        patch("media2text.core.live.session.flv_file_growing", return_value=False),
         patch.object(core, "_finalize_recording") as mock_fin,
     ):
         core.poll_active_recordings()
@@ -154,7 +154,7 @@ def test_profile_offline_after_flv_stall_ignores_reflow(tmp_path, monkeypatch) -
 
     with (
         patch.object(core, "_process_alive", return_value=True),
-        patch.object(core, "_flv_file_growing", return_value=False),
+        patch("media2text.core.live.session.flv_file_growing", return_value=False),
         patch.object(core, "_finalize_recording") as mock_fin,
     ):
         core.poll_active_recordings()

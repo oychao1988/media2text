@@ -121,47 +121,64 @@ def test_max_dynamic_images_per_item_truncates(tmp_path, monkeypatch) -> None:
     assert len(meta["image_urls"]) == 1
 
 
-def test_monitor_run_once_includes_dynamic_tick(tmp_path, monkeypatch) -> None:
+def test_slow_tick_includes_dynamic_tick(tmp_path, monkeypatch) -> None:
+    import threading
+    from unittest.mock import patch
+
+    from media2text.core.live.scheduler import SlowTickLoop
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
     watcher = MonitorWatcher(cfg)
-    live_stub = {"started": [], "active": 0, "errors": [], "auth_required": False}
+    stop = threading.Event()
     dynamic_stub = {
-        "creators": 0,
-        "new_count": 0,
-        "images_downloaded": 0,
+        "platform": "bilibili",
+        "creators": 1,
+        "marked": 1,
         "interval_sec": 120,
-        "results": [],
         "errors": [],
         "auth_required": False,
         "platform_changed": False,
     }
+
+    def record_wait(timeout=None):
+        stop.set()
+        return True
+
+    stop.wait = record_wait  # type: ignore[method-assign]
+
     with (
-        patch.object(watcher._douyin_live, "run_once", return_value=live_stub),
-        patch.object(
-            watcher._bilibili_live,
-            "run_once",
-            return_value={**live_stub, "platform": "bilibili", "checked": 0},
-        ),
-        patch(
-            "media2text.core.monitor.watcher.run_dynamic_tick",
-            return_value=dynamic_stub,
-        ) as mock_dynamic,
-        patch(
-            "media2text.core.monitor.watcher.run_pipeline",
-            return_value={
-                "ok": True,
-                "sync": {"ok": True},
-                "download": {"ok": True},
-                "transcribed": 0,
-                "errors": [],
-                "auth_required": False,
-            },
-        ),
+        patch.object(watcher, "_run_vod_tick", return_value={}),
+        patch.object(watcher, "_run_archive_tick", return_value={}),
+        patch.object(watcher, "_run_dynamic_tick", return_value=dynamic_stub) as mock_dynamic,
     ):
-        result = watcher.run_once()
+        SlowTickLoop(watcher, cfg, creator_id=None, stop=stop)._run()
+
     mock_dynamic.assert_called_once()
-    assert result["dynamic"]["interval_sec"] == 120
+    assert mock_dynamic.return_value["interval_sec"] == 120
+
+
+def test_run_dynamic_tick_marks_bilibili_due(tmp_path, monkeypatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg = AppConfig(workspace=tmp_path / "data")
+    watcher = MonitorWatcher(cfg)
+    conn = connect(cfg.ensure_workspace() / "media2text.db")
+    cid = CreatorRepo(conn).add(
+        sec_uid="12345",
+        profile_url="https://space.bilibili.com/12345",
+        platform="bilibili",
+        monitor_enabled=True,
+    )
+    CreatorRepo(conn).set_content_sync_enabled(cid, enabled=True)
+
+    result = watcher._run_dynamic_tick(conn=conn, creator_id=cid)
+
+    row = CreatorRepo(conn).get(cid)
+    conn.close()
+    assert result["platform"] == "bilibili"
+    assert result["interval_sec"] == cfg.platforms.bilibili.dynamic_poll_interval_sec
+    assert row is not None
+    assert row.dynamic_due_at is not None
 
 
 def test_dynamics_table_roundtrip(tmp_path) -> None:

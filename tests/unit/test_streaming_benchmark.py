@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timezone
 
 from typer.testing import CliRunner
 
@@ -71,6 +72,7 @@ def test_check_streaming_targets_s3_when_present() -> None:
 def test_live_stats_check_targets_pass(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
+    monkeypatch.setattr("media2text.core.config.AppConfig.load", lambda: cfg)
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -85,12 +87,13 @@ def test_live_stats_check_targets_pass(tmp_path, monkeypatch) -> None:
         temp_path=str(tmp_path / "x.flv"),
         pipeline_mode="streaming",
     )
+    now = datetime.now(timezone.utc).isoformat()
     PipelineEventRepo(conn).insert(
         session_id=sid,
         stage="streaming_stt",
         status="first_final",
-        started_at="2026-06-03T12:00:00+00:00",
-        ended_at="2026-06-03T12:00:00+00:00",
+        started_at=now,
+        ended_at=now,
         duration_ms=5_000,
     )
 
@@ -108,6 +111,7 @@ def test_live_stats_check_targets_pass(tmp_path, monkeypatch) -> None:
 def test_live_stats_check_targets_fail_exit_code(tmp_path, monkeypatch) -> None:
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(workspace=tmp_path / "data")
+    monkeypatch.setattr("media2text.core.config.AppConfig.load", lambda: cfg)
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -122,12 +126,13 @@ def test_live_stats_check_targets_fail_exit_code(tmp_path, monkeypatch) -> None:
         temp_path=str(tmp_path / "y.flv"),
         pipeline_mode="streaming",
     )
+    now = datetime.now(timezone.utc).isoformat()
     PipelineEventRepo(conn).insert(
         session_id=sid,
         stage="streaming_stt",
         status="first_final",
-        started_at="2026-06-03T12:00:00+00:00",
-        ended_at="2026-06-03T12:00:00+00:00",
+        started_at=now,
+        ended_at=now,
         duration_ms=60_000,
     )
 

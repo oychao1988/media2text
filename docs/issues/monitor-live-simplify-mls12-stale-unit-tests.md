@@ -28,10 +28,10 @@ MLS issue 闸门与 `epic_verify` 已通过；本单不阻塞 Epic #409，但 **
 
 ## 验收标准
 
-- [ ] `pytest tests/unit -v -m "not live" --tb=short -q` 全绿（0 failed）
-- [ ] `python scripts/issue_verify.py --issue 396` 通过（MLS-10 全量 unit 验证）
-- [ ] 删除或改写引用已移除 API 的测试（`run_once`、`_emit_pipeline_notifications`）；不恢复死代码
-- [ ] legacy 相关测试仅覆盖 **只读 finalize 旧 session**（与 MLS-2 一致），新 session 用例默认 `streaming`
+- [x] `pytest tests/unit -v -m "not live" --tb=short -q` 全绿（0 failed）
+- [x] `python scripts/issue_verify.py --issue 396` 通过（MLS-10 全量 unit 验证）
+- [x] 删除或改写引用已移除 API 的测试（`run_once`、`_emit_pipeline_notifications`）；不恢复死代码
+- [x] legacy 相关测试仅覆盖 **只读 finalize 旧 session**（与 MLS-2 一致），新 session 用例默认 `streaming`
 
 ## 失败用例清单（2026-07-06 基线）
 

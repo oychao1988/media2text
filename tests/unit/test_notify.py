@@ -75,45 +75,44 @@ def test_send_feishu_text_success(monkeypatch) -> None:
 
 
 def test_monitor_vod_notifications(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.monitor_executor import _emit_sync_notifications
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
         notify=NotifyConfig(enabled=True, sound=False, feishu=NotifyFeishuConfig(enabled=False)),
     )
-    from media2text.core.monitor.watcher import MonitorWatcher
-
-    watcher = MonitorWatcher(cfg)
+    notify = NotifyService(cfg)
     creator = _creator()
-    with patch.object(watcher._notify, "emit") as mock_emit:
-        watcher._emit_pipeline_notifications(
+    with patch.object(notify, "emit") as mock_emit:
+        _emit_sync_notifications(
             creator,
-            {
-                "sync": {"new_count": 3},
-                "transcribed": 2,
-            },
+            {"new_count": 3},
             new_content_kind=EventKind.NEW_AWEME,
+            notify=notify,
         )
-    assert mock_emit.call_count == 2
-    kinds = {call.args[0].kind for call in mock_emit.call_args_list}
-    assert EventKind.NEW_AWEME in kinds
-    assert EventKind.TRANSCRIBE_COMPLETED in kinds
+    mock_emit.assert_called_once()
+    event = mock_emit.call_args[0][0]
+    assert event.kind == EventKind.NEW_AWEME
+    assert "3" in event.body
 
 
 def test_monitor_archive_notifications(tmp_path, monkeypatch) -> None:
+    from media2text.core.live.monitor_executor import _emit_sync_notifications
+
     monkeypatch.chdir(tmp_path)
     cfg = AppConfig(
         workspace=tmp_path / "data",
         notify=NotifyConfig(enabled=True, sound=False, feishu=NotifyFeishuConfig(enabled=False)),
     )
-    from media2text.core.monitor.watcher import MonitorWatcher
-
-    watcher = MonitorWatcher(cfg)
+    notify = NotifyService(cfg)
     creator = _creator()
-    with patch.object(watcher._notify, "emit") as mock_emit:
-        watcher._emit_pipeline_notifications(
+    with patch.object(notify, "emit") as mock_emit:
+        _emit_sync_notifications(
             creator,
-            {"sync": {"new_count": 1}, "transcribed": 0},
+            {"new_count": 1},
             new_content_kind=EventKind.NEW_ARCHIVE,
+            notify=notify,
         )
-    kinds = {call.args[0].kind for call in mock_emit.call_args_list}
-    assert EventKind.NEW_ARCHIVE in kinds
+    mock_emit.assert_called_once()
+    assert mock_emit.call_args[0][0].kind == EventKind.NEW_ARCHIVE

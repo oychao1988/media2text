@@ -88,7 +88,14 @@ def test_maybe_auto_title_updates_placeholder(tmp_path, monkeypatch) -> None:
     conn.close()
 
 
-def test_suggest_thread_title_falls_back_without_llm(tmp_path) -> None:
+def test_suggest_thread_title_falls_back_without_llm(tmp_path, monkeypatch) -> None:
+    def _no_llm(_cfg):
+        raise RuntimeError("no llm in unit test")
+
+    monkeypatch.setattr(
+        "media2text.agent.thread_title.build_openai_client",
+        _no_llm,
+    )
     cfg = AppConfig.model_validate({"workspace": str(tmp_path / "data")})
     title = suggest_thread_title(
         cfg,

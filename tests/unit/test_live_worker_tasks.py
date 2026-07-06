@@ -26,7 +26,10 @@ def _enqueue_and_claim(conn, *, creator_id: str, task_type: str, payload: dict, 
 def test_prepare_live_recording_task(tmp_path, monkeypatch) -> None:
     """LW-01: prepare_live_recording spawns ffmpeg when snapshot has stream."""
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(pipeline_mode="streaming"),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)
@@ -255,7 +258,10 @@ def test_prepare_not_blocked_by_executor_playwright_lock(tmp_path, monkeypatch) 
     from media2text.core.playwright_env import playwright_exclusive
 
     monkeypatch.chdir(tmp_path)
-    cfg = AppConfig(workspace=tmp_path / "data")
+    cfg = AppConfig(
+        workspace=tmp_path / "data",
+        live=LiveConfig(pipeline_mode="streaming"),
+    )
     from media2text.core.workspace import open_db
 
     conn = open_db(cfg)

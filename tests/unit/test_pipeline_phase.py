@@ -179,6 +179,12 @@ def test_pipeline_phase_derivation(
     monitor_tasks,
     expected,
 ) -> None:
+    if expected == "offline_pending" and session is not None:
+        session = _session(
+            status=session.status,
+            offline_since_at=datetime.now(timezone.utc).isoformat(),
+            pipeline_mode=session.pipeline_mode,
+        )
     assert (
         derive_pipeline_phase(
             session,

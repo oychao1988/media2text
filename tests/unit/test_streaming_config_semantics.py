@@ -109,10 +109,10 @@ def test_streaming_finalize_remux_when_configured(tmp_path, monkeypatch) -> None
     core._streaming_transcript_anchor[sid] = flv
 
     with (
-        patch("media2text.core.live.recording.stop_process"),
-        patch("media2text.core.live.recording.remux_to_mp4") as mock_remux,
-        patch("media2text.core.live.recording.refresh_manifest"),
-        patch("media2text.core.live.recording.index_transcript_safe"),
+        patch("media2text.core.live.session_finalize.stop_process"),
+        patch("media2text.core.live.session_finalize.remux_to_mp4") as mock_remux,
+        patch("media2text.core.live.state_writer.refresh_manifest"),
+        patch("media2text.core.live.session_finalize.index_transcript_safe"),
     ):
         def _touch_mp4(*, ffmpeg, src, dst):  # noqa: ARG001
             Path(dst).write_bytes(b"mp4")

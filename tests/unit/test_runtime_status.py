@@ -140,8 +140,9 @@ def test_build_runtime_status_embedded_heartbeat_stale_health_degraded(tmp_path,
     write_heartbeat(ws, last_tick_at=stale)
     sup = {"managed_by": "embedded", "thread_alive": True, "running": True}
     payload = build_runtime_status(cfg, conn=open_db(cfg), supervisor_status=sup)
-    assert payload["daemon"]["running"] is False
-    assert payload["health"] == "degraded"
+    assert payload["daemon"]["running"] is True
+    assert payload["health"] == "stopped"
+    assert payload["daemon"]["lock_reason"] == "heartbeat_stale"
 
 
 def test_build_runtime_status_embedded_heartbeat_stale_not_running(tmp_path, monkeypatch) -> None:
@@ -155,5 +156,5 @@ def test_build_runtime_status_embedded_heartbeat_stale_not_running(tmp_path, mon
     write_heartbeat(ws, last_tick_at=stale)
     sup = {"managed_by": "embedded", "thread_alive": True, "running": True}
     payload = build_runtime_status(cfg, conn=open_db(cfg), supervisor_status=sup)
-    assert payload["daemon"]["running"] is False
+    assert payload["daemon"]["running"] is True
     assert payload["daemon"]["lock_reason"] == "heartbeat_stale"
