@@ -144,6 +144,8 @@ class LiveConfig(BaseModel):
     # Consecutive obs polls with profile offline and FLV not growing before ending
     # recording trust (guards zombie ffmpeg after stream ends).
     offline_flv_stall_polls: int = 3
+    # When true, LiveTick runs prepare/finalize/reconnect inline (no reconcile_live tasks).
+    inline_decisions: bool = False
 
     def effective_pipeline_mode(self) -> str:
         mode = (self.pipeline_mode or "legacy").strip().lower()

@@ -1,5 +1,6 @@
 ---
 epic: monitor-live-simplify-2026-07-06
+github: 394
 depends_on: [MLS-7]
 ---
 
@@ -9,10 +10,10 @@ depends_on: [MLS-7]
 
 ## 验收标准
 
-- [ ] 配置 `live.inline_decisions`（默认 false，灰度后 true）
-- [ ] true 时 `LiveLoop` 内联 decide；删除 `reconcile_live` 直播部分
-- [ ] `test_live_loop_inline_prepare_no_duplicate` 防 double-prepare
-- [ ] G1 benchmark 不退化
+- [x] 配置 `live.inline_decisions`（默认 false，灰度后 true）
+- [x] true 时 `LiveLoop` 内联 decide；删除 `reconcile_live` 直播部分
+- [x] `test_live_loop_inline_prepare_no_duplicate` 防 double-prepare
+- [x] G1 benchmark 不退化
 
 ## 验证命令
 
