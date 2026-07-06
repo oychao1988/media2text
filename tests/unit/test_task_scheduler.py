@@ -232,7 +232,6 @@ def test_probe_tick_respects_budget(tmp_path, monkeypatch) -> None:
             time.sleep(0.05)
         return {"active": 0}
 
-    noop = MagicMock(return_value={})
     with (
         patch.object(watcher._douyin_live, "run_poll_active", side_effect=slow_douyin_poll),
         patch.object(watcher._douyin_live, "run_probe_observe", return_value={}),
