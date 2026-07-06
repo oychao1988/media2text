@@ -73,7 +73,7 @@ def test_mp_smoke_cli_daemon_process_and_lock(tmp_path) -> None:
         text=True,
     )
     try:
-        deadline = time.monotonic() + 8.0
+        deadline = time.monotonic() + (20.0 if os.environ.get("CI") else 8.0)
         lock = data / ".monitor-watch.lock"
         while time.monotonic() < deadline:
             if proc.poll() is not None:
