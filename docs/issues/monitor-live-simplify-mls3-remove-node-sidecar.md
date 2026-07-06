@@ -1,11 +1,13 @@
 ---
 epic: monitor-live-simplify-2026-07-06
-github: TBD
-branch: issue-TBD-mls3-remove-node-sidecar
+github: 389
+branch: issue-389-mls3-remove-node-sidecar
 depends_on: []
 ---
 
 # MLS-3：移除 Node m2t-agent-sidecar
+
+GitHub Issue: [#389](https://github.com/oychao1988/media2text/issues/389)
 
 规格：§3 P1-4；Hermes M2 已迁 Python Agent（`media2text serve` + `/api/agent/*`）
 
@@ -15,19 +17,19 @@ Tauri 仅 spawn `python_sidecar`；`packages/m2t-agent-sidecar` 与 bundle 为�
 
 ## 验收标准
 
-- [ ] 删除 `packages/m2t-agent-sidecar/`（或留 `README.md` 说明已废弃）
-- [ ] 删除 `apps/m2t-desktop/src-tauri/resources/agent/start-sidecar.mjs` 与 bundle 产物
-- [ ] 更新 `pnpm-workspace.yaml` / lockfile（若引用 sidecar）
-- [ ] `scripts/agent_m2_verify.py` 等仍通过
-- [ ] Desktop agent turn 仍经 Python WS（手工或现有 Vitest mock）
+- [x] 删除 `packages/m2t-agent-sidecar/`（或留 `README.md` 说明已废弃）
+- [x] 删除 `apps/m2t-desktop/src-tauri/resources/agent/start-sidecar.mjs` 与 bundle 产物
+- [x] 更新 `pnpm-workspace.yaml` / lockfile（若引用 sidecar）
+- [x] `scripts/agent_m2_verify.py` 等仍通过
+- [x] Desktop agent turn 仍经 Python WS（手工或现有 Vitest mock）
 
 ## 验证命令
 
 ```bash
 source .venv/bin/activate
-pytest tests/unit/test_desktop_agent.py tests/unit/test_api_agent.py -v -m desktop 2>/dev/null || pytest tests/unit/test_api_agent.py -v
+pytest tests/unit/test_api_agent_m2_smoke.py tests/unit/test_api_agent_stream.py tests/unit/test_api_agent_threads.py -v -m desktop
 pnpm --filter m2t-desktop test
-python scripts/agent_m2_verify.py
+python scripts/agent_m2_verify.py --static-only
 ```
 
 ## 非目标范围
