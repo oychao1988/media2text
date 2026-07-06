@@ -9,9 +9,11 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 
+REPOS_PKG = ROOT / "src/media2text/core/storage/repos"
+
 SCAN_FILES = [
-    ROOT / "src/media2text/core/storage/repos.py",
     ROOT / "src/media2text/core/live/state_writer.py",
+    *sorted(REPOS_PKG.glob("*.py")),
 ]
 
 WRITE_AWARE_BASE = "WriteAwareRepo"
