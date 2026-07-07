@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -53,13 +54,22 @@ class SessionStateMachine:
     def session_id(self) -> str:
         return self._handle.session_id
 
-    def poll_observation(self, row: LiveSessionRow, creator) -> None:
-        def _poll(conn) -> None:
+    def poll_observation(
+        self,
+        row: LiveSessionRow,
+        creator,
+        *,
+        _conn: sqlite3.Connection | None = None,
+    ) -> None:
+        def _poll(conn: sqlite3.Connection) -> None:
             state = StateWriter(conn, cfg=self._cfg, notify=self._notify)
             core = self._watcher.core_for_platform(conn, self._handle.platform)
             core.poll_active_session(row, creator, state=state)
 
-        self._gateway.write(_poll, label=f"session.poll_obs:{row.id[:8]}")
+        if _conn is not None:
+            _poll(_conn)
+        else:
+            self._gateway.write(_poll, label=f"session.poll_obs:{row.id[:8]}")
 
     def mark_offline_pending(self, offline_since: str) -> None:
         def _write(conn) -> None:
@@ -202,7 +212,7 @@ class SessionStateMachineRegistry:
                 if not creator or creator.platform != platform:
                     continue
                 machine = self.get_or_create(row, platform=platform)
-                machine.poll_observation(row, creator)
+                machine.poll_observation(row, creator, _conn=conn)
 
         self._gateway.write(_poll, label=f"registry.poll_active:{platform}")
 
